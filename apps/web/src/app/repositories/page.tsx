@@ -23,6 +23,8 @@ export default function RepositoriesPage() {
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   const [triggerOpen, setTriggerOpen] = useState<string | null>(null);
   const [prNumber, setPrNumber] = useState('');
+  const [auditMode, setAuditMode] = useState<'branch' | 'pr'>('branch');
+  const [branchName, setBranchName] = useState('main');
 
   async function refresh() {
     try {
@@ -81,22 +83,37 @@ export default function RepositoriesPage() {
   }
 
   async function triggerAudit(repoId: string) {
-    if (!prNumber.trim()) {
-      setMessage({ kind: 'err', text: 'Enter a PR number.' });
-      return;
-    }
     setBusy(true);
     setMessage(null);
     try {
+      let body: any = {};
+      if (auditMode === 'pr') {
+        if (!prNumber.trim()) {
+          setMessage({ kind: 'err', text: 'Please enter a valid Pull Request number.' });
+          setBusy(false);
+          return;
+        }
+        body = { pullNumber: Number(prNumber) };
+      } else {
+        body = { branch: branchName.trim() || undefined };
+      }
+
       const res = await api<{ jobId: string }>(`/api/repositories/${repoId}/analyze`, {
         method: 'POST',
-        body: JSON.stringify({ pullNumber: Number(prNumber) }),
+        body: JSON.stringify(body),
       });
-      setMessage({ kind: 'ok', text: `Queued job ${res.jobId.slice(0, 8)}. Watch the dashboard for progress.` });
+
+      const label = auditMode === 'branch' 
+        ? `branch '${branchName.trim() || 'default'}'` 
+        : `PR #${prNumber}`;
+      setMessage({
+        kind: 'ok',
+        text: `Queued audit for ${label} (Job ${res.jobId.slice(0, 8)}). Check Dashboard or History to see the live results!`,
+      });
       setTriggerOpen(null);
       setPrNumber('');
     } catch (err) {
-      setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to queue.' });
+      setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to queue audit.' });
     } finally {
       setBusy(false);
     }
@@ -193,18 +210,66 @@ export default function RepositoriesPage() {
                 </div>
 
                 {triggerOpen === r.id && (
-                  <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '0.5rem' }}>
-                    <input
-                      type="number"
-                      value={prNumber}
-                      onChange={(e) => setPrNumber(e.target.value)}
-                      placeholder="Pull request number"
-                      className="text-input"
-                      style={{ flex: 1 }}
-                    />
-                    <button onClick={() => triggerAudit(r.id)} disabled={busy} className="btn-primary">
-                      Queue audit
-                    </button>
+                  <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Select Audit Target
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.4rem', background: 'rgba(255, 255, 255, 0.05)', padding: '0.2rem', borderRadius: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => setAuditMode('branch')}
+                          className={auditMode === 'branch' ? 'btn-primary' : 'btn-secondary'}
+                          style={{ fontSize: '0.78rem', padding: '0.3rem 0.75rem' }}
+                        >
+                          Branch (main / master)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAuditMode('pr')}
+                          className={auditMode === 'pr' ? 'btn-primary' : 'btn-secondary'}
+                          style={{ fontSize: '0.78rem', padding: '0.3rem 0.75rem' }}
+                        >
+                          Pull Request
+                        </button>
+                      </div>
+                    </div>
+
+                    {auditMode === 'branch' ? (
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="text"
+                          value={branchName}
+                          onChange={(e) => setBranchName(e.target.value)}
+                          placeholder="Branch name, e.g. main or master"
+                          className="text-input"
+                          style={{ flex: 1 }}
+                        />
+                        <button onClick={() => triggerAudit(r.id)} disabled={busy} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
+                          <Play size={14} /> Audit Branch
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          value={prNumber}
+                          onChange={(e) => setPrNumber(e.target.value)}
+                          placeholder="Pull request number, e.g. 1"
+                          className="text-input"
+                          style={{ flex: 1 }}
+                        />
+                        <button onClick={() => triggerAudit(r.id)} disabled={busy} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
+                          <Play size={14} /> Queue PR Audit
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      {auditMode === 'branch'
+                        ? 'Audits the latest commit diff on the branch (auto-detects main or master).'
+                        : 'Audits all code changes within the specified GitHub Pull Request.'}
+                    </div>
                   </div>
                 )}
               </div>

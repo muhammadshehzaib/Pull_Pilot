@@ -13,7 +13,7 @@ export class GeminiProvider extends BaseAiProvider {
     try {
       // 1. Initialize modern ultra-performant model
       const model = this.aiClient.getGenerativeModel({ 
-        model: 'gemini-1.5-pro',
+        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
         generationConfig: {
            responseMimeType: "application/json" // Forces structural output!
         }

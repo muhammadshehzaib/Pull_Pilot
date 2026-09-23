@@ -137,7 +137,7 @@ export class RepositoryController {
 
   static async triggerAnalysis(req: Request, res: Response) {
     const id = String(req.params.id);
-    const { pullNumber, headSha, baseSha } = req.body ?? {};
+    const { pullNumber, headSha, baseSha, branch } = req.body ?? {};
 
     const repo = await prisma.repository.findFirst({
       where: { id, userId: req.auth!.userId, isActive: true },
@@ -165,9 +165,12 @@ export class RepositoryController {
         resolvedHead = headSha;
         resolvedBase = baseSha;
       } else {
-        return res
-          .status(400)
-          .json({ error: 'Provide either { pullNumber } or { headSha, baseSha }' });
+        // Audit branch (default branch such as main or master, or user specified branch)
+        const commitInfo = await gh.getLatestCommitWithParent(owner, name, branch);
+        eventType = 'PUSH';
+        referenceId = commitInfo.headSha;
+        resolvedHead = commitInfo.headSha;
+        resolvedBase = commitInfo.baseSha;
       }
     } catch (err) {
       return res.status(502).json({ error: `GitHub lookup failed: ${(err as Error).message}` });

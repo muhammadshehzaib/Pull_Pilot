@@ -116,6 +116,65 @@ export class GitHubService {
   }
 
   /**
+   * Resolves the latest commit and its parent on a given branch (or repo default branch).
+   * Automatically falls back between 'main' and 'master' if needed.
+   */
+  async getLatestCommitWithParent(
+    owner: string,
+    repo: string,
+    branchOrSha?: string
+  ): Promise<{ headSha: string; baseSha: string; branch: string }> {
+    let targetBranch = branchOrSha?.trim();
+    let defaultBranch = 'main';
+
+    try {
+      const repoData = await this.getRepo(owner, repo);
+      defaultBranch = repoData.default_branch || 'main';
+    } catch {
+      // fallback
+    }
+
+    if (!targetBranch) {
+      targetBranch = defaultBranch;
+    }
+
+    const tryFetch = async (branchRef: string) => {
+      const { data } = await this.octokit.repos.listCommits({
+        owner,
+        repo,
+        sha: branchRef,
+        per_page: 1,
+      });
+      if (data && data[0]) {
+        return {
+          headSha: data[0].sha,
+          baseSha: data[0].parents && data[0].parents[0] ? data[0].parents[0].sha : `${data[0].sha}~1`,
+          branch: branchRef,
+        };
+      }
+      return null;
+    };
+
+    try {
+      const result = await tryFetch(targetBranch);
+      if (result) return result;
+    } catch (err: any) {
+      // If 404 and target was 'main', retry with defaultBranch or 'master'
+      if (targetBranch !== defaultBranch) {
+        try {
+          const fallbackResult = await tryFetch(defaultBranch);
+          if (fallbackResult) return fallbackResult;
+        } catch {
+          // ignore
+        }
+      }
+      throw err;
+    }
+
+    throw new Error(`No commits found for repository ${owner}/${repo}`);
+  }
+
+  /**
    * Most recently updated open PRs — used by the repo poller to review fresh
    * commits on the connected user's pull requests.
    */
