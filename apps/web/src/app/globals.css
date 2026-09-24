@@ -1105,3 +1105,30 @@ button {
     letter-spacing: -0.03em !important;
   }
 }
+
+/* =========================================================================
+   Skeleton Loaders & Shimmer
+   ========================================================================= */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.12) 25%,
+    rgba(148, 163, 184, 0.24) 37%,
+    rgba(148, 163, 184, 0.12) 63%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  border-radius: 6px;
+  display: inline-block;
+}
+

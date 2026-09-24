@@ -39,7 +39,11 @@ export class JobController {
         createdAt: j.createdAt,
         updatedAt: j.updatedAt,
         repository: j.repository,
-        findingCount: Array.isArray(j.results) ? j.results.length : 0,
+        findingCount: Array.isArray(j.results)
+          ? j.results.length
+          : j.results && typeof j.results === 'object' && Array.isArray((j.results as any).suggestions)
+            ? (j.results as any).suggestions.length
+            : 0,
       })),
     });
   }

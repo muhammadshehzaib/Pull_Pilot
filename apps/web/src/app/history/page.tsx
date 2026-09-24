@@ -79,8 +79,13 @@ export default function HistoryPage() {
   async function openJob(id: string) {
     setLoadingDetail(true);
     try {
-      const res = await api<{ job: JobDetail & { results: unknown } }>(`/api/jobs/${id}`);
-      const results = Array.isArray(res.job.results) ? (res.job.results as AiSuggestion[]) : null;
+      const res = await api<{ job: JobDetail & { results: any } }>(`/api/jobs/${id}`);
+      const raw = res.job.results;
+      const results = Array.isArray(raw)
+        ? (raw as AiSuggestion[])
+        : raw && typeof raw === 'object' && Array.isArray(raw.suggestions)
+          ? (raw.suggestions as AiSuggestion[])
+          : null;
       setSelected({ ...res.job, results });
     } catch {
       // ignore
@@ -90,7 +95,30 @@ export default function HistoryPage() {
   }
 
   if (authLoading || !user) {
-    return <div style={{ padding: '3rem', color: 'var(--text-secondary)' }}>Loading…</div>;
+    return (
+      <div className="dashboard-grid">
+        <Sidebar user={null} />
+        <main className="main-content">
+          <header style={{ marginBottom: '2.5rem' }}>
+            <div className="skeleton" style={{ width: 160, height: 36, marginBottom: '0.75rem', borderRadius: 8 }} />
+            <div className="skeleton" style={{ width: 320, height: 16 }} />
+          </header>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '2rem', alignItems: 'start' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <HistoryRowSkeleton />
+              <HistoryRowSkeleton />
+              <HistoryRowSkeleton />
+            </div>
+            <div className="glass-card" style={{ height: 260, padding: '1.5rem' }}>
+              <div className="skeleton" style={{ width: '60%', height: 24, marginBottom: '1rem', borderRadius: 6 }} />
+              <div className="skeleton" style={{ width: '40%', height: 16, marginBottom: '1.5rem', borderRadius: 6 }} />
+              <div className="skeleton" style={{ width: '100%', height: 100, borderRadius: 8 }} />
+            </div>
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -105,7 +133,12 @@ export default function HistoryPage() {
         <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '2rem', alignItems: 'start' }}>
           <div>
             {loadingList ? (
-              <div className="glass-card" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Loading…</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <HistoryRowSkeleton />
+                <HistoryRowSkeleton />
+                <HistoryRowSkeleton />
+                <HistoryRowSkeleton />
+              </div>
             ) : jobs.length === 0 ? (
               <div className="glass-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                 <History size={20} strokeWidth={2} style={{ marginBottom: '1rem' }} />
@@ -233,6 +266,20 @@ function JobDetailView({ job }: { job: JobDetail }) {
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+function HistoryRowSkeleton() {
+  return (
+    <div className="history-row" style={{ pointerEvents: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
+        <div className="skeleton" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0 }} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div className="skeleton" style={{ width: '75%', height: 16, borderRadius: 4 }} />
+          <div className="skeleton" style={{ width: '50%', height: 12, borderRadius: 4 }} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { GitBranch, Plus, Trash2, Play, ExternalLink } from 'lucide-react';
+import { GitBranch, Plus, Trash2, Play, ExternalLink, History } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
 import { api } from '../../lib/api';
@@ -18,6 +18,7 @@ interface Repository {
 export default function RepositoriesPage() {
   const { user, loading: authLoading } = useAuth();
   const [repos, setRepos] = useState<Repository[]>([]);
+  const [loadingRepos, setLoadingRepos] = useState(true);
   const [fullName, setFullName] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -32,6 +33,8 @@ export default function RepositoriesPage() {
       setRepos(res.repositories);
     } catch {
       // ignore
+    } finally {
+      setLoadingRepos(false);
     }
   }
 
@@ -120,7 +123,33 @@ export default function RepositoriesPage() {
   }
 
   if (authLoading || !user) {
-    return <div style={{ padding: '3rem', color: 'var(--text-secondary)' }}>Loading…</div>;
+    return (
+      <div className="dashboard-grid">
+        <Sidebar user={null} />
+        <main className="main-content" style={{ maxWidth: 900 }}>
+          <header style={{ marginBottom: '2.5rem' }}>
+            <div className="skeleton" style={{ width: 220, height: 36, marginBottom: '0.75rem', borderRadius: 8 }} />
+            <div className="skeleton" style={{ width: 380, height: 16, maxWidth: '90%' }} />
+          </header>
+
+          <div className="glass-card" style={{ marginBottom: '2rem', padding: '1.5rem' }}>
+            <div className="skeleton" style={{ width: 180, height: 20, marginBottom: '1.25rem' }} />
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
+              <div className="skeleton" style={{ flex: 1, height: 42, borderRadius: 8 }} />
+              <div className="skeleton" style={{ width: 110, height: 42, borderRadius: 8 }} />
+            </div>
+          </div>
+
+          <div className="skeleton" style={{ width: 120, height: 16, marginBottom: '1rem' }} />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <RepositorySkeleton />
+            <RepositorySkeleton />
+            <RepositorySkeleton />
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -160,9 +189,20 @@ export default function RepositoriesPage() {
           </div>
         )}
 
-        <div className="section-label" style={{ marginBottom: '1rem' }}>Connected ({repos.filter((r) => r.isActive).length})</div>
+        <div className="section-label" style={{ marginBottom: '1rem' }}>
+          {loadingRepos ? (
+            <div className="skeleton" style={{ width: 120, height: 16 }} />
+          ) : (
+            `Connected (${repos.filter((r) => r.isActive).length})`
+          )}
+        </div>
 
-        {repos.length === 0 ? (
+        {loadingRepos ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <RepositorySkeleton />
+            <RepositorySkeleton />
+          </div>
+        ) : repos.length === 0 ? (
           <div className="glass-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
             <GitBranch size={20} style={{ marginBottom: '0.75rem' }} />
             <p>No repositories connected yet.</p>
@@ -198,6 +238,13 @@ export default function RepositoriesPage() {
                     </a>
                     {r.isActive && (
                       <>
+                        <a
+                          href="/history"
+                          className="btn-secondary"
+                          title="View Review Findings"
+                        >
+                          <History size={14} /> Findings
+                        </a>
                         <button onClick={() => setTriggerOpen(triggerOpen === r.id ? null : r.id)} className="btn-secondary">
                           <Play size={14} /> Audit
                         </button>
@@ -277,6 +324,35 @@ export default function RepositoriesPage() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function RepositorySkeleton() {
+  return (
+    <div
+      className="glass-card"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '1rem',
+        padding: '1.25rem 1.5rem',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flex: 1, minWidth: 0 }}>
+        <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '4px', flexShrink: 0 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minWidth: 0 }}>
+          <div className="skeleton" style={{ width: '220px', height: '18px', maxWidth: '70%' }} />
+          <div className="skeleton" style={{ width: '160px', height: '12px', maxWidth: '50%' }} />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
+        <div className="skeleton" style={{ width: 34, height: 32, borderRadius: 8 }} />
+        <div className="skeleton" style={{ width: 88, height: 32, borderRadius: 8 }} />
+        <div className="skeleton" style={{ width: 72, height: 32, borderRadius: 8 }} />
+        <div className="skeleton" style={{ width: 34, height: 32, borderRadius: 8 }} />
+      </div>
     </div>
   );
 }

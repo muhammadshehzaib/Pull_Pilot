@@ -91,7 +91,7 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
           </div>
         )}
 
-        {user && (
+        {user ? (
           <div className="user-card">
             {user.avatarUrl && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -112,6 +112,14 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
               <button onClick={handleLogout} className="link-button">
                 <LogOut size={11} /> Sign out
               </button>
+            </div>
+          </div>
+        ) : (
+          <div className="user-card" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="skeleton" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <div className="skeleton" style={{ width: '80%', height: 12 }} />
+              <div className="skeleton" style={{ width: '50%', height: 10 }} />
             </div>
           </div>
         )}
