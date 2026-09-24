@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { History, GitPullRequest, GitCommit, CheckCircle2, XCircle, Loader2, ChevronRight } from 'lucide-react';
+import { History, GitPullRequest, GitCommit, CheckCircle2, XCircle, Loader2, ChevronRight, Copy, Check, Sparkles } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
 import { api } from '../../lib/api';
@@ -81,11 +81,17 @@ export default function HistoryPage() {
     try {
       const res = await api<{ job: JobDetail & { results: any } }>(`/api/jobs/${id}`);
       const raw = res.job.results;
-      const results = Array.isArray(raw)
+      const rawResults = Array.isArray(raw)
         ? (raw as AiSuggestion[])
         : raw && typeof raw === 'object' && Array.isArray(raw.suggestions)
           ? (raw.suggestions as AiSuggestion[])
           : null;
+
+      const priorityOrder: Record<string, number> = { HIGH: 1, MEDIUM: 2, LOW: 3 };
+      const results = rawResults
+        ? [...rawResults].sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4))
+        : null;
+
       setSelected({ ...res.job, results });
     } catch {
       // ignore
@@ -202,10 +208,32 @@ function StatusIcon({ status }: { status: JobStatus }) {
 }
 
 function JobDetailView({ job }: { job: JobDetail }) {
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const sortedSuggestions = (job.results || []).slice().sort((a, b) => {
+    const pOrder: Record<string, number> = { HIGH: 1, MEDIUM: 2, LOW: 3 };
+    return (pOrder[a.priority] || 4) - (pOrder[b.priority] || 4);
+  });
+
+  async function handleCopyAll() {
+    const plan = generateFixPlanForLLM(job, sortedSuggestions);
+    await navigator.clipboard.writeText(plan);
+    setCopiedAll(true);
+    setTimeout(() => setCopiedAll(false), 2500);
+  }
+
+  async function handleCopySingle(item: AiSuggestion, idx: number) {
+    const prompt = generateSingleFindingPrompt(item, job.repository.fullName);
+    await navigator.clipboard.writeText(prompt);
+    setCopiedIndex(idx);
+    setTimeout(() => setCopiedIndex(null), 2500);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div className="glass-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {job.eventType === 'PULL_REQUEST' ? <GitPullRequest size={18} /> : <GitCommit size={18} />}
             <h3 className="card-title">
@@ -213,23 +241,74 @@ function JobDetailView({ job }: { job: JobDetail }) {
               {job.eventType === 'PULL_REQUEST' ? ` · PR #${job.referenceId}` : ` · ${job.referenceId.slice(0, 7)}`}
             </h3>
           </div>
-          <span style={{ color: STATUS_COLORS[job.status], fontWeight: 600, fontSize: '0.85rem' }}>
-            {STATUS_LABELS[job.status]}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {sortedSuggestions.length > 0 && (
+              <button
+                type="button"
+                onClick={handleCopyAll}
+                className="btn-primary"
+                style={{
+                  fontSize: '0.78rem',
+                  padding: '0.35rem 0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  borderRadius: 6,
+                }}
+                title="Copy entire fix plan formatted for an LLM (Claude, ChatGPT, Cursor, etc.)"
+              >
+                {copiedAll ? <Check size={14} /> : <Sparkles size={14} />}
+                <span>{copiedAll ? 'Plan Copied!' : 'Copy Fix Plan for AI'}</span>
+              </button>
+            )}
+            <span style={{ color: STATUS_COLORS[job.status], fontWeight: 600, fontSize: '0.85rem' }}>
+              {STATUS_LABELS[job.status]}
+            </span>
+          </div>
         </div>
-        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          Created {new Date(job.createdAt).toLocaleString()} · {job.findingCount} findings
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            Created {new Date(job.createdAt).toLocaleString()} · {job.findingCount || sortedSuggestions.length} findings
+          </div>
+          {sortedSuggestions.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              {(() => {
+                const highCount = sortedSuggestions.filter((r) => r.priority === 'HIGH').length;
+                const medCount = sortedSuggestions.filter((r) => r.priority === 'MEDIUM').length;
+                const lowCount = sortedSuggestions.filter((r) => r.priority === 'LOW').length;
+                return (
+                  <>
+                    {highCount > 0 && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)' }}>
+                        {highCount} High
+                      </span>
+                    )}
+                    {medCount > 0 && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning)' }}>
+                        {medCount} Medium
+                      </span>
+                    )}
+                    {lowCount > 0 && (
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-secondary)' }}>
+                        {lowCount} Low
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
         </div>
       </div>
 
-      {!job.results || job.results.length === 0 ? (
+      {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
           {job.status === 'COMPLETED' ? 'No issues found' : 'No findings recorded.'}
         </div>
       ) : (
-        job.results.map((s, i) => (
+        sortedSuggestions.map((s, i) => (
           <div key={i} className="glass-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
               <span
                 style={{
                   fontSize: '0.68rem',
@@ -244,9 +323,26 @@ function JobDetailView({ job }: { job: JobDetail }) {
                 {PRIORITY_LABELS[s.priority]}
               </span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{AGENT_LABELS[s.agentType]}</span>
-              <span className="mono" style={{ fontSize: '0.8rem', marginLeft: 'auto' }}>
+              <span className="mono" style={{ fontSize: '0.8rem', marginLeft: 'auto', marginRight: '0.5rem' }}>
                 {s.filePath}:{s.lineNumber}
               </span>
+              <button
+                type="button"
+                onClick={() => handleCopySingle(s, i)}
+                className="btn-secondary"
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '2px 8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  borderRadius: 6,
+                }}
+                title="Copy prompt for this specific issue"
+              >
+                {copiedIndex === i ? <Check size={11} color="var(--success)" /> : <Copy size={11} />}
+                <span>{copiedIndex === i ? 'Copied!' : 'Copy for AI'}</span>
+              </button>
             </div>
             <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{s.issue}</div>
             <pre
@@ -268,6 +364,60 @@ function JobDetailView({ job }: { job: JobDetail }) {
       )}
     </div>
   );
+}
+
+function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): string {
+  const repoName = job.repository.fullName;
+  const refLabel = job.eventType === 'PULL_REQUEST' ? `PR #${job.referenceId}` : `Commit ${job.referenceId}`;
+  const high = suggestions.filter((s) => s.priority === 'HIGH');
+  const medium = suggestions.filter((s) => s.priority === 'MEDIUM');
+  const low = suggestions.filter((s) => s.priority === 'LOW');
+
+  let markdown = `# 🛠️ AI Code Review Fix Plan: ${repoName} (${refLabel})\n\n`;
+  markdown += `You are an expert senior software engineer and architect. An automated code review identified the following ${suggestions.length} issue(s) that need to be fixed.\n\n`;
+  markdown += `## 📊 Audit Summary\n`;
+  markdown += `- **Repository:** \`${repoName}\`\n`;
+  markdown += `- **Target Reference:** \`${refLabel}\`\n`;
+  markdown += `- **Total Issues:** ${suggestions.length} (${high.length} High, ${medium.length} Medium, ${low.length} Low)\n\n`;
+
+  markdown += `## 📋 Actionable Issues & Recommended Fixes (Highest Severity First)\n\n`;
+
+  suggestions.forEach((item, index) => {
+    const icon = item.priority === 'HIGH' ? '🚨' : item.priority === 'MEDIUM' ? '⚠️' : 'ℹ️';
+    markdown += `### ${index + 1}. ${icon} [${item.priority}] ${item.agentType} - \`${item.filePath}:${item.lineNumber}\`\n\n`;
+    markdown += `**Problem:**\n${item.issue}\n\n`;
+    markdown += `**Suggested Code Fix / Implementation:**\n\`\`\`\n${item.suggestion}\n\`\`\`\n\n`;
+    markdown += `---\n\n`;
+  });
+
+  markdown += `## 🎯 Step-by-Step Instructions for You\n`;
+  markdown += `1. **Review each file listed above** and apply the suggested refactor.\n`;
+  markdown += `2. **Address High priority issues first** (architectural inconsistencies, memory leaks, security).\n`;
+  markdown += `3. **Ensure strict TypeScript types** without using \`any\` or fragile type assertions.\n`;
+  markdown += `4. **Maintain full backwards compatibility** for public interfaces.\n`;
+  markdown += `5. Provide the complete code replacements for the modified files.\n`;
+
+  return markdown;
+}
+
+function generateSingleFindingPrompt(item: AiSuggestion, repoName: string): string {
+  return `### Task: Fix [${item.priority}] ${item.agentType} Issue in \`${item.filePath}:${item.lineNumber}\`
+
+**Repository:** \`${repoName}\`
+**Category:** ${item.agentType}
+**Priority:** ${item.priority}
+**File Location:** \`${item.filePath}\` (around line ${item.lineNumber})
+
+**Issue Description:**
+${item.issue}
+
+**Recommended Fix:**
+\`\`\`
+${item.suggestion}
+\`\`\`
+
+**Instructions for LLM:**
+Please inspect \`${item.filePath}\` and provide a clean, complete, production-ready implementation that resolves this issue according to the recommended solution.`;
 }
 
 function HistoryRowSkeleton() {

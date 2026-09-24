@@ -39,20 +39,23 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
 
   return (
     <aside className="sidebar">
-      <div
+      <Link
+        href="/dashboard"
         style={{
           marginBottom: '2rem',
           padding: '0 0.75rem',
           display: 'flex',
           alignItems: 'center',
           gap: '0.65rem',
+          textDecoration: 'none',
+          cursor: 'pointer',
         }}
       >
         <PullPilotLogo size={24} />
         <span style={{ fontWeight: 700, fontSize: '0.95rem', letterSpacing: '-0.02em', color: '#0f172a' }}>
           PullPilot
         </span>
-      </div>
+      </Link>
 
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
         {NAV.map(({ href, label, Icon }) => {

@@ -1,5 +1,10 @@
+import path from 'path';
 import dotenv from 'dotenv';
 import http from 'http';
+
+// Load root project .env and apps/backend/.env
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
 const PORT = process.env.PORT || 4000;

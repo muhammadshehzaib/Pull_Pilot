@@ -46,7 +46,7 @@ export const analysisWorker = new Worker(
       });
 
       if (!dbRepo || !dbRepo.user.vault) {
-        throw new Error('Repository not linked to an active security vault');
+        throw new Error('No AI API key found in your vault. Please go to API Key Vault (/vault) and save your API key first.');
       }
 
       const vault = dbRepo.user.vault;
@@ -99,10 +99,13 @@ export const analysisWorker = new Worker(
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
 
-      // 8. FILTER SUGGESTIONS BY MIN_SEVERITY
-      const suggestions = rawSuggestions.filter((s) =>
-        DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)
-      );
+      // 8. FILTER SUGGESTIONS BY MIN_SEVERITY & SORT FROM HIGH TO LOW
+      const suggestions = rawSuggestions
+        .filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity))
+        .sort((a, b) => {
+          const priorityWeights: Record<string, number> = { HIGH: 1, MEDIUM: 2, LOW: 3 };
+          return (priorityWeights[a.priority] || 4) - (priorityWeights[b.priority] || 4);
+        });
 
       console.log(`🎯 AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
       SocketService.emitStatus(userId, jobId, `🎯 Scan Complete: ${suggestions.length} items flagged`, 'RUNNING');
@@ -165,7 +168,10 @@ export const analysisWorker = new Worker(
       SocketService.emitStatus(userId, jobId, `🚨 Fatal Error Encountered: ${(err as Error).message}`, 'FAILED');
       await prisma.analysisJob.update({
         where: { id: jobId },
-        data: { status: 'FAILED' },
+        data: {
+          status: 'FAILED',
+          results: { error: (err as Error).message } as any,
+        },
       });
       throw err;
     }

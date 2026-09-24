@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=apps/backend",
-    "dev:web": "npm run dev --workspace=apps/web"
+    "dev:web": "npm run dev --workspace=apps/web",
+    "prisma:push": "node ./apps/backend/node_modules/prisma/build/index.js db push --schema ./apps/backend/prisma/schema.prisma",
+    "prisma:generate": "node ./apps/backend/node_modules/prisma/build/index.js generate --schema ./apps/backend/prisma/schema.prisma"
   }
 }
