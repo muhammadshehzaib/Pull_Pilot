@@ -79,20 +79,8 @@ export default function HistoryPage() {
   async function openJob(id: string) {
     setLoadingDetail(true);
     try {
-      const res = await api<{ job: JobDetail & { results: any } }>(`/api/jobs/${id}`);
-      const raw = res.job.results;
-      const rawResults = Array.isArray(raw)
-        ? (raw as AiSuggestion[])
-        : raw && typeof raw === 'object' && Array.isArray(raw.suggestions)
-          ? (raw.suggestions as AiSuggestion[])
-          : null;
-
-      const priorityOrder: Record<string, number> = { HIGH: 1, MEDIUM: 2, LOW: 3 };
-      const results = rawResults
-        ? [...rawResults].sort((a, b) => (priorityOrder[a.priority] || 4) - (priorityOrder[b.priority] || 4))
-        : null;
-
-      setSelected({ ...res.job, results });
+      const res = await api<{ job: JobDetail }>(`/api/jobs/${id}`);
+      setSelected(res.job);
     } catch {
       // ignore
     } finally {
@@ -105,20 +93,20 @@ export default function HistoryPage() {
       <div className="dashboard-grid">
         <Sidebar user={null} />
         <main className="main-content">
-          <header style={{ marginBottom: '2.5rem' }}>
-            <div className="skeleton" style={{ width: 160, height: 36, marginBottom: '0.75rem', borderRadius: 8 }} />
-            <div className="skeleton" style={{ width: 320, height: 16 }} />
+          <header className="page-header-container">
+            <div className="skeleton skeleton-title" style={{ marginBottom: '0.75rem' }} />
+            <div className="skeleton skeleton-subtitle" />
           </header>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '2rem', alignItems: 'start' }}>
+          <div className="history-layout-grid">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <HistoryRowSkeleton />
               <HistoryRowSkeleton />
               <HistoryRowSkeleton />
             </div>
             <div className="glass-card" style={{ height: 260, padding: '1.5rem' }}>
-              <div className="skeleton" style={{ width: '60%', height: 24, marginBottom: '1rem', borderRadius: 6 }} />
-              <div className="skeleton" style={{ width: '40%', height: 16, marginBottom: '1.5rem', borderRadius: 6 }} />
+              <div className="skeleton skeleton-line-lg" style={{ marginBottom: '1rem' }} />
+              <div className="skeleton skeleton-line-md" style={{ marginBottom: '1.5rem' }} />
               <div className="skeleton" style={{ width: '100%', height: 100, borderRadius: 8 }} />
             </div>
           </div>
@@ -131,12 +119,12 @@ export default function HistoryPage() {
     <div className="dashboard-grid">
       <Sidebar user={user} />
       <main className="main-content">
-        <header style={{ marginBottom: '2.5rem' }}>
+        <header className="page-header-container">
           <h1 className="page-title">History</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>The last 50 reviews across your connected repositories.</p>
+          <p className="page-header-subtitle">The last 50 reviews across your connected repositories.</p>
         </header>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: '2rem', alignItems: 'start' }}>
+        <div className="history-layout-grid">
           <div>
             {loadingList ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -231,9 +219,9 @@ function JobDetailView({ job }: { job: JobDetail }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="detail-view-card">
       <div className="glass-card">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div className="detail-header-row">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {job.eventType === 'PULL_REQUEST' ? <GitPullRequest size={18} /> : <GitCommit size={18} />}
             <h3 className="card-title">
@@ -246,17 +234,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
               <button
                 type="button"
                 onClick={handleCopyAll}
-                className="btn-primary"
-                style={{
-                  fontSize: '0.82rem',
-                  padding: '0.45rem 0.95rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  borderRadius: 8,
-                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
-                  cursor: 'pointer',
-                }}
+                className="btn-primary copy-fix-plan-btn"
                 title="Copy entire fix plan formatted for an LLM (Claude, ChatGPT, Cursor, Gemini, etc.)"
               >
                 {copiedAll ? <Check size={15} /> : <Sparkles size={15} />}
@@ -268,33 +246,21 @@ function JobDetailView({ job }: { job: JobDetail }) {
             </span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div className="detail-meta-row">
           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             Created {new Date(job.createdAt).toLocaleString()} · {job.findingCount || sortedSuggestions.length} findings
           </div>
           {sortedSuggestions.length > 0 && (
-            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            <div className="detail-badge-group">
               {(() => {
                 const highCount = sortedSuggestions.filter((r) => r.priority === 'HIGH').length;
                 const medCount = sortedSuggestions.filter((r) => r.priority === 'MEDIUM').length;
                 const lowCount = sortedSuggestions.filter((r) => r.priority === 'LOW').length;
                 return (
                   <>
-                    {highCount > 0 && (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)' }}>
-                        {highCount} High
-                      </span>
-                    )}
-                    {medCount > 0 && (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning)' }}>
-                        {medCount} Medium
-                      </span>
-                    )}
-                    {lowCount > 0 && (
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: 'rgba(148, 163, 184, 0.15)', color: 'var(--text-secondary)' }}>
-                        {lowCount} Low
-                      </span>
-                    )}
+                    {highCount > 0 && <span className="badge-high">{highCount} High</span>}
+                    {medCount > 0 && <span className="badge-medium">{medCount} Medium</span>}
+                    {lowCount > 0 && <span className="badge-low">{lowCount} Low</span>}
                   </>
                 );
               })()}
@@ -310,7 +276,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
       ) : (
         sortedSuggestions.map((s, i) => (
           <div key={i} className="glass-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+            <div className="finding-card-header">
               <span
                 style={{
                   fontSize: '0.68rem',
@@ -333,16 +299,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
               <button
                 type="button"
                 onClick={() => handleCopySingle(s, i)}
-                className="btn-secondary"
-                style={{
-                  fontSize: '0.75rem',
-                  padding: '3px 10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                }}
+                className="btn-secondary copy-single-issue-btn"
                 title="Copy ready-to-paste prompt for this specific issue"
               >
                 {copiedIndex === i ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
@@ -350,18 +307,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
               </button>
             </div>
             <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.95rem' }}>{s.issue}</div>
-            <pre
-              className="mono"
-              style={{
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                padding: '0.75rem',
-                borderRadius: 8,
-                fontSize: '0.8rem',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
+            <pre className="mono finding-code-container">
               {s.suggestion}
             </pre>
           </div>
@@ -443,11 +389,11 @@ You are an expert senior software engineer. Please review the file \`${item.file
 function HistoryRowSkeleton() {
   return (
     <div className="history-row" style={{ pointerEvents: 'none' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
-        <div className="skeleton" style={{ width: 16, height: 16, borderRadius: '50%', flexShrink: 0 }} />
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div className="skeleton" style={{ width: '75%', height: 16, borderRadius: 4 }} />
-          <div className="skeleton" style={{ width: '50%', height: 12, borderRadius: 4 }} />
+      <div className="skeleton-row-container">
+        <div className="skeleton skeleton-icon-sm" />
+        <div className="skeleton-col-group">
+          <div className="skeleton skeleton-line-lg" />
+          <div className="skeleton skeleton-line-md" />
         </div>
       </div>
     </div>

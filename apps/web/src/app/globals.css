@@ -1132,3 +1132,211 @@ button {
   display: inline-block;
 }
 
+/* Modular Skeleton Dimension Utilities */
+.skeleton-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeleton-icon-sm {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skeleton-title {
+  width: 160px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.skeleton-subtitle {
+  width: 320px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.skeleton-line-lg {
+  width: 75%;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.skeleton-line-md {
+  width: 50%;
+  height: 12px;
+  border-radius: 4px;
+}
+
+.skeleton-line-sm {
+  width: 35%;
+  height: 10px;
+  border-radius: 4px;
+}
+
+.skeleton-badge {
+  width: 60px;
+  height: 20px;
+  border-radius: 12px;
+}
+
+/* Skeleton Layout Structures */
+.skeleton-row-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.skeleton-col-group {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skeleton-card-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.sidebar-skeleton-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-skeleton-text-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Layout Utilities to Replace Repetitive Inline Styles */
+.page-header-container {
+  margin-bottom: 2.5rem;
+}
+
+.page-header-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+}
+
+.history-layout-grid {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .history-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.detail-view-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.detail-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.detail-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.detail-badge-group {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.finding-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.finding-code-container {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.badge-high {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger);
+}
+
+.badge-medium {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--warning);
+}
+
+.badge-low {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-secondary);
+}
+
+.copy-fix-plan-btn {
+  font-size: 0.82rem;
+  padding: 0.45rem 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25);
+  cursor: pointer;
+}
+
+.copy-single-issue-btn {
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+

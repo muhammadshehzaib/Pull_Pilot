@@ -76,16 +76,7 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
 
       <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
         {typeof isConnected === 'boolean' && (
-          <div
-            style={{
-              padding: '0.5rem 0.75rem',
-              fontSize: '0.8rem',
-              color: 'var(--text-secondary)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
+          <div className="status-badge" style={{ gap: '8px' }}>
             <div
               className="status-dot"
               style={{ background: isConnected ? 'var(--success)' : 'var(--danger)' }}
@@ -118,11 +109,11 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
             </div>
           </div>
         ) : (
-          <div className="user-card" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="skeleton" style={{ width: 28, height: 28, borderRadius: '50%' }} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div className="skeleton" style={{ width: '80%', height: 12 }} />
-              <div className="skeleton" style={{ width: '50%', height: 10 }} />
+          <div className="user-card sidebar-skeleton-user">
+            <div className="skeleton skeleton-avatar" />
+            <div className="sidebar-skeleton-text-group">
+              <div className="skeleton skeleton-line-lg" />
+              <div className="skeleton skeleton-line-md" />
             </div>
           </div>
         )}

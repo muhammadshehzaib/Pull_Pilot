@@ -1,10 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { GitBranch, Plus, Trash2, Play, ExternalLink, History } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
 import { api } from '../../lib/api';
+
+export const ROUTES = {
+  HISTORY: '/history',
+  REPOSITORIES: '/repositories',
+  DASHBOARD: '/dashboard',
+  VAULT: '/vault',
+} as const;
 
 interface Repository {
   id: string;
@@ -238,13 +246,13 @@ export default function RepositoriesPage() {
                     </a>
                     {r.isActive && (
                       <>
-                        <a
-                          href="/history"
+                        <Link
+                          href={ROUTES.HISTORY}
                           className="btn-secondary"
                           title="View Review Findings"
                         >
                           <History size={14} /> Findings
-                        </a>
+                        </Link>
                         <button onClick={() => setTriggerOpen(triggerOpen === r.id ? null : r.id)} className="btn-secondary">
                           <Play size={14} /> Audit
                         </button>
@@ -330,21 +338,12 @@ export default function RepositoriesPage() {
 
 function RepositorySkeleton() {
   return (
-    <div
-      className="glass-card"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '1rem',
-        padding: '1.25rem 1.5rem',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flex: 1, minWidth: 0 }}>
-        <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '4px', flexShrink: 0 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minWidth: 0 }}>
-          <div className="skeleton" style={{ width: '220px', height: '18px', maxWidth: '70%' }} />
-          <div className="skeleton" style={{ width: '160px', height: '12px', maxWidth: '50%' }} />
+    <div className="glass-card skeleton-card-container" style={{ padding: '1.25rem 1.5rem' }}>
+      <div className="skeleton-row-container" style={{ flex: 1 }}>
+        <div className="skeleton skeleton-icon-sm" />
+        <div className="skeleton-col-group">
+          <div className="skeleton skeleton-line-lg" />
+          <div className="skeleton skeleton-line-md" />
         </div>
       </div>
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexShrink: 0 }}>
