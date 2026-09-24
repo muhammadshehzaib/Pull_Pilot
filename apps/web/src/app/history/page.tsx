@@ -248,17 +248,19 @@ function JobDetailView({ job }: { job: JobDetail }) {
                 onClick={handleCopyAll}
                 className="btn-primary"
                 style={{
-                  fontSize: '0.78rem',
-                  padding: '0.35rem 0.85rem',
+                  fontSize: '0.82rem',
+                  padding: '0.45rem 0.95rem',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  borderRadius: 6,
+                  borderRadius: 8,
+                  boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
+                  cursor: 'pointer',
                 }}
-                title="Copy entire fix plan formatted for an LLM (Claude, ChatGPT, Cursor, etc.)"
+                title="Copy entire fix plan formatted for an LLM (Claude, ChatGPT, Cursor, Gemini, etc.)"
               >
-                {copiedAll ? <Check size={14} /> : <Sparkles size={14} />}
-                <span>{copiedAll ? 'Plan Copied!' : 'Copy Fix Plan for AI'}</span>
+                {copiedAll ? <Check size={15} /> : <Sparkles size={15} />}
+                <span>{copiedAll ? 'Fix Plan Copied to Clipboard!' : 'Copy Fix Plan for AI'}</span>
               </button>
             )}
             <span style={{ color: STATUS_COLORS[job.status], fontWeight: 600, fontSize: '0.85rem' }}>
@@ -313,7 +315,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
                 style={{
                   fontSize: '0.68rem',
                   fontWeight: 600,
-                  padding: '1px 7px',
+                  padding: '2px 8px',
                   borderRadius: 6,
                   background: 'transparent',
                   border: `1px solid ${PRIORITY_COLORS[s.priority]}`,
@@ -322,8 +324,10 @@ function JobDetailView({ job }: { job: JobDetail }) {
               >
                 {PRIORITY_LABELS[s.priority]}
               </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{AGENT_LABELS[s.agentType]}</span>
-              <span className="mono" style={{ fontSize: '0.8rem', marginLeft: 'auto', marginRight: '0.5rem' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                {AGENT_LABELS[s.agentType]}
+              </span>
+              <span className="mono" style={{ fontSize: '0.8rem', marginLeft: 'auto', marginRight: '0.5rem', color: 'var(--text-secondary)' }}>
                 {s.filePath}:{s.lineNumber}
               </span>
               <button
@@ -331,20 +335,21 @@ function JobDetailView({ job }: { job: JobDetail }) {
                 onClick={() => handleCopySingle(s, i)}
                 className="btn-secondary"
                 style={{
-                  fontSize: '0.72rem',
-                  padding: '2px 8px',
+                  fontSize: '0.75rem',
+                  padding: '3px 10px',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px',
+                  gap: '5px',
                   borderRadius: 6,
+                  cursor: 'pointer',
                 }}
-                title="Copy prompt for this specific issue"
+                title="Copy ready-to-paste prompt for this specific issue"
               >
-                {copiedIndex === i ? <Check size={11} color="var(--success)" /> : <Copy size={11} />}
-                <span>{copiedIndex === i ? 'Copied!' : 'Copy for AI'}</span>
+                {copiedIndex === i ? <Check size={12} color="var(--success)" /> : <Copy size={12} />}
+                <span>{copiedIndex === i ? 'Copied Prompt!' : 'Copy for AI'}</span>
               </button>
             </div>
-            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{s.issue}</div>
+            <div style={{ fontWeight: 600, marginBottom: '0.5rem', fontSize: '0.95rem' }}>{s.issue}</div>
             <pre
               className="mono"
               style={{
@@ -373,51 +378,66 @@ function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): str
   const medium = suggestions.filter((s) => s.priority === 'MEDIUM');
   const low = suggestions.filter((s) => s.priority === 'LOW');
 
-  let markdown = `# 🛠️ AI Code Review Fix Plan: ${repoName} (${refLabel})\n\n`;
-  markdown += `You are an expert senior software engineer and architect. An automated code review identified the following ${suggestions.length} issue(s) that need to be fixed.\n\n`;
-  markdown += `## 📊 Audit Summary\n`;
-  markdown += `- **Repository:** \`${repoName}\`\n`;
-  markdown += `- **Target Reference:** \`${refLabel}\`\n`;
-  markdown += `- **Total Issues:** ${suggestions.length} (${high.length} High, ${medium.length} Medium, ${low.length} Low)\n\n`;
+  let markdown = `# 🛠️ Comprehensive Code Fix Plan: ${repoName}\n`;
+  markdown += `**Target:** ${refLabel} | **Total Findings:** ${suggestions.length} (${high.length} High, ${medium.length} Medium, ${low.length} Low)\n\n`;
+  markdown += `You are an expert Principal Software Engineer and Architect. An automated code review identified ${suggestions.length} issue(s) in this repository. Follow the strategic plan below to solve each issue with production-ready, strictly typed code.\n\n`;
 
-  markdown += `## 📋 Actionable Issues & Recommended Fixes (Highest Severity First)\n\n`;
+  markdown += `## 🧭 Execution Strategy\n`;
+  markdown += `1. **Phase 1 (Critical):** Resolve all High-severity architectural, security, and runtime failure risks first.\n`;
+  markdown += `2. **Phase 2 (Robustness):** Address Medium-severity bugs, performance bottlenecks, and concurrency issues.\n`;
+  markdown += `3. **Phase 3 (Refinement):** Fix Low-severity code smells, strict type definitions, and naming consistency.\n`;
+  markdown += `4. **Zero \`any\` Policy:** Avoid \`as any\` casts; implement discriminated unions and proper runtime type guards.\n`;
+  markdown += `5. **Backwards Compatibility:** Maintain existing public interfaces, APIs, and ensure no regressions.\n\n`;
+
+  markdown += `## 📋 Actionable Findings (Ordered High to Low Severity)\n\n`;
 
   suggestions.forEach((item, index) => {
     const icon = item.priority === 'HIGH' ? '🚨' : item.priority === 'MEDIUM' ? '⚠️' : 'ℹ️';
-    markdown += `### ${index + 1}. ${icon} [${item.priority}] ${item.agentType} - \`${item.filePath}:${item.lineNumber}\`\n\n`;
-    markdown += `**Problem:**\n${item.issue}\n\n`;
-    markdown += `**Suggested Code Fix / Implementation:**\n\`\`\`\n${item.suggestion}\n\`\`\`\n\n`;
+    markdown += `### ${index + 1}. ${icon} [${item.priority}] ${item.agentType} Flaw\n`;
+    markdown += `- **Location:** \`${item.filePath}:${item.lineNumber}\`\n`;
+    markdown += `- **Category:** ${item.agentType}\n`;
+    markdown += `- **Priority:** ${item.priority}\n\n`;
+    markdown += `**Problem Statement:**\n${item.issue}\n\n`;
+    markdown += `**Prescribed Fix / Implementation Guidance:**\n\`\`\`\n${item.suggestion}\n\`\`\`\n\n`;
     markdown += `---\n\n`;
   });
 
-  markdown += `## 🎯 Step-by-Step Instructions for You\n`;
-  markdown += `1. **Review each file listed above** and apply the suggested refactor.\n`;
-  markdown += `2. **Address High priority issues first** (architectural inconsistencies, memory leaks, security).\n`;
-  markdown += `3. **Ensure strict TypeScript types** without using \`any\` or fragile type assertions.\n`;
-  markdown += `4. **Maintain full backwards compatibility** for public interfaces.\n`;
-  markdown += `5. Provide the complete code replacements for the modified files.\n`;
+  markdown += `## 🎯 Deliverables Requested from You\n`;
+  markdown += `For each impacted file:\n`;
+  markdown += `1. Provide the exact file path and a concise explanation of the root cause.\n`;
+  markdown += `2. Provide the complete, clean replacement code or precise git diff.\n`;
+  markdown += `3. Verify that all exported functions, types, and dependencies match the project standards.\n`;
 
   return markdown;
 }
 
 function generateSingleFindingPrompt(item: AiSuggestion, repoName: string): string {
-  return `### Task: Fix [${item.priority}] ${item.agentType} Issue in \`${item.filePath}:${item.lineNumber}\`
+  const icon = item.priority === 'HIGH' ? '🚨' : item.priority === 'MEDIUM' ? '⚠️' : 'ℹ️';
+  return `### Task: Fix ${icon} [${item.priority}] ${item.agentType} in \`${item.filePath}:${item.lineNumber}\`
 
-**Repository:** \`${repoName}\`
-**Category:** ${item.agentType}
-**Priority:** ${item.priority}
-**File Location:** \`${item.filePath}\` (around line ${item.lineNumber})
+**Context:**
+- **Repository:** \`${repoName}\`
+- **File:** \`${item.filePath}\` (around line ${item.lineNumber})
+- **Category:** ${item.agentType}
+- **Severity:** ${item.priority}
 
-**Issue Description:**
+---
+
+### Issue Description:
 ${item.issue}
 
-**Recommended Fix:**
+### Prescribed Fix:
 \`\`\`
 ${item.suggestion}
 \`\`\`
 
-**Instructions for LLM:**
-Please inspect \`${item.filePath}\` and provide a clean, complete, production-ready implementation that resolves this issue according to the recommended solution.`;
+---
+
+### Instructions for LLM:
+You are an expert senior software engineer. Please review the file \`${item.filePath}\` and implement a clean, robust, production-ready solution for the issue described above.
+- Eliminate unsafe type assertions (\`as any\`) and ensure strict TypeScript typing.
+- Preserve all existing functionality, error handling, and public contracts.
+- Return the full updated file or the exact replacement code block so it can be directly applied.`;
 }
 
 function HistoryRowSkeleton() {
