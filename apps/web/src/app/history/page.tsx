@@ -68,19 +68,62 @@ export default function HistoryPage() {
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  const fetchJobs = async () => {
+    try {
+      const res = await api<{ jobs: JobSummary[] }>('/api/jobs?limit=50');
+      setJobs(res.jobs);
+      return res.jobs;
+    } catch {
+      return [];
+    } finally {
+      setLoadingList(false);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
-    api<{ jobs: JobSummary[] }>('/api/jobs?limit=50')
-      .then((res) => setJobs(res.jobs))
-      .catch(() => {})
-      .finally(() => setLoadingList(false));
+    fetchJobs().then((loadedJobs) => {
+      if (loadedJobs && loadedJobs.length > 0 && !selected) {
+        openJob(loadedJobs[0].id);
+      }
+    });
   }, [user]);
+
+  // If any job is currently RUNNING or QUEUED, auto-poll every 3 seconds to keep UI synced
+  useEffect(() => {
+    const hasActiveJob = jobs.some((j) => j.status === 'RUNNING' || j.status === 'QUEUED');
+    if (!hasActiveJob) return;
+
+    const interval = setInterval(async () => {
+      const updatedJobs = await fetchJobs();
+      if (selected) {
+        const stillSelected = updatedJobs.find((j) => j.id === selected.id);
+        if (stillSelected && stillSelected.status !== selected.status) {
+          openJob(selected.id);
+        }
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [jobs, selected]);
 
   async function openJob(id: string) {
     setLoadingDetail(true);
     try {
       const res = await api<{ job: JobDetail }>(`/api/jobs/${id}`);
       setSelected(res.job);
+      const findingsCount = Array.isArray(res.job.results) ? res.job.results.length : 0;
+      setJobs((prev) =>
+        prev.map((j) =>
+          j.id === res.job.id
+            ? {
+                ...j,
+                status: res.job.status,
+                findingCount: findingsCount,
+              }
+            : j
+        )
+      );
     } catch {
       // ignore
     } finally {
