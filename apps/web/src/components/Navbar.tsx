@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Cpu, ChevronRight, Menu, X, GitBranch, ArrowUpRight } from 'lucide-react';
-import { BACKEND_URL } from '../lib/api';
+import { BACKEND_URL, GITHUB_APP_INSTALL_URL } from '../lib/api';
 
 import { PullPilotLogo } from './PullPilotLogo';
 
@@ -109,7 +109,9 @@ export function Navbar({ user }: NavbarProps) {
                   Sign In
                 </a>
                 <a
-                  href={`${BACKEND_URL}/api/auth/github`}
+                  href={GITHUB_APP_INSTALL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="btn-primary-pill btn-shimmer"
                   style={{
                     fontSize: '0.85rem',
@@ -224,7 +226,9 @@ export function Navbar({ user }: NavbarProps) {
             </a>
             <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '0.5rem 0' }} />
             <a
-              href={`${BACKEND_URL}/api/auth/github`}
+              href={GITHUB_APP_INSTALL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn-primary-pill"
               style={{ width: '100%', justifyContent: 'center' }}
             >

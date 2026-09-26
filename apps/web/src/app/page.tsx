@@ -16,7 +16,7 @@ import {
   Eye,
   Lock,
 } from 'lucide-react';
-import { BACKEND_URL } from '../lib/api';
+import { BACKEND_URL, GITHUB_APP_INSTALL_URL } from '../lib/api';
 import { useAuth } from '../lib/useAuth';
 import { Navbar } from '../components/Navbar';
 import { MarqueeShowcase } from '../components/MarqueeShowcase';
@@ -160,7 +160,9 @@ export default function HomePage() {
             }}
           >
             <a
-              href={`${BACKEND_URL}/api/auth/github`}
+              href={GITHUB_APP_INSTALL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn-primary-pill btn-shimmer"
               style={{
                 fontSize: '1.05rem',
@@ -446,7 +448,9 @@ export default function HomePage() {
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
             <a
-              href={`${BACKEND_URL}/api/auth/github`}
+              href={GITHUB_APP_INSTALL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn-secondary-pill"
               style={{
                 fontSize: '1.05rem',
