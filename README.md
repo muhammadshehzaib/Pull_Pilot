@@ -37,6 +37,7 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 - **Per-user repo management** — connect/disconnect repos; we manage the webhook lifecycle for you
 - **Manual review trigger** — fire off a review for any PR on demand from the dashboard
 - **Live dashboard** — Socket.IO streams every step (`fetching diff → AI dispatching → posting comments`) in real time
+- **GitHub App Integration (Pull Pilot)** — 1-click installation across individual repositories or entire organizations with automated PR & push webhooks
 - **Background processing** — BullMQ + Redis with retries, exponential backoff, and bounded concurrency
 
 ---
