@@ -28,6 +28,9 @@ tsconfig.tsbuildinfo
 .env.test.local
 .env.production.local
 *.env
+*.pem
+*.key
+*.cert
 
 # IDEs / Editors
 .idea/

@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import axios from 'axios';
 import { Octokit } from '@octokit/rest';
 import fs from 'fs';
+import path from 'path';
 import { GitHubService } from './github.service';
 
 interface CachedToken {
@@ -35,9 +36,20 @@ export class GitHubAppService {
 
     if (process.env.GITHUB_APP_PRIVATE_KEY_PATH) {
       try {
-        if (fs.existsSync(process.env.GITHUB_APP_PRIVATE_KEY_PATH)) {
-          return fs.readFileSync(process.env.GITHUB_APP_PRIVATE_KEY_PATH, 'utf-8');
+        const rawPath = process.env.GITHUB_APP_PRIVATE_KEY_PATH.trim();
+        const candidatePaths = [
+          rawPath,
+          path.resolve(process.cwd(), rawPath),
+          path.resolve(process.cwd(), 'apps/backend', rawPath),
+          path.resolve(__dirname, '..', '..', rawPath),
+        ];
+
+        for (const p of candidatePaths) {
+          if (fs.existsSync(p)) {
+            return fs.readFileSync(p, 'utf-8');
+          }
         }
+        console.error(`Private key file not found at any resolved location for: ${rawPath}`);
       } catch (err) {
         console.error('Failed to read private key from path:', err);
       }
