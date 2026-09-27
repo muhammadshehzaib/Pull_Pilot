@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import jwt from 'jsonwebtoken';
 import { AuthService } from './auth.service';
 
 // JWT_SECRET is injected via vitest.config.ts env block.
+
+const ORIGINAL_JWT_SECRET = process.env.JWT_SECRET;
+
+afterEach(() => {
+  process.env.JWT_SECRET = ORIGINAL_JWT_SECRET;
+});
 
 describe('AuthService', () => {
   const validPayload = { userId: 'user-123', githubId: 'gh-456' };
@@ -135,6 +141,43 @@ describe('AuthService', () => {
 
     it('throws when given undefined (defensive)', () => {
       expect(() => AuthService.verifyToken(undefined as unknown as string)).toThrow();
+    });
+  });
+
+  describe('signing key validation', () => {
+    it('refuses to sign when JWT_SECRET is unset', () => {
+      delete process.env.JWT_SECRET;
+      expect(() => AuthService.issueToken(validPayload)).toThrow(
+        /JWT_SECRET is not set/,
+      );
+    });
+
+    it('refuses to verify when JWT_SECRET is unset', () => {
+      const token = AuthService.issueToken(validPayload);
+      delete process.env.JWT_SECRET;
+      expect(() => AuthService.verifyToken(token)).toThrow(
+        /JWT_SECRET is not set/,
+      );
+    });
+
+    it('refuses to sign when JWT_SECRET is an empty string', () => {
+      process.env.JWT_SECRET = '';
+      expect(() => AuthService.issueToken(validPayload)).toThrow(
+        /JWT_SECRET is not set/,
+      );
+    });
+
+    it('accepts any non-empty secret the operator provides', () => {
+      process.env.JWT_SECRET = 'short';
+      expect(() => AuthService.issueToken(validPayload)).not.toThrow();
+    });
+
+    it('rejects a token whose algorithm is not HS256', () => {
+      process.env.JWT_SECRET = 'unit-test-secret-DO-NOT-USE-IN-PROD';
+      const foreign = jwt.sign(validPayload, 'some-other-attacker-secret', {
+        algorithm: 'HS256',
+      });
+      expect(() => AuthService.verifyToken(foreign)).toThrow();
     });
   });
 });

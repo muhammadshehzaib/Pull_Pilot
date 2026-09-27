@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockAxiosPost, mockAxiosGet, mockUserUpsert, mockUserFind } = vi.hoisted(() => ({
-  mockAxiosPost: vi.fn(),
-  mockAxiosGet: vi.fn(),
-  mockUserUpsert: vi.fn(),
-  mockUserFind: vi.fn(),
-}));
+const { mockAxiosPost, mockAxiosGet, mockUserUpsert, mockUserFind, mockUserCreate } =
+  vi.hoisted(() => ({
+    mockAxiosPost: vi.fn(),
+    mockAxiosGet: vi.fn(),
+    mockUserUpsert: vi.fn(),
+    mockUserFind: vi.fn(),
+    mockUserCreate: vi.fn(),
+  }));
 
 vi.mock('axios', () => ({
   default: { post: mockAxiosPost, get: mockAxiosGet },
@@ -13,12 +15,18 @@ vi.mock('axios', () => ({
 
 vi.mock('../config/prisma', () => ({
   default: {
-    user: { upsert: mockUserUpsert, findUnique: mockUserFind },
+    user: {
+      upsert: mockUserUpsert,
+      findUnique: mockUserFind,
+      create: mockUserCreate,
+    },
   },
 }));
 
 import { AuthController } from './auth.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
+
+const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -26,10 +34,12 @@ beforeEach(() => {
   process.env.GITHUB_CLIENT_SECRET = 'test-client-secret';
   process.env.BACKEND_URL = 'http://backend.test';
   process.env.FRONTEND_URL = 'http://frontend.test';
+  delete process.env.NODE_ENV;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  process.env.NODE_ENV = ORIGINAL_NODE_ENV;
 });
 
 describe('AuthController.startGitHubLogin', () => {
@@ -54,6 +64,18 @@ describe('AuthController.startGitHubLogin', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'GITHUB_CLIENT_ID not configured' });
+  });
+
+  it('never bypasses OAuth via ?dev=true', async () => {
+    const req = mockReq({ query: { dev: 'true' } });
+    const res = mockRes();
+
+    await AuthController.startGitHubLogin(req, res);
+
+    expect(mockUserFind).not.toHaveBeenCalled();
+    expect(mockUserCreate).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect.mock.calls[0][0]).toContain('github.com/login/oauth/authorize');
   });
 });
 

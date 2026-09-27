@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-only-jwt-secret-change-me-in-prod';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
+const ALLOWED_ALGORITHMS: jwt.Algorithm[] = ['HS256'];
 
 export interface AuthTokenPayload {
   userId: string;
@@ -9,11 +8,30 @@ export interface AuthTokenPayload {
 }
 
 export class AuthService {
+  private static getSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) {
+      throw new Error(
+        'JWT_SECRET is not set. Refusing to sign or verify tokens without an explicit key.',
+      );
+    }
+    return secret;
+  }
+
+  private static getExpiresIn(): string {
+    return process.env.JWT_EXPIRES_IN || '7d';
+  }
+
   static issueToken(payload: AuthTokenPayload): string {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions);
+    return jwt.sign(payload, this.getSecret(), {
+      expiresIn: this.getExpiresIn(),
+      algorithm: 'HS256',
+    } as jwt.SignOptions);
   }
 
   static verifyToken(token: string): AuthTokenPayload {
-    return jwt.verify(token, JWT_SECRET) as AuthTokenPayload;
+    return jwt.verify(token, this.getSecret(), {
+      algorithms: ALLOWED_ALGORITHMS,
+    }) as AuthTokenPayload;
   }
 }

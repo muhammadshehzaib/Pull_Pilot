@@ -16,34 +16,6 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
 export class AuthController {
   static async startGitHubLogin(req: Request, res: Response) {
     const clientId = process.env.GITHUB_CLIENT_ID;
-    const isDevAuth = process.env.NODE_ENV === 'development' && (process.env.DEV_AUTH === 'true' || req.query.dev === 'true' || !clientId);
-
-    if (isDevAuth) {
-      let user = await prisma.user.findFirst();
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            githubId: 'dev-local-user',
-            username: 'muhammadshehzaib',
-            email: 'dev@local.test',
-            avatarUrl: 'https://github.com/muhammadshehzaib.png',
-          },
-        });
-      }
-      const token = AuthService.issueToken({
-        userId: user.id,
-        githubId: user.githubId,
-      });
-
-      res.cookie(COOKIE_NAME, token, {
-        httpOnly: true,
-        secure: false,
-        sameSite: 'lax',
-        maxAge: COOKIE_MAX_AGE_MS,
-      });
-
-      return res.redirect(`${FRONTEND_URL}/dashboard`);
-    }
 
     if (!clientId) {
       return res.status(500).json({ error: 'GITHUB_CLIENT_ID not configured' });
