@@ -72,3 +72,5 @@ services:
 
 volumes:
   aipr_pgdata:
+    name: aipr_aipr_pgdata
+    external: true
