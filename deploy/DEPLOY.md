@@ -12,7 +12,9 @@ Topology (same pattern as the other apps on this VPS): Docker containers bound t
 2. **GitHub OAuth App** for production (an OAuth app has ONE callback URL, so keep
    the local one separate). Create at github.com/settings/developers with callback:
    `https://reviewerapi.shehzaib.com/api/auth/github/callback`
-3. If ports 8090/8091 are taken on the VPS (`ss -tlnp | grep -E '8090|8091'`),
+3. **GitHub App** (optional but recommended). Without it every review runs as the
+   bot PAT, so third-party repos fail with 404. See step 1b.
+4. If ports 8090/8091 are taken on the VPS (`ss -tlnp | grep -E '8090|8091'`),
    change them in `docker-compose.prod.yml` AND the two nginx confs.
 
 ## 1. Clone and configure
@@ -23,9 +25,36 @@ git clone https://github.com/muhammadshehzaib/ai-pr-reviewer.git /opt/ai-pr-revi
 cd /opt/ai-pr-reviewer
 cp .env.prod.example .env.prod
 # fill in: POSTGRES_PASSWORD + ENCRYPTION_KEY + JWT_SECRET (openssl rand -hex 32 each),
-# prod OAuth app client id/secret, bot PAT, random GITHUB_WEBHOOK_SECRET
+# prod OAuth app client id/secret, GITHUB_APP_ID, bot PAT, random GITHUB_WEBHOOK_SECRET
 nano .env.prod
 ```
+
+## 1b. GitHub App private key
+
+The backend runs inside a container and cannot see files on the VPS host, so the
+key is mounted in explicitly. `secrets/` is gitignored, so `git pull` leaves it alone.
+
+```bash
+mkdir -p secrets && chmod 700 secrets
+# scp the .pem from your machine, or paste its contents:
+nano secrets/github-app.pem      # then Ctrl-D
+chmod 600 secrets/github-app.pem
+```
+
+`docker-compose.prod.yml` maps it to `/run/secrets/github-app.pem` read-only, and
+`GITHUB_APP_PRIVATE_KEY_PATH` is already set to that path in the compose file, so
+there is nothing to add to `.env.prod` for the key itself — only `GITHUB_APP_ID`.
+
+Verify the mount landed:
+
+```bash
+docker exec aipr-backend ls -l /run/secrets/
+```
+
+On boot the backend logs which mode is active. This is the line to check:
+
+- `🔐 GitHub auth: App mode (App ID ...)` — correct, multi-tenant
+- `⚠️  GitHub auth: PAT fallback` — the key is missing or unreadable; check step 1b
 
 ## 2. Build and start
 
@@ -70,3 +99,5 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
   fails closed if GITHUB_WEBHOOK_SECRET is unset.
 - Losing ENCRYPTION_KEY makes saved vault keys unrecoverable (users re-save).
 - Postgres data persists in the `aipr_pgdata` volume; it is never exposed publicly.
+- `secrets/github-app.pem` lives only on the VPS. Back it up separately — if it is
+  lost, generate a new key in the App settings and repeat step 1b.

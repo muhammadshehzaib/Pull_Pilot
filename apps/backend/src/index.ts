@@ -32,12 +32,16 @@ async function startServer() {
     // 2. Initialize Socket.IO layer
     SocketService.init(server);
 
-    // 3. Fire up listening socket
+    // 3. Report which GitHub auth path is live (App vs PAT fallback)
+    const { GitHubAppService } = await import('./services/github-app.service');
+    GitHubAppService.logAuthMode();
+
+    // 4. Fire up listening socket
     server.listen(PORT, () => {
       console.log(`🚀 Server launched at http://localhost:${PORT}`);
     });
 
-    // 4. Poll webhook-less repos for new commits/PRs (local-dev webhook substitute)
+    // 5. Poll webhook-less repos for new commits/PRs (local-dev webhook substitute)
     startRepoPoller();
   } catch (err) {
     console.error('❌ Failed to start server:', err);

@@ -157,6 +157,28 @@ export class GitHubAppService {
   }
 
   /**
+   * Logs which authentication path is live so a missing App key is never silent.
+   */
+  public static logAuthMode(): void {
+    const appId = process.env.GITHUB_APP_ID;
+    const hasKey = Boolean(this.getPrivateKey());
+
+    if (appId && hasKey) {
+      console.log(`🔐 GitHub auth: App mode (App ID ${appId}) — multi-tenant enabled.`);
+    } else if (process.env.GITHUB_ACCESS_TOKEN) {
+      const missing = [
+        !appId && 'GITHUB_APP_ID',
+        !hasKey && 'GITHUB_APP_PRIVATE_KEY_PATH',
+      ].filter(Boolean).join(' + ');
+      console.warn(
+        `⚠️  GitHub auth: PAT fallback — the GitHub App is NOT active (missing ${missing}).`,
+      );
+    } else {
+      console.error('❌ GitHub auth: no App credentials and no GITHUB_ACCESS_TOKEN.');
+    }
+  }
+
+  /**
    * Clears the token cache (useful for testing or forced revocation).
    */
   public static clearCache(): void {
