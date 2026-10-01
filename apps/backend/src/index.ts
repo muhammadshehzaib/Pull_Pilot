@@ -20,6 +20,7 @@ async function startServer() {
     // Pre-initialize our background tasks immediately on boot, after env is loaded.
     await import('./workers/analysis.worker');
     const { startRepoPoller } = await import('./workers/repo-poller');
+    const { startJobRetentionSweep } = await import('./workers/job-retention');
 
     // Wrap Express with HTTP Server required for WebSockets
     const server = http.createServer(app);
@@ -43,6 +44,9 @@ async function startServer() {
 
     // 5. Poll webhook-less repos for new commits/PRs (local-dev webhook substitute)
     startRepoPoller();
+
+    // 6. Drop aged-out failed jobs from Redis and the database
+    startJobRetentionSweep();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);

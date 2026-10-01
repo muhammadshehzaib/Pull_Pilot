@@ -21,6 +21,15 @@ services:
   redis:
     image: redis:7-alpine
     container_name: aipr-redis
+    # Without a volume the queue lives only in the container's writable layer, so a
+    # recreate during deploy wipes every pending job while the Postgres row stays
+    # QUEUED forever (nothing reaps it). /data is Redis's data dir.
+    volumes:
+      - aipr_redisdata:/data
+    # appendonly writes every queue change to disk immediately, so a crash or power
+    # cut cannot lose in-flight jobs. noeviction stops Redis from silently evicting
+    # job keys under memory pressure.
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
     restart: unless-stopped
 
   backend:
@@ -81,3 +90,8 @@ volumes:
   aipr_pgdata:
     name: aipr_aipr_pgdata
     external: true
+  # Named explicitly so the queue data is stable no matter which directory the
+  # repo is checked out in. Unlike aipr_pgdata this is not external — Docker
+  # creates it on first `up`, so there is no manual step to miss.
+  aipr_redisdata:
+    name: aipr_redisdata

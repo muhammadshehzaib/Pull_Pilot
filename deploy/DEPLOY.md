@@ -65,6 +65,13 @@ curl -s http://127.0.0.1:8090/health   # {"status":"UP",...}
 curl -sI http://127.0.0.1:8091 | head -1
 ```
 
+Confirm both stores are persistent:
+
+```bash
+docker volume ls | grep aipr        # aipr_aipr_pgdata and aipr_redisdata
+docker exec aipr-redis redis-cli config get appendonly   # expect: appendonly yes
+```
+
 ## 3. Nginx + TLS
 
 ```bash
@@ -99,5 +106,12 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
   fails closed if GITHUB_WEBHOOK_SECRET is unset.
 - Losing ENCRYPTION_KEY makes saved vault keys unrecoverable (users re-save).
 - Postgres data persists in the `aipr_pgdata` volume; it is never exposed publicly.
+- The BullMQ queue persists in `aipr_redisdata` with `appendonly yes`. If a job is
+  ever lost, the matching Postgres row stays QUEUED with no reaper to retry it —
+  re-trigger the review from the UI rather than restarting the backend.
+- Failed jobs are retained for `JOB_RETENTION_DAYS` (default 7) in both Redis and
+  Postgres, then removed by the sweep that runs every `JOB_SWEEP_INTERVAL_MS`.
+  Completed jobs are never swept — they are the review history. Raising
+  `JOB_RETENTION_DAYS` keeps failure diagnostics for longer at the cost of disk.
 - `secrets/github-app.pem` lives only on the VPS. Back it up separately — if it is
   lost, generate a new key in the App settings and repeat step 1b.
