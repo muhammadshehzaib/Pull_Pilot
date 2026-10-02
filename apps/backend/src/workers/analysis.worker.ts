@@ -1,4 +1,4 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, UnrecoverableError } from 'bullmq';
 import { redisConnection } from '../config/redis';
 import { ANALYSIS_QUEUE_NAME } from '../config/queue';
 import prisma from '../config/prisma';
@@ -9,6 +9,7 @@ import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { QuotaService } from '../services/quota.service';
+import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -46,7 +47,11 @@ export const analysisWorker = new Worker(
       });
 
       if (!dbRepo || !dbRepo.user.vault) {
-        throw new Error('No AI API key found in your vault. Please go to API Key Vault (/vault) and save your API key first.');
+        // Retrying cannot help: the user must save a key first. See errors/permanent-job.error.ts.
+        throw new PermanentJobError(
+          'missing-api-key',
+          'No AI API key found in your vault. Please go to API Key Vault (/vault) and save your API key first.',
+        );
       }
 
       const vault = dbRepo.user.vault;
@@ -164,15 +169,39 @@ export const analysisWorker = new Worker(
 
       return { status: 'success', findingCount: suggestions.length };
     } catch (err) {
-      console.error(`🚨 JOB FATALITY: ${jobId} died:`, err);
-      SocketService.emitStatus(userId, jobId, `🚨 Fatal Error Encountered: ${(err as Error).message}`, 'FAILED');
+      const message = (err as Error).message;
+      const permanent = isPermanentJobError(err);
+
+      // A permanent failure is the user's to fix. SKIPPED reads as "waiting on
+      // you" rather than "broken", and UnrecoverableError stops BullMQ replaying
+      // a job that cannot succeed. Logged once, not once per attempt.
+      if (permanent) {
+        console.warn(`⏭️  JOB SKIPPED (needs user action): ${jobId} — ${message}`);
+        SocketService.emitStatus(userId, jobId, `⏭️ Skipped: ${message}`, 'SKIPPED');
+
+        await prisma.analysisJob.update({
+          where: { id: jobId },
+          data: {
+            status: 'SKIPPED',
+            results: { reason: err.reason, error: message } as any,
+          },
+        });
+
+        throw new UnrecoverableError(message);
+      }
+
+      // Transient: log and let BullMQ use the remaining attempts.
+      console.error(`🚨 JOB FATALITY (attempt will retry): ${jobId} died:`, err);
+      SocketService.emitStatus(userId, jobId, `🚨 Fatal Error Encountered: ${message}`, 'FAILED');
+
       await prisma.analysisJob.update({
         where: { id: jobId },
         data: {
           status: 'FAILED',
-          results: { error: (err as Error).message } as any,
+          results: { error: message } as any,
         },
       });
+
       throw err;
     }
   },

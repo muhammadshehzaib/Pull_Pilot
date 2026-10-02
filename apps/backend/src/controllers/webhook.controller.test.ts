@@ -194,6 +194,7 @@ describe('WebhookController.handleGitHubEvent — pull_request', () => {
         repositoryId: 'r1',
         eventType: 'PULL_REQUEST',
         referenceId: '7',
+        commitSha: 'head-sha',
         status: 'QUEUED',
       },
     });
@@ -270,14 +271,15 @@ describe('WebhookController.handleGitHubEvent — push', () => {
 
     await WebhookController.handleGitHubEvent(req, res);
 
-    expect(mockJobCreate).toHaveBeenCalledWith({
-      data: {
-        repositoryId: 'r1',
-        eventType: 'PUSH',
-        referenceId: 'after-sha',
-        status: 'QUEUED',
-      },
-    });
+expect(mockJobCreate).toHaveBeenCalledWith({
+          data: {
+            repositoryId: 'r1',
+            eventType: 'PUSH',
+            referenceId: 'after-sha',
+            commitSha: 'after-sha',
+            status: 'QUEUED',
+          },
+        });
     expect(mockQueueAdd).toHaveBeenCalledWith(
       'analyze-PUSH-after-sha',
       expect.objectContaining({
@@ -364,5 +366,96 @@ describe('WebhookController.handleGitHubEvent — breaking path', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Internal processing error' });
+  });
+});
+
+describe('WebhookController idempotency �?" duplicate webhook deliveries', () => {
+  const baseRepo = { id: 'r1', userId: 'u-owner', isActive: true, isPrivate: false };
+  const prBody = () => ({
+    action: 'synchronize',
+    repository: { full_name: 'o/r', private: false },
+    pull_request: { number: 7, head: { sha: 'head-sha' }, base: { sha: 'base-sha' } },
+  });
+
+  const uniqueViolation = () => {
+    const err = new Error('Unique constraint failed on the fields: (`commitSha`)') as Error & {
+      code: string;
+    };
+    err.code = 'P2002';
+    return err;
+  };
+
+  it('acknowledges a redelivered webhook with 200 and queues nothing', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockRejectedValueOnce(uniqueViolation());
+
+    const req = mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prBody() });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'DUPLICATE' }),
+    );
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('does not post duplicate comments: the second delivery never enqueues a job', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockRejectedValueOnce(uniqueViolation());
+
+    const res = mockRes();
+    await WebhookController.handleGitHubEvent(
+      mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prBody() }),
+      res,
+    );
+
+    expect(mockJobCreate).toHaveBeenCalledTimes(1);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('still reviews a genuinely new commit on the same PR', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'job-new' });
+
+    const body = prBody();
+    body.pull_request.head.sha = 'brand-new-sha'; // developer pushed again
+
+    const req = mockReq({ headers: { 'x-github-event': 'pull_request' }, body });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(mockJobCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ commitSha: 'brand-new-sha' }),
+    });
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(202);
+  });
+
+  it('detects a duplicate from the error message when no code is present', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockRejectedValueOnce(new Error('duplicate key value violates unique constraint'));
+
+    const req = mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prBody() });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('does not swallow unrelated database failures', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
+
+    const req = mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prBody() });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 });

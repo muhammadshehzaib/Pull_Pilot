@@ -87,14 +87,29 @@ async function queueReview(
   referenceId: string,
   payloadSnapshot: { headSha: string; baseSha: string },
 ) {
+  // The poller can observe the same head SHA twice (a webhook arriving between
+  // two poll ticks, or a page boundary straddling a push). Persist the SHA and
+  // let the unique index drop the repeat instead of double-reviewing.
   const job = await prisma.analysisJob.create({
     data: {
       repositoryId: repo.id,
       eventType,
       referenceId,
+      commitSha: payloadSnapshot.headSha,
       status: 'QUEUED',
     },
+  }).catch((err: unknown) => {
+    const isDuplicate =
+      (err as { code?: string })?.code === 'P2002' ||
+      /unique|already exists/i.test((err as Error)?.message ?? '');
+    if (isDuplicate) return null;
+    throw err;
   });
+
+  if (!job) {
+    console.log(`♻️  Poller skipped ${eventType} ${referenceId} for ${repo.fullName} — already reviewed at ${payloadSnapshot.headSha.slice(0, 7)}`);
+    return;
+  }
 
   await analysisQueue.add(`poll-${eventType}-${referenceId}`, {
     jobId: job.id,

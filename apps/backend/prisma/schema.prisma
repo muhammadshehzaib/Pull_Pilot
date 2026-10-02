@@ -111,9 +111,12 @@ model AnalysisJob {
   referenceId  String     // PR number or Commit SHA
   status       JobStatus  @default(QUEUED)
   results      Json?
+  commitSha    String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
+  @@unique([repositoryId, eventType, referenceId, commitSha])
+  @@index([commitSha])
   @@map("analysis_jobs")
 }
 

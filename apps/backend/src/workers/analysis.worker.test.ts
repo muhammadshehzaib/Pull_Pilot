@@ -45,7 +45,16 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockRepoFindUnique, mockDecr
   };
 });
 
-vi.mock('bullmq', () => ({ Worker: WorkerMock }));
+vi.mock('bullmq', () => ({
+  Worker: WorkerMock,
+  // Mirrors BullMQ: thrown to tell the queue a job must not be retried.
+  UnrecoverableError: class UnrecoverableError extends Error {
+    constructor(message?: string) {
+      super(message);
+      this.name = 'UnrecoverableError';
+    }
+  },
+}));
 
 vi.mock('../config/redis', () => ({ redisConnection: { host: 'mock' } }));
 
@@ -212,32 +221,59 @@ describe('analysis worker — happy path', () => {
 });
 
 describe('analysis worker — failure paths', () => {
-  it('marks the job FAILED and rethrows when the repo has no vault', async () => {
+  it('marks the job SKIPPED and stops retrying when the repo has no vault', async () => {
     mockRepoFindUnique.mockResolvedValueOnce({ user: { vault: null } });
 
+    // A missing API key cannot be fixed by retrying, so the job must surface as
+    // an UnrecoverableError rather than burning all three attempts.
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow(
-      /not linked to an active security vault/,
+      /No AI API key found in your vault/,
     );
 
-    // Last DB update should be the FAILED transition
     expect(mockJobUpdate).toHaveBeenLastCalledWith({
       where: { id: 'job-1' },
-      data: { status: 'FAILED' },
+      data: {
+        status: 'SKIPPED',
+        results: {
+          reason: 'missing-api-key',
+          error: expect.stringContaining('No AI API key found'),
+        },
+      },
     });
 
-    // Should have emitted a FAILED status
     const statuses = mockEmitStatus.mock.calls.map((c) => c[3]);
-    expect(statuses).toContain('FAILED');
+    expect(statuses).toContain('SKIPPED');
+    expect(statuses).not.toContain('FAILED');
   });
 
-  it('marks the job FAILED when the repo itself is missing', async () => {
+  it('surfaces a missing vault as unrecoverable so BullMQ does not retry', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce({ user: { vault: null } });
+
+    const err = await capturedHandler
+      .fn!(makeJobPayload())
+      .then(() => null)
+      .catch((e: Error) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).name).toBe('UnrecoverableError');
+  });
+
+  it('marks the job SKIPPED when the repo itself is missing', async () => {
+    // A deleted repo is as permanent as a missing API key — retrying cannot
+    // bring it back, so this shares the unrecoverable path.
     mockRepoFindUnique.mockResolvedValueOnce(null);
 
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
 
     expect(mockJobUpdate).toHaveBeenLastCalledWith({
       where: { id: 'job-1' },
-      data: { status: 'FAILED' },
+      data: {
+        status: 'SKIPPED',
+        results: {
+          reason: 'missing-api-key',
+          error: expect.any(String),
+        },
+      },
     });
   });
 
@@ -249,9 +285,10 @@ describe('analysis worker — failure paths', () => {
 
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow(/Decryption failure/);
 
+    // Transient: the vault/key may still be fixed, so this stays FAILED and retries.
     expect(mockJobUpdate).toHaveBeenLastCalledWith({
       where: { id: 'job-1' },
-      data: { status: 'FAILED' },
+      data: { status: 'FAILED', results: { error: expect.any(String) } },
     });
   });
 
@@ -264,7 +301,7 @@ describe('analysis worker — failure paths', () => {
 
     expect(mockJobUpdate).toHaveBeenLastCalledWith({
       where: { id: 'job-1' },
-      data: { status: 'FAILED' },
+      data: { status: 'FAILED', results: { error: expect.any(String) } },
     });
   });
 
@@ -275,7 +312,7 @@ describe('analysis worker — failure paths', () => {
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
     expect(mockJobUpdate).toHaveBeenLastCalledWith({
       where: { id: 'job-1' },
-      data: { status: 'FAILED' },
+      data: { status: 'FAILED', results: { error: expect.any(String) } },
     });
   });
 

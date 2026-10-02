@@ -146,14 +146,43 @@ export class WebhookController {
       }
 
       // 7. Persist basic Analysis Job log in DB as QUEUED
-      const newJob = await prisma.analysisJob.create({
-        data: {
-          repositoryId: dbRepo.id,
-          eventType: jobType,
-          referenceId: refId,
-          status: 'QUEUED',
-        },
-      });
+      // The head SHA is the identity of this review: GitHub may redeliver the same
+      // webhook any number of times, and a new commit on the same PR is a
+      // genuinely new review. Persisting it makes that distinction possible.
+      const commitSha =
+        jobType === 'PULL_REQUEST'
+          ? payload.pull_request?.head?.sha ?? null
+          : payload.after ?? null;
+
+      let newJob;
+      try {
+        newJob = await prisma.analysisJob.create({
+          data: {
+            repositoryId: dbRepo.id,
+            eventType: jobType,
+            referenceId: refId,
+            commitSha,
+            status: 'QUEUED',
+          },
+        });
+      } catch (createErr) {
+        // The unique index is the authority on what has already been reviewed.
+        // If it rejects the insert, this exact (repo, event, ref, sha) has a job.
+        const isDuplicate =
+          (createErr as { code?: string })?.code === 'P2002' ||
+          /unique|already exists/i.test((createErr as Error)?.message ?? '');
+
+        if (isDuplicate && commitSha) {
+          console.log(`♻️  Duplicate webhook ignored: ${repoFullName} ${jobType} ${refId} @ ${commitSha.slice(0, 7)}`);
+          // 200, not an error: GitHub retries anything non-2xx, which would
+          // deliver the very duplicate we are trying to avoid.
+          return res.status(200).json({
+            status: 'DUPLICATE',
+            message: 'This commit has already been queued for review.',
+          });
+        }
+        throw createErr;
+      }
 
       // 8. Enqueue job into BullMQ
       await analysisQueue.add(`analyze-${jobType}-${refId}`, {
@@ -167,7 +196,7 @@ export class WebhookController {
         installationId: dbRepo.installationId,
         isPrivate,
         payloadSnapshot: {
-          headSha: jobType === 'PULL_REQUEST' ? payload.pull_request?.head?.sha : payload.after,
+          headSha: commitSha ?? undefined,
           baseSha: jobType === 'PULL_REQUEST' ? payload.pull_request?.base?.sha : payload.before,
         },
       });

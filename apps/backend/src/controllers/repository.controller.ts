@@ -181,6 +181,9 @@ export class RepositoryController {
         repositoryId: repo.id,
         eventType,
         referenceId,
+        // Manual reviews are deliberate, so this path always re-reviews. The
+        // unique index ignores NULLs, so these never collide with webhook rows.
+        commitSha: null,
         status: 'QUEUED',
       },
     });
