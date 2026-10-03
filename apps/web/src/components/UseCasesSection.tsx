@@ -72,7 +72,7 @@ const USE_CASES: UseCase[] = [
     subtitle: 'Never ship solo without a second pair of eyes reviewing your architecture, edge cases, and performance.',
     badge: 'INDIE SUPERPOWER',
     stats: [
-      { value: '$6/mo', label: 'Unlimited Private Plan' },
+      { value: '$2/mo', label: 'Unlimited Private Plan' },
       { value: '4+', label: 'AI Models Supported' },
       { value: '24/7', label: 'Always-On Reviewer' },
     ],

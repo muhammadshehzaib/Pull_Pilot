@@ -111,7 +111,7 @@ export function UsageMeter() {
             >
               <AlertTriangle size={14} />
               <span>
-                Monthly private quota reached. Upgrade to <strong>Indie</strong> ($6/mo) for unlimited reviews.
+                Monthly private quota reached. Upgrade to <strong>Indie</strong> ($2/mo or $10/yr) for unlimited reviews.
               </span>
             </div>
           ) : (

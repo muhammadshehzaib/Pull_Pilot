@@ -242,7 +242,7 @@ export default function HomePage() {
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
               }}
             >
-              <CheckCircle2 size={16} color="#10b981" /> Zero AI Training on Your Code
+              <CheckCircle2 size={16} color="#10b981" /> Zero markup on your AI spend
             </span>
           </div>
         </div>
@@ -267,13 +267,14 @@ export default function HomePage() {
       <section id="pricing" className="bg-dot-pattern" style={{ maxWidth: 1140, margin: '0 auto', padding: '4rem 1.5rem 6rem', textAlign: 'center', borderRadius: 28 }}>
         <div className="badge-social-dark" style={{ marginBottom: '1rem', background: '#ffffff' }}>
           <Sparkles size={14} color="#2563eb" />
-          <span>Transparent Pricing</span>
+          <span>Platform Fee Only — Zero AI Markup</span>
         </div>
         <h2 style={{ fontSize: 'clamp(2rem, 3.5vw, 2.75rem)', marginBottom: '0.75rem' }}>
-          Simple, Developer-Friendly Plans
+          You pay for the AI. We charge for the platform.
         </h2>
-        <p style={{ color: '#64748b', fontSize: '1.05rem', maxWidth: 540, margin: '0 auto 2rem' }}>
-          Billed directly through GitHub Marketplace with automated tax handling and 1-click cancellation.
+        <p style={{ color: '#64748b', fontSize: '1.05rem', maxWidth: 620, margin: '0 auto 2rem' }}>
+          Every review runs on your own Gemini, OpenAI, Claude, or Grok key — billed straight to you by
+          that provider. We add nothing to your AI spend. All you pay here is the review engine itself.
         </p>
 
         {/* Monthly / Annual Switch */}
@@ -289,7 +290,8 @@ export default function HomePage() {
               onClick={() => setAnnualBilling(true)}
               className={`pill-switch-btn ${annualBilling ? 'pill-switch-active' : ''}`}
             >
-              Annual Billing <span style={{ color: '#10b981', fontWeight: 700 }}>(Save 20%)</span>
+              Annual Billing{' '}
+              <span style={{ color: '#10b981', fontWeight: 700 }}>(Save 58%)</span>
             </button>
           </div>
         </div>
@@ -316,11 +318,11 @@ export default function HomePage() {
             </a>
 
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.88rem', color: '#475569' }}>
+              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Your Own AI Key — <strong>0% markup</strong></li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Unlimited Public Repos</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> 50 Private Reviews / month</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> .aipr.yml Configuration</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Standard Queue Speed</li>
-              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Bring Your Own AI Key</li>
             </ul>
           </div>
 
@@ -341,7 +343,7 @@ export default function HomePage() {
                 letterSpacing: '0.04em',
               }}
             >
-              MOST POPULAR
+              BEST VALUE
             </div>
 
             <h3 style={{ fontSize: '1.35rem', marginBottom: '0.5rem', color: '#0f172a' }}>Indie Plan</h3>
@@ -349,9 +351,22 @@ export default function HomePage() {
               For professional solo devs shipping private code every day.
             </p>
 
-            <div style={{ fontSize: '2.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '1.75rem' }}>
-              {annualBilling ? '$5' : '$6'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ month</span>
+            <div style={{ fontSize: '2.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '0.35rem' }}>
+              {annualBilling ? '$10' : '$2'}{' '}
+              <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>
+                {annualBilling ? '/ year' : '/ month'}
+              </span>
             </div>
+
+            {annualBilling ? (
+              <p style={{ color: '#10b981', fontSize: '0.84rem', fontWeight: 700, marginBottom: '1.75rem' }}>
+                Just $0.83/mo — you save $14 a year
+              </p>
+            ) : (
+              <p style={{ color: '#64748b', fontSize: '0.84rem', marginBottom: '1.75rem' }}>
+                Switch to annual and get <strong style={{ color: '#10b981' }}>2 months free</strong>
+              </p>
+            )}
 
             <a
               href="https://github.com/marketplace/ai-pr-reviewer"
@@ -364,11 +379,12 @@ export default function HomePage() {
             </a>
 
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.88rem', color: '#334155' }}>
+              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Your Own AI Key — <strong>0% markup, always</strong></li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> <strong>Unlimited</strong> Private Reviews</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Unlimited Public Reviews</li>
-              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Priority BullMQ Worker Fleet</li>
-              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Multi-Model Switching</li>
-              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Direct Email & GitHub Support</li>
+              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Priority Review Queue</li>
+              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Switch Models Anytime</li>
+              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Email & GitHub Support</li>
             </ul>
           </div>
 
@@ -380,7 +396,7 @@ export default function HomePage() {
             </p>
 
             <div style={{ fontSize: '2.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '1.75rem' }}>
-              {annualBilling ? '$10' : '$12'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user / mo</span>
+              {annualBilling ? '$100' : '$8'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annualBilling ? ' / year' : ' / mo'}</span>
             </div>
 
             <a
@@ -397,7 +413,7 @@ export default function HomePage() {
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Everything in Indie Plan</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Org-Wide App Installation</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Seat Pooling & Shared Invoicing</li>
-              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Dedicated Review Queue Fleet</li>
+              <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Centralized Team AI Keys</li>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Custom Security Policy Enforcement</li>
             </ul>
           </div>

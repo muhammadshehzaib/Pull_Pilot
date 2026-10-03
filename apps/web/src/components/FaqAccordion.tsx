@@ -23,16 +23,24 @@ const FAQS: Faq[] = [
     a: 'Add a `.aipr.yml` file to the root of your repository with an ignore list:\n\n```yaml\nignore:\n  - "dist/**"\n  - "package-lock.json"\n  - "*.min.js"\n```',
   },
   {
-    q: 'Can I bring my own OpenAI, Anthropic Claude, or Gemini API keys?',
-    a: 'Yes! Navigate to the API Key Vault in your dashboard, select your preferred provider, and paste your API key. Keys are encrypted at rest using AES-256-GCM.',
+    q: 'Do I need my own AI API key?',
+    a: 'Yes. Bring your own Gemini, OpenAI, Anthropic Claude, or Grok key from the API Key Vault in your dashboard. Keys are encrypted at rest using AES-256-GCM.',
+  },
+  {
+    q: 'So what exactly am I paying $2/month for?',
+    a: 'Only the review engine. Your AI provider bills you directly at their own rate, and we add zero markup. The $2/month (or $10/year) platform fee covers the review pipeline, queue, GitHub App, inline suggestions, .aipr.yml rules, and review history.',
   },
   {
     q: 'What is included in the Free tier?',
     a: 'The Free tier gives you unlimited reviews on all public open-source repositories and up to 50 reviews per month on private repositories, with zero watermarks or credit cards required.',
   },
   {
+    q: 'What is the difference between monthly and annual billing?',
+    a: 'Monthly is $2/month ($24/year). Annual is $10/year — that is just $0.83/month, saving you $14 every year and getting you roughly two months free.',
+  },
+  {
     q: 'How does billing through GitHub Marketplace work?',
-    a: 'All paid plans are billed directly through GitHub Marketplace with automated tax handling, team seat pooling, and 1-click cancellation via your GitHub account settings.',
+    a: 'All paid plans are billed directly through GitHub Marketplace with automated tax handling, team seat pooling, and 1-click cancellation via your GitHub account settings. Your AI token usage is billed separately by your AI provider, never through us.',
   },
 ];
 

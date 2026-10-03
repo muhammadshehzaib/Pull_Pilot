@@ -190,7 +190,7 @@ export class QuotaService {
 This repository is on the **Free Plan** and has used **${usageCount} of ${limit}** private pull request reviews for this billing cycle.
 
 - **Public Repositories**: Free & Unlimited forever.
-- **Need more private reviews?** Upgrade to the **Indie Plan** ($6/month) for unlimited reviews across all your repositories.
+- **Need more private reviews?** Upgrade to the **Indie Plan** ($2/month or $10/year) for unlimited reviews across all your repositories. You keep paying your AI provider at their own rates — the subscription is platform fee only.
 
 Reviews will automatically resume at the start of next month.`;
   }

@@ -41,6 +41,7 @@ export interface BillingPlanInfo {
   id: PlanTier;
   name: string;
   priceMonthly: number;
+  priceYearly?: number;
   description: string;
   features: string[];
 }
@@ -52,18 +53,20 @@ export const AVAILABLE_PLANS: BillingPlanInfo[] = [
     priceMonthly: 0,
     description: 'Perfect for open-source contributors and individual side projects.',
     features: [
+      'Your own AI key — 0% markup, paid directly by you to the provider',
       'Unlimited reviews on Public Repositories',
       '50 reviews / month on 1 Private Repository',
       '.aipr.yml repository configuration',
-      'Standard AI code review comments',
     ],
   },
   {
     id: 'INDIE',
     name: 'Indie Plan',
-    priceMonthly: 6,
-    description: 'Unlimited AI reviews for solo professional developers.',
+    priceMonthly: 2,
+    priceYearly: 10,
+    description: 'Unlimited AI reviews for solo professional developers. Platform fee only.',
     features: [
+      'Bring your own AI key — zero markup, your provider bills you directly',
       'Unlimited reviews on Public & Private Repositories',
       'Full .aipr.yml customization & severity thresholds',
       'High-priority background queue processing',
@@ -73,13 +76,14 @@ export const AVAILABLE_PLANS: BillingPlanInfo[] = [
   {
     id: 'TEAM',
     name: 'Team Plan',
-    priceMonthly: 12,
+    priceMonthly: 8,
+    priceYearly: 100,
     description: 'Collaborative AI review workflows for teams and organizations.',
     features: [
       'Everything in Indie Plan',
       'Organization-wide GitHub App installation',
       'Multiple repository seat pooling',
-      'Dedicated priority execution worker fleet',
+      'Centralized team AI keys',
     ],
   },
 ];

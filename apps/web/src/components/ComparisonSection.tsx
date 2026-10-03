@@ -60,7 +60,7 @@ const COMPARISON_DATA: CompetitorComparison[] = [
   {
     feature: 'Bring-Your-Own-Key (BYOK) AES-256 Vault',
     category: 'Cost Control',
-    pullpilot: { supported: true, detail: 'Pay 0% markup using your direct API credits' },
+    pullpilot: { supported: true, detail: 'Platform fee only — you pay AI at provider rates, 0% markup' },
     coderabbit: { supported: false, detail: 'Must purchase full price tier' },
     copilotPr: { supported: false, detail: 'Bundled GitHub subscription only' },
     sourcery: { supported: false, detail: 'Not supported' },
@@ -76,8 +76,8 @@ const COMPARISON_DATA: CompetitorComparison[] = [
   {
     feature: 'Starting Price & Free Tier',
     category: 'Value',
-    pullpilot: { supported: true, detail: '$0 free tier • $6/mo Indie' },
-    coderabbit: { supported: false, detail: '$15–$24/user/mo minimum' },
+    pullpilot: { supported: true, detail: '$0 free tier • $2/mo or $10/yr Indie' },
+    coderabbit: { supported: false, detail: '$15–$24/user/mo minimum, AI bundled' },
     copilotPr: { supported: false, detail: '$19–$39/user/mo GitHub suite' },
     sourcery: { supported: false, detail: '$10–$20/user/mo' },
   },
