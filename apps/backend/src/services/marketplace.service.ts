@@ -76,8 +76,8 @@ export const AVAILABLE_PLANS: BillingPlanInfo[] = [
   {
     id: 'TEAM',
     name: 'Team Plan',
-    priceMonthly: 8,
-    priceYearly: 100,
+    priceMonthly: 5,
+    priceYearly: 50,
     description: 'Collaborative AI review workflows for teams and organizations.',
     features: [
       'Everything in Indie Plan',

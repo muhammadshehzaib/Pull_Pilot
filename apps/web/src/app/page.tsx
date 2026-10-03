@@ -396,7 +396,7 @@ export default function HomePage() {
             </p>
 
             <div style={{ fontSize: '2.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '1.75rem' }}>
-              {annualBilling ? '$100' : '$8'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annualBilling ? ' / year' : ' / mo'}</span>
+              {annualBilling ? '$50' : '$5'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annualBilling ? ' / year' : ' / mo'}</span>
             </div>
 
             <a

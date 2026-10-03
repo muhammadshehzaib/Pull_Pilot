@@ -152,7 +152,7 @@ export default function PricingPage() {
             </p>
 
             <div style={{ fontSize: '2.75rem', fontWeight: 800, color: '#0f172a', marginBottom: '1.75rem' }}>
-              {annual ? '$100' : '$8'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annual ? ' / year' : ' / mo'}</span>
+              {annual ? '$50' : '$5'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annual ? ' / year' : ' / mo'}</span>
             </div>
 
             <a
