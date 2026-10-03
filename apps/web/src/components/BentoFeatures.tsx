@@ -57,7 +57,7 @@ export function BentoFeatures() {
   const [hasStarred, setHasStarred] = useState(false);
 
   const handleCopyYaml = () => {
-    const yaml = `# .aipr.yml repository config\nseverity_threshold: HIGH\nignore:\n  - "dist/**"\n  - "package-lock.json"\nstrict_security: true`;
+    const yaml = `# .aipr.yml repository config\nmin_severity: medium\nignore:\n  - "dist/**"\n  - "package-lock.json"\nguidelines:\n  - "No console.log in production paths"`;
     navigator.clipboard.writeText(yaml);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -317,11 +317,12 @@ export function BentoFeatures() {
                 lineHeight: 1.6,
               }}
             >
-              <div><span style={{ color: '#f43f5e' }}>severity_threshold</span>: <span style={{ color: '#34d399' }}>HIGH</span></div>
+              <div><span style={{ color: '#f43f5e' }}>min_severity</span>: <span style={{ color: '#34d399' }}>medium</span></div>
               <div><span style={{ color: '#f43f5e' }}>ignore</span>:</div>
               <div style={{ paddingLeft: '1rem', color: '#cbd5e1' }}>- <span style={{ color: '#fbbf24' }}>&quot;dist/**&quot;</span></div>
               <div style={{ paddingLeft: '1rem', color: '#cbd5e1' }}>- <span style={{ color: '#fbbf24' }}>&quot;package-lock.json&quot;</span></div>
-              <div><span style={{ color: '#f43f5e' }}>strict_security</span>: <span style={{ color: '#a78bfa' }}>true</span></div>
+              <div><span style={{ color: '#f43f5e' }}>guidelines</span>:</div>
+              <div style={{ paddingLeft: '1rem', color: '#cbd5e1' }}>- <span style={{ color: '#a78bfa' }}>&quot;No console.log&quot;</span></div>
             </div>
           </div>
 

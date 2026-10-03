@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { BaseAiProvider, AiSuggestion } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
 
 export class GeminiProvider extends BaseAiProvider {
   private aiClient: GoogleGenerativeAI;
@@ -34,7 +34,7 @@ export class GeminiProvider extends BaseAiProvider {
 
       const rawData = JSON.parse(responseText);
       const normalized = Array.isArray(rawData) ? rawData : Object.values(rawData)[0];
-      return Array.isArray(normalized) ? (normalized as AiSuggestion[]) : [];
+      return normalizeSuggestions(normalized);
       
     } catch (error) {
       console.error('🔴 Gemini Provider Error:', error);

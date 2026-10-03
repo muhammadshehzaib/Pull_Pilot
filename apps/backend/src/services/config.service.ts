@@ -1,7 +1,13 @@
 import YAML from 'yaml';
 import { GitHubService } from './github.service';
+import { normalizeSeverity } from './ai/finding-taxonomy';
 
-export type SeverityLevel = 'low' | 'medium' | 'high' | 'critical';
+/**
+ * Accepted values for `min_severity` in .aipr.yml, lowest to highest.
+ * Case-insensitive; anything unrecognised falls back to the default.
+ */
+export const SEVERITY_LEVELS = ['info', 'low', 'medium', 'high', 'critical'] as const;
+export type SeverityLevel = (typeof SEVERITY_LEVELS)[number];
 
 export interface AiPrConfig {
   version: number;
@@ -58,11 +64,22 @@ export class ConfigService {
         ? parsed.ignore.filter((item: any) => typeof item === 'string')
         : DEFAULT_AIPR_CONFIG.ignore;
 
-      const validSeverities: SeverityLevel[] = ['low', 'medium', 'high', 'critical'];
-      const rawSeverity = typeof parsed.min_severity === 'string' ? parsed.min_severity.toLowerCase() : '';
-      const min_severity: SeverityLevel = validSeverities.includes(rawSeverity as SeverityLevel)
-        ? (rawSeverity as SeverityLevel)
-        : DEFAULT_AIPR_CONFIG.min_severity;
+      // Reuse the AI taxonomy so .aipr.yml and the model can never drift apart.
+// Rejecting an unknown level silently is what previously made
+// `min_severity: critical` a no-op, so warn when it happens.
+      const rawSeverity = typeof parsed.min_severity === 'string' ? parsed.min_severity.trim() : '';
+      const normalizedSeverity = normalizeSeverity(rawSeverity);
+      let min_severity: SeverityLevel = DEFAULT_AIPR_CONFIG.min_severity;
+      if (rawSeverity) {
+        if (normalizedSeverity) {
+          min_severity = normalizedSeverity.toLowerCase() as SeverityLevel;
+        } else {
+          console.warn(
+            `⚠️ Unknown min_severity "${rawSeverity}" in .aipr.yml. ` +
+            `Expected one of: ${SEVERITY_LEVELS.join(', ')}. Falling back to "${DEFAULT_AIPR_CONFIG.min_severity}".`,
+          );
+        }
+      }
 
       const guidelines = Array.isArray(parsed.guidelines)
         ? parsed.guidelines.filter((item: any) => typeof item === 'string')

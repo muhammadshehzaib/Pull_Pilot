@@ -1291,6 +1291,15 @@ button {
   word-break: break-word;
 }
 
+.badge-critical {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(162, 28, 175, 0.16);
+  color: #c026d3;
+}
+
 .badge-high {
   font-size: 0.75rem;
   font-weight: 600;
@@ -1310,6 +1319,15 @@ button {
 }
 
 .badge-low {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.14);
+  color: var(--accent);
+}
+
+.badge-info {
   font-size: 0.75rem;
   font-weight: 600;
   padding: 2px 8px;

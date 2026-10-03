@@ -8,6 +8,7 @@ import { AiProviderFactory } from '../services/ai/ai-factory';
 import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { DiffFilterService } from '../services/diff-filter.service';
+import { sortBySeverity } from '../services/ai/finding-taxonomy';
 import { QuotaService } from '../services/quota.service';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
 
@@ -104,13 +105,10 @@ export const analysisWorker = new Worker(
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
 
-      // 8. FILTER SUGGESTIONS BY MIN_SEVERITY & SORT FROM HIGH TO LOW
-      const suggestions = rawSuggestions
-        .filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity))
-        .sort((a, b) => {
-          const priorityWeights: Record<string, number> = { HIGH: 1, MEDIUM: 2, LOW: 3 };
-          return (priorityWeights[a.priority] || 4) - (priorityWeights[b.priority] || 4);
-        });
+      // 8. FILTER SUGGESTIONS BY MIN_SEVERITY & SORT MOST SEVERE FIRST
+      const suggestions = sortBySeverity(
+        rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
+      );
 
       console.log(`🎯 AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
       SocketService.emitStatus(userId, jobId, `🎯 Scan Complete: ${suggestions.length} items flagged`, 'RUNNING');
@@ -130,6 +128,12 @@ export const analysisWorker = new Worker(
       });
 
       // 10. POST INLINE REVIEWS AND SUMMARY ON PULL REQUESTS
+      // Comment posting reports instead of throwing, so a rejected comment
+      // (wrong line, renamed file, stale SHA) must be counted and surfaced —
+      // otherwise the user is told the review succeeded with zero comments.
+      const commentFailures: string[] = [];
+      let summaryPosted = true;
+
       if (eventType === 'PULL_REQUEST') {
         const prNum = parseInt(referenceId, 10);
 
@@ -141,7 +145,7 @@ export const analysisWorker = new Worker(
             const priorityBadge = suggestion.priority ? `[${suggestion.priority}] ` : '';
             const commentBody = `### 🤖 AI Code Review: ${priorityBadge}${suggestion.agentType}\n**Issue:** ${suggestion.issue}\n\n\`\`\`\n${suggestion.suggestion}\n\`\`\``;
 
-            await ghService.createReviewComment(
+            const result = await ghService.createReviewComment(
               owner,
               repo,
               prNum,
@@ -150,14 +154,82 @@ export const analysisWorker = new Worker(
               suggestion.lineNumber,
               commentBody
             );
+
+            if (result && result.ok === false) {
+              commentFailures.push(
+                `${suggestion.filePath}:${suggestion.lineNumber} — ${result.error ?? 'unknown error'}`
+              );
+            }
           }
+        }
+
+        // Inline comments are rejected whenever the model cites a line that is
+        // not in the diff. The findings are still valid and already stored, so
+        // publish them as a single fallback comment rather than losing them.
+        const postedInline = suggestions.length - commentFailures.length;
+
+        if (commentFailures.length > 0) {
+          console.warn(
+            `⚠️ ${commentFailures.length}/${suggestions.length} inline comments rejected for PR #${referenceId}. ` +
+            `Falling back to a single consolidated comment.`,
+          );
+          SocketService.emitStatus(
+            userId,
+            jobId,
+            `⚠️ ${commentFailures.length} comment(s) could not be placed inline — posting a consolidated summary instead.`,
+            'RUNNING',
+          );
         }
 
         // Post top-level summary if enabled in config
         if (repoConfig.summarize && typeof ghService.createIssueComment === 'function') {
-          const summaryMarkdown = `## 🤖 AI PR Review Summary\n\n- **Status**: Audit completed\n- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)\n- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)\n\n*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*`;
-          await ghService.createIssueComment(owner, repo, prNum, summaryMarkdown);
+          const fallbackSection =
+            commentFailures.length > 0
+              ? `\n\n> ⚠️ **${commentFailures.length} of ${suggestions.length} findings could not be attached inline** (the cited lines are not part of this diff). They are listed below and saved in full in the AI PR Reviewer dashboard.`
+              : '';
+
+          const findingsSection =
+            commentFailures.length > 0
+              ? `\n\n## Findings\n\n${suggestions
+                  .map(
+                    (s, i) =>
+                      `${i + 1}. **[${s.priority}] ${s.agentType}** \`${s.filePath}:${s.lineNumber}\`\n   - **Issue:** ${s.issue}\n   - **Suggestion:** ${s.suggestion}`,
+                  )
+                  .join('\n')}`
+              : '';
+
+          const summaryMarkdown = `## 🤖 AI PR Review Summary\n\n- **Status**: Audit completed\n- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)\n- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)\n- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}\n\n*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*${findingsSection}`;
+
+          const summaryResult = await ghService.createIssueComment(owner, repo, prNum, summaryMarkdown);
+          summaryPosted = !summaryResult || summaryResult.ok !== false;
         }
+      }
+
+      // Persist delivery outcome so the dashboard can explain an empty PR.
+      if (commentFailures.length > 0 || !summaryPosted) {
+        await prisma.analysisJob.update({
+          where: { id: jobId },
+          data: {
+            results: {
+              suggestions,
+              ignoredFiles,
+              includedFiles,
+              config: repoConfig,
+              commentFailures,
+              summaryPosted,
+            } as any,
+          },
+        });
+      }
+
+      if (commentFailures.length > 0) {
+        SocketService.emitStatus(
+          userId,
+          jobId,
+          `⚠️ Review finished, but ${commentFailures.length} comment(s) could not be placed inline. See the PR summary for details.`,
+          'COMPLETED',
+          { suggestions },
+        );
       }
 
       // 11. RECORD USAGE IN METERING LEDGER

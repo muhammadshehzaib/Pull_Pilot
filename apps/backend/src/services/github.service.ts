@@ -1,5 +1,11 @@
 import { Octokit } from '@octokit/rest';
 
+/** Outcome of a comment post. Comment posting never throws; it reports. */
+export interface CommentPostResult {
+  ok: boolean;
+  error?: string;
+}
+
 export class GitHubService {
   private octokit: Octokit;
 
@@ -34,6 +40,16 @@ export class GitHubService {
   /**
    * Places persistent constructive criticism directly onto specific lines within a PR.
    */
+  /**
+   * Posts an inline review comment.
+   *
+   * A single comment can be rejected for reasons outside our control (GitHub
+   * returns 422 when the line is not part of the diff, when the file was
+   * renamed, or when the head SHA is stale). Failing the whole review for one
+   * bad comment would be worse than skipping it, so this never throws — but it
+   * reports the outcome so the caller can surface partial failures instead of
+   * silently claiming success.
+   */
   async createReviewComment(
     owner: string,
     repo: string,
@@ -42,7 +58,7 @@ export class GitHubService {
     path: string,
     line: number,
     body: string,
-  ) {
+  ): Promise<CommentPostResult> {
     try {
       await this.octokit.pulls.createReviewComment({
         owner,
@@ -55,8 +71,11 @@ export class GitHubService {
         side: 'RIGHT',
       });
       console.log(`💬 Posted comment successfully to line ${line} of ${path}`);
+      return { ok: true };
     } catch (err) {
-      console.warn(`⚠️ Ignored failed comment injection to line ${line}:`, (err as Error).message);
+      const message = (err as Error).message;
+      console.warn(`⚠️ Could not post inline comment at ${path}:${line} — ${message}`);
+      return { ok: false, error: message };
     }
   }
 
@@ -219,7 +238,12 @@ export class GitHubService {
   /**
    * Posts a top-level issue / PR discussion comment (e.g. for overall review summary or quota notice).
    */
-  async createIssueComment(owner: string, repo: string, issueNumber: number, body: string) {
+  async createIssueComment(
+    owner: string,
+    repo: string,
+    issueNumber: number,
+    body: string,
+  ): Promise<CommentPostResult> {
     try {
       await this.octokit.issues.createComment({
         owner,
@@ -228,8 +252,11 @@ export class GitHubService {
         body,
       });
       console.log(`💬 Posted issue comment successfully to PR #${issueNumber}`);
+      return { ok: true };
     } catch (err) {
-      console.warn(`⚠️ Failed to post issue comment to PR #${issueNumber}:`, (err as Error).message);
+      const message = (err as Error).message;
+      console.warn(`⚠️ Failed to post issue comment to PR #${issueNumber}: ${message}`);
+      return { ok: false, error: message };
     }
   }
 }

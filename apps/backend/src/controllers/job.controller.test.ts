@@ -26,6 +26,14 @@ beforeEach(() => {
 
 describe('JobController.list', () => {
   it('returns the user\'s jobs with findingCount derived from results array', async () => {
+    const suggestion = (filePath: string) => ({
+      filePath,
+      lineNumber: 1,
+      issue: 'issue',
+      suggestion: 'fix',
+      agentType: 'SECURITY',
+      priority: 'HIGH',
+    });
     mockJobFindMany.mockResolvedValueOnce([
       {
         id: 'j1',
@@ -35,7 +43,7 @@ describe('JobController.list', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
         repository: { id: 'r1', fullName: 'o/r' },
-        results: [{ x: 1 }, { x: 2 }, { x: 3 }],
+        results: [suggestion('a.ts'), suggestion('b.ts'), suggestion('c.ts')],
       },
     ]);
 
@@ -47,6 +55,35 @@ describe('JobController.list', () => {
     const out = res.json.mock.calls[0][0];
     expect(out.jobs[0].findingCount).toBe(3);
     expect(out.jobs[0]).not.toHaveProperty('results'); // lightweight, no full results
+  });
+
+  it('ignores malformed entries when counting findings', async () => {
+    // extractNormalizedFindings drops anything missing the required shape, so a
+    // partially corrupt results blob must not inflate the count.
+    mockJobFindMany.mockResolvedValueOnce([
+      {
+        id: 'j1',
+        eventType: 'PULL_REQUEST',
+        referenceId: '1',
+        status: 'COMPLETED',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        repository: { id: 'r1', fullName: 'o/r' },
+        results: [
+          { filePath: 'a.ts', lineNumber: 1, issue: 'i', suggestion: 's' },
+          { x: 1 },
+          null,
+          'garbage',
+        ],
+      },
+    ]);
+
+    const req = authedReq();
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(res.json.mock.calls[0][0].jobs[0].findingCount).toBe(1);
   });
 
   it('returns findingCount 0 when results is null/non-array', async () => {
@@ -128,13 +165,40 @@ describe('JobController.list', () => {
 
 describe('JobController.get', () => {
   it('returns the job when it belongs to the user', async () => {
-    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'COMPLETED' });
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'COMPLETED', results: null });
     const req = authedReq({ params: { id: 'j1' } });
     const res = mockRes();
 
     await JobController.get(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ job: { id: 'j1', status: 'COMPLETED' } });
+    expect(res.json).toHaveBeenCalledWith({
+      job: {
+        id: 'j1',
+        status: 'COMPLETED',
+        results: [],
+        metadata: { ignoredFiles: [], includedFiles: [], error: undefined },
+      },
+    });
+  });
+
+  it('exposes ignored/included files and the error message from results', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({
+      id: 'j2',
+      status: 'SKIPPED',
+      results: { ignoredFiles: ['dist/**'], includedFiles: ['src/**'], error: 'No API key' },
+    });
+    const req = authedReq({ params: { id: 'j2' } });
+    const res = mockRes();
+
+    await JobController.get(req, res);
+
+    const out = res.json.mock.calls[0][0];
+    expect(out.job.metadata).toEqual({
+      ignoredFiles: ['dist/**'],
+      includedFiles: ['src/**'],
+      error: 'No API key',
+    });
+    expect(out.job.results).toEqual([]);
   });
 
   it('returns 404 when the job is missing or owned by another user', async () => {

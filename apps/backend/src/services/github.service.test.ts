@@ -133,14 +133,26 @@ describe('GitHubService', () => {
       });
     });
 
-    it('SWALLOWS errors silently (does not throw) — by design, never break the run for one bad comment', async () => {
+    it('reports failure instead of throwing — never break the run for one bad comment', async () => {
       mockCreateReviewComment.mockRejectedValueOnce(
         new Error('Unprocessable Entity: pull_request_review_thread.line invalid'),
       );
 
+      const result = await svc.createReviewComment('o', 'r', 42, 'sha', 'f.ts', 999999, 'body');
+
+      // Must not throw, but must report so the worker can surface it.
+      expect(result).toEqual({
+        ok: false,
+        error: 'Unprocessable Entity: pull_request_review_thread.line invalid',
+      });
+    });
+
+    it('reports success', async () => {
+      mockCreateReviewComment.mockResolvedValueOnce({ data: { id: 1 } });
+
       await expect(
-        svc.createReviewComment('o', 'r', 42, 'sha', 'f.ts', 999999, 'body'),
-      ).resolves.toBeUndefined();
+        svc.createReviewComment('o', 'r', 42, 'sha', 'f.ts', 10, 'body'),
+      ).resolves.toEqual({ ok: true });
     });
   });
 

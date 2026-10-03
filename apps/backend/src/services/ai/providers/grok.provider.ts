@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
 
 const GROK_BASE_URL = process.env.GROK_BASE_URL || 'https://api.x.ai/v1';
 const GROK_MODEL = process.env.GROK_MODEL || 'grok-2-1212';
@@ -27,7 +27,7 @@ export class GrokProvider extends BaseAiProvider {
       const content = response.choices[0].message.content || '{}';
       const rawData = JSON.parse(content);
       const result = Array.isArray(rawData) ? rawData : Object.values(rawData)[0];
-      return Array.isArray(result) ? (result as AiSuggestion[]) : [];
+      return normalizeSuggestions(result);
     } catch (error) {
       console.error('🔴 Grok Provider Error:', error);
       throw new Error(`Grok API request failed: ${(error as Error).message}`);

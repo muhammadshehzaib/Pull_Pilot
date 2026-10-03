@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BaseAiProvider, AiSuggestion } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
@@ -32,7 +32,7 @@ export class ClaudeProvider extends BaseAiProvider {
       const parsed = JSON.parse(cleaned);
 
       const result = Array.isArray(parsed) ? parsed : (Object.values(parsed)[0] as unknown);
-      return Array.isArray(result) ? (result as AiSuggestion[]) : [];
+      return normalizeSuggestions(result);
     } catch (error) {
       console.error('🔴 Claude Provider Error:', error);
       throw new Error(`Claude API request failed: ${(error as Error).message}`);

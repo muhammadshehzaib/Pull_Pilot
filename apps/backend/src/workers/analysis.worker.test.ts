@@ -189,6 +189,71 @@ describe('analysis worker — happy path', () => {
     expect(mockCreateReviewComment).not.toHaveBeenCalled();
   });
 
+  it('surfaces inline comment failures instead of silently claiming success', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff body that is long enough');
+    mockAnalyzeCode.mockResolvedValueOnce([
+      { filePath: 'a.ts', lineNumber: 999999, agentType: 'SECURITY', issue: 'i', suggestion: 's', priority: 'HIGH' },
+    ]);
+    // GitHub rejects the comment because the line is not in the diff.
+    mockCreateReviewComment.mockResolvedValueOnce({
+      ok: false,
+      error: 'Unprocessable Entity: line invalid',
+    });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+
+    // The analysis itself still succeeded...
+    expect(result).toEqual({ status: 'success', findingCount: 1 });
+
+    // ...but the delivery failure must be recorded, not swallowed.
+    const resultsPayload = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+    expect(resultsPayload.commentFailures).toEqual([
+      'a.ts:999999 — Unprocessable Entity: line invalid',
+    ]);
+    expect(resultsPayload.summaryPosted).toBe(true);
+
+    // And the user must be told via the socket.
+    const messages = mockEmitStatus.mock.calls.map((c) => String(c[2]));
+    expect(messages.some((m: string) => m.includes('could not be placed inline'))).toBe(true);
+  });
+
+  it('records no commentFailures when every inline comment lands', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff body that is long enough');
+    mockAnalyzeCode.mockResolvedValueOnce([
+      { filePath: 'a.ts', lineNumber: 1, agentType: 'SECURITY', issue: 'i', suggestion: 's', priority: 'HIGH' },
+    ]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    // No delivery-problem update should have been written.
+    const resultsPayloads = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean);
+    expect(resultsPayloads.some((r: any) => 'commentFailures' in r)).toBe(false);
+  });
+
+  it('sorts findings most severe first before posting', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff body that is long enough');
+    mockAnalyzeCode.mockResolvedValueOnce([
+      { filePath: 'c.ts', lineNumber: 1, agentType: 'BUG', issue: 'i', suggestion: 's', priority: 'LOW' },
+      { filePath: 'a.ts', lineNumber: 1, agentType: 'SECURITY', issue: 'i', suggestion: 's', priority: 'CRITICAL' },
+      { filePath: 'b.ts', lineNumber: 1, agentType: 'BUG', issue: 'i', suggestion: 's', priority: 'HIGH' },
+    ]);
+    mockCreateReviewComment.mockResolvedValue({ ok: true });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    const order = mockCreateReviewComment.mock.calls.map((c: any[]) => c[4]);
+    expect(order).toEqual(['a.ts', 'b.ts', 'c.ts']);
+  });
+
   it('short-circuits as COMPLETED when the diff is empty (no AI call)', async () => {
     mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
     mockFetchDiff.mockResolvedValueOnce('');

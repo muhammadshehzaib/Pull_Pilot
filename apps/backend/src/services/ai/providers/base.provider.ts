@@ -1,11 +1,11 @@
-export interface AiSuggestion {
-  filePath: string;
-  lineNumber: number;
-  agentType: 'SECURITY' | 'PERFORMANCE' | 'ARCHITECTURE';
-  issue: string;
-  suggestion: string;
-  priority: 'HIGH' | 'MEDIUM' | 'LOW';
-}
+import {
+  AiSuggestion,
+  FINDING_CATEGORIES,
+  FINDING_SEVERITIES,
+} from '../finding-taxonomy';
+
+export type { AiSuggestion };
+export { normalizeSuggestions } from '../finding-taxonomy';
 
 export abstract class BaseAiProvider {
   protected apiKey: string;
@@ -33,11 +33,32 @@ export abstract class BaseAiProvider {
       {
         "filePath": "string",
         "lineNumber": number,
-        "agentType": "SECURITY" | "PERFORMANCE" | "ARCHITECTURE",
+        "agentType": "${FINDING_CATEGORIES.join('" | "')}",
         "issue": "Concise description",
         "suggestion": "Clear solution snippet",
-        "priority": "HIGH" | "MEDIUM" | "LOW"
+        "priority": "${FINDING_SEVERITIES.join('" | "')}"
       }
+
+      SEVERITY GUIDE (priority):
+      - CRITICAL: exploitable vulnerability, data loss/corruption, or a crash on a realistic input. Must be fixed before merge.
+      - HIGH: clear bug or significant regression that will affect users or break a documented contract.
+      - MEDIUM: real problem with a workaround, or a notable performance/robustness weakness.
+      - LOW: maintainability, readability, or duplication issue worth fixing opportunistically.
+      - INFO: purely informational observation, style preference, or optional hardening. Do not use INFO for real defects.
+
+      CATEGORY GUIDE (agentType):
+      - SECURITY: injection, authn/authz, secrets, unsafe deserialization, SSRF, XSS, crypto misuse.
+      - BUG: will misbehave at runtime — null dereference, wrong condition, off-by-one, broken state.
+      - CORRECTNESS: logic that is wrong but not immediately crashing — bad bounds, wrong formula, incorrect edge-case handling.
+      - PERFORMANCE: slow paths, unnecessary re-renders, N+1 queries, leaks, blocking the event loop.
+      - ARCHITECTURE: coupling, layering violations, unclear boundaries, non-extensible design.
+      - MAINTAINABILITY: dead code, duplication, poor naming, inconsistent style, missing types.
+      - TESTING: missing or weak test coverage for the changed behavior, untestable design, flaky-test causes.
+
+      CALIBRATION RULES:
+      - Only report a finding you can point at a specific changed line for. Never speculate about code you cannot see.
+      - Do not pad the array with restatements of the same issue. One finding per distinct problem.
+      - Report genuine problems only. If the diff has no meaningful issues, return an empty array [].
     `;
 
     const rulesInjection = customRules.length > 0 

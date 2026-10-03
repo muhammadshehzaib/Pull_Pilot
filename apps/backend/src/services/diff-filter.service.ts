@@ -1,5 +1,6 @@
 import picomatch from 'picomatch';
 import { AiPrConfig, SeverityLevel } from './config.service';
+import { SEVERITY_RANK, normalizeSeverity } from './ai/finding-taxonomy';
 
 export interface FileDiffChunk {
   filename: string;
@@ -7,11 +8,16 @@ export interface FileDiffChunk {
   isIgnored: boolean;
 }
 
+/**
+ * Severity rank for the lowercase values used by .aipr.yml. Derived from the
+ * shared taxonomy so config and model output always agree.
+ */
 const SEVERITY_RANKS: Record<SeverityLevel, number> = {
-  low: 0,
-  medium: 1,
-  high: 2,
-  critical: 3,
+  info: SEVERITY_RANK.INFO,
+  low: SEVERITY_RANK.LOW,
+  medium: SEVERITY_RANK.MEDIUM,
+  high: SEVERITY_RANK.HIGH,
+  critical: SEVERITY_RANK.CRITICAL,
 };
 
 export class DiffFilterService {
@@ -94,11 +100,15 @@ export class DiffFilterService {
 
   /**
    * Checks if an AI review finding meets the minimum severity threshold.
+   *
+   * A missing or unrecognised severity is treated as INFO rather than being
+   * dropped outright, so a model that invents a new level cannot silently
+   * remove findings from a review.
    */
   public static isSeverityMet(findingSeverity: string | undefined, minSeverity: SeverityLevel): boolean {
-    const rawSev = (findingSeverity || 'low').toLowerCase() as SeverityLevel;
-    const itemRank = SEVERITY_RANKS[rawSev] ?? 0;
-    const minRank = SEVERITY_RANKS[minSeverity] ?? 0;
+    const normalized = normalizeSeverity(findingSeverity) ?? 'INFO';
+    const itemRank = SEVERITY_RANK[normalized] ?? 0;
+    const minRank = SEVERITY_RANKS[minSeverity] ?? SEVERITY_RANK.LOW;
     return itemRank >= minRank;
   }
 

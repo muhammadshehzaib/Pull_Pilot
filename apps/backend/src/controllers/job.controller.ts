@@ -1,37 +1,20 @@
 import { Request, Response } from 'express';
 import prisma from '../config/prisma';
+import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxonomy';
 
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 
-export interface AiSuggestion {
-  filePath: string;
-  lineNumber: number;
-  issue: string;
-  suggestion: string;
-  agentType: 'SECURITY' | 'PERFORMANCE' | 'STYLE' | 'BUG_RISK' | 'ARCHITECTURE';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH';
-}
-
-function isAiSuggestion(item: unknown): item is AiSuggestion {
-  if (!item || typeof item !== 'object') return false;
-  const s = item as Record<string, unknown>;
-  return (
-    typeof s.filePath === 'string' &&
-    typeof s.lineNumber === 'number' &&
-    typeof s.issue === 'string' &&
-    typeof s.suggestion === 'string'
-  );
-}
+export type { AiSuggestion };
 
 export function extractNormalizedFindings(results: unknown): AiSuggestion[] {
   if (!results || typeof results !== 'object') return [];
   if (Array.isArray(results)) {
-    return results.filter(isAiSuggestion);
+    return normalizeSuggestions(results);
   }
   const obj = results as Record<string, unknown>;
   if (Array.isArray(obj.suggestions)) {
-    return obj.suggestions.filter(isAiSuggestion);
+    return normalizeSuggestions(obj.suggestions);
   }
   return [];
 }

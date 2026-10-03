@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ConfigService, DEFAULT_AIPR_CONFIG } from './config.service';
+import { ConfigService, DEFAULT_AIPR_CONFIG, SEVERITY_LEVELS } from './config.service';
 
 describe('ConfigService', () => {
   it('parses valid .aipr.yml string into AiPrConfig object', () => {
@@ -37,6 +37,34 @@ min_severity: "invalid_level"
 `;
     const config = ConfigService.parseConfigYaml(yamlString);
     expect(config.min_severity).toBe('low');
+  });
+
+  it('accepts every documented severity level', () => {
+    for (const level of SEVERITY_LEVELS) {
+      const config = ConfigService.parseConfigYaml(`min_severity: "${level}"`);
+      expect(config.min_severity).toBe(level);
+    }
+  });
+
+  it('accepts severity levels in any casing', () => {
+    expect(ConfigService.parseConfigYaml('min_severity: CRITICAL').min_severity).toBe('critical');
+    expect(ConfigService.parseConfigYaml('min_severity: Info').min_severity).toBe('info');
+  });
+
+  it('warns when min_severity is unrecognised instead of failing silently', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const config = ConfigService.parseConfigYaml('min_severity: "urgent"');
+
+    expect(config.min_severity).toBe('low');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('urgent'));
+    warn.mockRestore();
+  });
+
+  it('does not warn when min_severity is omitted', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ConfigService.parseConfigYaml('version: 1');
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('fetches repo config from GitHubService if present', async () => {

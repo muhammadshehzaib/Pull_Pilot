@@ -47,14 +47,21 @@ describe('GeminiProvider', () => {
       await expect(provider.analyzeCode('diff')).resolves.toEqual([sample]);
     });
 
-    it('configures model with gemini-1.5-pro and JSON mime type', async () => {
+    it('configures model with gemini-2.5-flash and JSON mime type', async () => {
       mockGenerateContent.mockResolvedValueOnce(geminiResponse('[]'));
       await provider.analyzeCode('diff');
 
       expect(mockGetGenerativeModel).toHaveBeenCalledWith({
-        model: 'gemini-1.5-pro',
+        model: 'gemini-2.5-flash',
         generationConfig: { responseMimeType: 'application/json' },
       });
+    });
+
+    it('honours the GEMINI_MODEL override', async () => {
+      mockGenerateContent.mockResolvedValueOnce(geminiResponse('[]'));
+      await provider.analyzeCode('diff');
+
+      expect(mockGetGenerativeModel.mock.calls[0][0].model).toBe(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
     });
 
     it('includes the diff and system prompt in the user prompt', async () => {

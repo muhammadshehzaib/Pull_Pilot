@@ -59,6 +59,35 @@ index 3333333..4444444 100644
     expect(DiffFilterService.isSeverityMet('high', 'critical')).toBe(false);
   });
 
+  it('handles uppercase severities emitted by the AI model', () => {
+    expect(DiffFilterService.isSeverityMet('CRITICAL', 'critical')).toBe(true);
+    expect(DiffFilterService.isSeverityMet('HIGH', 'critical')).toBe(false);
+    expect(DiffFilterService.isSeverityMet('CRITICAL', 'high')).toBe(true);
+    expect(DiffFilterService.isSeverityMet('INFO', 'low')).toBe(false);
+    expect(DiffFilterService.isSeverityMet('INFO', 'info')).toBe(true);
+  });
+
+  it('only lets CRITICAL findings through a critical threshold', () => {
+    // Regression: min_severity: critical used to be unreachable, so users got
+    // zero findings with no error. Every level below CRITICAL must be filtered.
+    for (const level of ['HIGH', 'MEDIUM', 'LOW', 'INFO']) {
+      expect(DiffFilterService.isSeverityMet(level, 'critical')).toBe(false);
+    }
+    expect(DiffFilterService.isSeverityMet('CRITICAL', 'critical')).toBe(true);
+  });
+
+  it('treats an unrecognised severity as INFO instead of dropping it at the default threshold', () => {
+    // Previously unknown values ranked 0 and passed min_severity: low.
+    // Keeping them at INFO keeps them visible when the threshold is lowered.
+    expect(DiffFilterService.isSeverityMet('WAT', 'info')).toBe(true);
+    expect(DiffFilterService.isSeverityMet('WAT', 'low')).toBe(false);
+  });
+
+  it('handles synonyms the model may emit', () => {
+    expect(DiffFilterService.isSeverityMet('blocker', 'critical')).toBe(true);
+    expect(DiffFilterService.isSeverityMet('nit', 'info')).toBe(true);
+  });
+
   it('augments prompt with repository guidelines', () => {
     const config: AiPrConfig = {
       ...DEFAULT_AIPR_CONFIG,

@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
 
 export class OpenAiProvider extends BaseAiProvider {
   private aiClient: OpenAI;
@@ -29,7 +29,7 @@ export class OpenAiProvider extends BaseAiProvider {
       // Normalize to array if model wrapped it in a parent key like "suggestions"
       const result = Array.isArray(rawData) ? rawData : Object.values(rawData)[0];
       
-      return Array.isArray(result) ? result as AiSuggestion[] : [];
+      return normalizeSuggestions(result);
 
     } catch (error) {
       console.error('🔴 OpenAI Provider Error:', error);

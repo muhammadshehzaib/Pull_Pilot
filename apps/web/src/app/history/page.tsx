@@ -20,17 +20,40 @@ interface JobSummary {
   repository: { id: string; fullName: string };
 }
 
+type Priority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
+
+type AgentType =
+  | 'SECURITY'
+  | 'BUG'
+  | 'CORRECTNESS'
+  | 'PERFORMANCE'
+  | 'ARCHITECTURE'
+  | 'MAINTAINABILITY'
+  | 'TESTING';
+
 interface AiSuggestion {
   filePath: string;
   lineNumber: number;
-  agentType: 'SECURITY' | 'PERFORMANCE' | 'ARCHITECTURE';
+  agentType: AgentType;
   issue: string;
   suggestion: string;
-  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  priority: Priority;
+}
+
+/**
+ * Delivery problems recorded by the worker. A finding listed here was found but
+ * GitHub refused the inline comment (usually the cited line is not in the diff),
+ * so it only appears in the PR summary — not as an inline comment.
+ */
+interface CommentFailure {
+  location: string;
+  error: string;
 }
 
 interface JobDetail extends JobSummary {
   results: AiSuggestion[] | null;
+  commentFailures?: CommentFailure[];
+  summaryPosted?: boolean;
 }
 
 const STATUS_COLORS: Record<JobStatus, string> = {
@@ -40,10 +63,12 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   FAILED: 'var(--danger)',
 };
 
-const PRIORITY_COLORS = {
+const PRIORITY_COLORS: Record<Priority, string> = {
+  CRITICAL: '#a21caf',
   HIGH: 'var(--danger)',
   MEDIUM: 'var(--warning)',
-  LOW: 'var(--text-secondary)',
+  LOW: 'var(--accent)',
+  INFO: 'var(--text-secondary)',
 };
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -53,13 +78,40 @@ const STATUS_LABELS: Record<JobStatus, string> = {
   FAILED: 'Failed',
 };
 
-const PRIORITY_LABELS = { HIGH: 'High', MEDIUM: 'Medium', LOW: 'Low' } as const;
+const PRIORITY_LABELS: Record<Priority, string> = {
+  CRITICAL: 'Critical',
+  HIGH: 'High',
+  MEDIUM: 'Medium',
+  LOW: 'Low',
+  INFO: 'Info',
+};
 
-const AGENT_LABELS = {
+const AGENT_LABELS: Record<AgentType, string> = {
   SECURITY: 'Security',
+  BUG: 'Bug',
+  CORRECTNESS: 'Correctness',
   PERFORMANCE: 'Performance',
   ARCHITECTURE: 'Architecture',
-} as const;
+  MAINTAINABILITY: 'Maintainability',
+  TESTING: 'Testing',
+};
+
+/** Most severe first. Mirrors the backend SEVERITY_RANK. */
+const PRIORITY_ORDER: Record<Priority, number> = {
+  CRITICAL: 0,
+  HIGH: 1,
+  MEDIUM: 2,
+  LOW: 3,
+  INFO: 4,
+};
+
+const PRIORITY_ICONS: Record<Priority, string> = {
+  CRITICAL: '🔥',
+  HIGH: '🚨',
+  MEDIUM: '⚠️',
+  LOW: '🔎',
+  INFO: 'ℹ️',
+};
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useAuth();
@@ -242,10 +294,9 @@ function JobDetailView({ job }: { job: JobDetail }) {
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
-  const sortedSuggestions = (job.results || []).slice().sort((a, b) => {
-    const pOrder: Record<string, number> = { HIGH: 1, MEDIUM: 2, LOW: 3 };
-    return (pOrder[a.priority] || 4) - (pOrder[b.priority] || 4);
-  });
+  const sortedSuggestions = (job.results || []).slice().sort(
+    (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority],
+  );
 
   async function handleCopyAll() {
     const plan = generateFixPlanForLLM(job, sortedSuggestions);
@@ -295,22 +346,47 @@ function JobDetailView({ job }: { job: JobDetail }) {
           </div>
           {sortedSuggestions.length > 0 && (
             <div className="detail-badge-group">
-              {(() => {
-                const highCount = sortedSuggestions.filter((r) => r.priority === 'HIGH').length;
-                const medCount = sortedSuggestions.filter((r) => r.priority === 'MEDIUM').length;
-                const lowCount = sortedSuggestions.filter((r) => r.priority === 'LOW').length;
+              {(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as Priority[]).map((level) => {
+                const count = sortedSuggestions.filter((r) => r.priority === level).length;
+                if (count === 0) return null;
                 return (
-                  <>
-                    {highCount > 0 && <span className="badge-high">{highCount} High</span>}
-                    {medCount > 0 && <span className="badge-medium">{medCount} Medium</span>}
-                    {lowCount > 0 && <span className="badge-low">{lowCount} Low</span>}
-                  </>
+                  <span key={level} className={`badge-${level.toLowerCase()}`}>
+                    {count} {PRIORITY_LABELS[level]}
+                  </span>
                 );
-              })()}
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {job.commentFailures && job.commentFailures.length > 0 && (
+        <div
+          className="glass-card"
+          style={{
+            borderLeft: '3px solid var(--warning)',
+            padding: '0.75rem 1rem',
+            fontSize: '0.82rem',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <strong style={{ color: 'var(--warning)' }}>
+            ⚠️ {job.commentFailures.length} finding(s) could not be posted as inline
+            comments
+          </strong>
+          <div style={{ marginTop: '0.4rem' }}>
+            GitHub rejected the cited location — usually the line is not part of this
+            diff. These findings are included in the PR summary and listed below.
+          </div>
+          <ul style={{ margin: '0.4rem 0 0', paddingLeft: '1.1rem' }}>
+            {job.commentFailures.map((f, i) => (
+              <li key={i}>
+                <code>{f.location}</code> — {f.error}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
@@ -363,28 +439,29 @@ function JobDetailView({ job }: { job: JobDetail }) {
 function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): string {
   const repoName = job.repository.fullName;
   const refLabel = job.eventType === 'PULL_REQUEST' ? `PR #${job.referenceId}` : `Commit ${job.referenceId}`;
-  const high = suggestions.filter((s) => s.priority === 'HIGH');
-  const medium = suggestions.filter((s) => s.priority === 'MEDIUM');
-  const low = suggestions.filter((s) => s.priority === 'LOW');
+  const countBy = (level: Priority) => suggestions.filter((s) => s.priority === level).length;
+  const breakdown = (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as Priority[])
+    .map((level) => `${countBy(level)} ${PRIORITY_LABELS[level]}`)
+    .join(', ');
 
   let markdown = `# 🛠️ Comprehensive Code Fix Plan: ${repoName}\n`;
-  markdown += `**Target:** ${refLabel} | **Total Findings:** ${suggestions.length} (${high.length} High, ${medium.length} Medium, ${low.length} Low)\n\n`;
+  markdown += `**Target:** ${refLabel} | **Total Findings:** ${suggestions.length} (${breakdown})\n\n`;
   markdown += `You are an expert Principal Software Engineer and Architect. An automated code review identified ${suggestions.length} issue(s) in this repository. Follow the strategic plan below to solve each issue with production-ready, strictly typed code.\n\n`;
 
   markdown += `## 🧭 Execution Strategy\n`;
-  markdown += `1. **Phase 1 (Critical):** Resolve all High-severity architectural, security, and runtime failure risks first.\n`;
-  markdown += `2. **Phase 2 (Robustness):** Address Medium-severity bugs, performance bottlenecks, and concurrency issues.\n`;
-  markdown += `3. **Phase 3 (Refinement):** Fix Low-severity code smells, strict type definitions, and naming consistency.\n`;
-  markdown += `4. **Zero \`any\` Policy:** Avoid \`as any\` casts; implement discriminated unions and proper runtime type guards.\n`;
-  markdown += `5. **Backwards Compatibility:** Maintain existing public interfaces, APIs, and ensure no regressions.\n\n`;
+  markdown += `1. **Phase 1 (Critical):** Resolve all Critical-severity exploitable vulnerabilities, data-loss risks, and outright crashes first.\n`;
+  markdown += `2. **Phase 2 (High):** Fix High-severity correctness and security bugs that affect real users or documented contracts.\n`;
+  markdown += `3. **Phase 3 (Robustness):** Address Medium-severity bugs, performance bottlenecks, and concurrency issues.\n`;
+  markdown += `4. **Phase 4 (Refinement):** Fix Low and Info-severity maintainability issues, test gaps, and naming consistency.\n`;
+  markdown += `5. **Zero \`any\` Policy:** Avoid \`as any\` casts; implement discriminated unions and proper runtime type guards.\n`;
+  markdown += `6. **Backwards Compatibility:** Maintain existing public interfaces, APIs, and ensure no regressions.\n\n`;
 
-  markdown += `## 📋 Actionable Findings (Ordered High to Low Severity)\n\n`;
+  markdown += `## 📋 Actionable Findings (Most Severe First)\n\n`;
 
   suggestions.forEach((item, index) => {
-    const icon = item.priority === 'HIGH' ? '🚨' : item.priority === 'MEDIUM' ? '⚠️' : 'ℹ️';
-    markdown += `### ${index + 1}. ${icon} [${item.priority}] ${item.agentType} Flaw\n`;
+    markdown += `### ${index + 1}. ${PRIORITY_ICONS[item.priority]} [${item.priority}] ${AGENT_LABELS[item.agentType]} Flaw\n`;
     markdown += `- **Location:** \`${item.filePath}:${item.lineNumber}\`\n`;
-    markdown += `- **Category:** ${item.agentType}\n`;
+    markdown += `- **Category:** ${AGENT_LABELS[item.agentType]}\n`;
     markdown += `- **Priority:** ${item.priority}\n\n`;
     markdown += `**Problem Statement:**\n${item.issue}\n\n`;
     markdown += `**Prescribed Fix / Implementation Guidance:**\n\`\`\`\n${item.suggestion}\n\`\`\`\n\n`;
@@ -401,13 +478,12 @@ function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): str
 }
 
 function generateSingleFindingPrompt(item: AiSuggestion, repoName: string): string {
-  const icon = item.priority === 'HIGH' ? '🚨' : item.priority === 'MEDIUM' ? '⚠️' : 'ℹ️';
-  return `### Task: Fix ${icon} [${item.priority}] ${item.agentType} in \`${item.filePath}:${item.lineNumber}\`
+  return `### Task: Fix ${PRIORITY_ICONS[item.priority]} [${item.priority}] ${AGENT_LABELS[item.agentType]} in \`${item.filePath}:${item.lineNumber}\`
 
 **Context:**
 - **Repository:** \`${repoName}\`
 - **File:** \`${item.filePath}\` (around line ${item.lineNumber})
-- **Category:** ${item.agentType}
+- **Category:** ${AGENT_LABELS[item.agentType]}
 - **Severity:** ${item.priority}
 
 ---

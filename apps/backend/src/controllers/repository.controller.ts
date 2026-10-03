@@ -146,6 +146,12 @@ export class RepositoryController {
     if (!repo) return res.status(404).json({ error: 'Repository not found or inactive' });
 
     const [owner, name] = repo.fullName.split('/');
+    if (!pullNumber && !(headSha && baseSha) && !branch) {
+      return res.status(400).json({
+        error: 'Either pullNumber, (headSha and baseSha), or branch must be provided',
+      });
+    }
+
     let eventType: 'PULL_REQUEST' | 'PUSH';
     let referenceId: string;
     let resolvedHead: string;
