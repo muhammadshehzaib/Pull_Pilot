@@ -23,7 +23,7 @@ const FAQS = [
   },
   {
     q: 'How do I upgrade or cancel my subscription?',
-    a: 'All paid subscriptions are managed through GitHub Marketplace. You can upgrade, downgrade, or cancel at any time from your GitHub account settings.',
+    a: 'All paid subscriptions are managed securely through Polar. You can upgrade, downgrade, or cancel at any time from the billing page.',
   },
   {
     q: 'Can I use my own OpenAI, Gemini, or Claude API key?',

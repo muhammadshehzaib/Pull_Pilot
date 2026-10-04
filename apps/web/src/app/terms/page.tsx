@@ -53,8 +53,8 @@ export default function TermsPage() {
           </p>
           <ul>
             <li><strong>Free Tier:</strong> Includes unlimited reviews on public open-source repositories and up to 50 reviews per calendar month on private repositories.</li>
-            <li><strong>Paid Plans (Indie / Team):</strong> Subscriptions are purchased and billed directly through <strong>GitHub Marketplace</strong>. GitHub acts as the merchant of record for all billing, tax collection, and recurring invoicing.</li>
-            <li><strong>Cancellation:</strong> You may cancel or downgrade your subscription at any time via your GitHub account settings. Cancellations take effect at the end of the current billing cycle.</li>
+            <li><strong>Paid Plans (Indie / Team):</strong> Subscriptions are purchased and billed securely through <strong>Polar</strong>, which acts as the merchant of record for all billing, tax collection, and recurring invoicing.</li>
+            <li><strong>Cancellation:</strong> You may cancel or downgrade your subscription at any time from the billing page. Cancellations take effect at the end of the current billing cycle.</li>
           </ul>
 
           <h2>4. Acceptable Use Policy</h2>

@@ -3,7 +3,6 @@ import { analysisQueue } from '../config/queue';
 import prisma from '../config/prisma';
 import { QuotaService } from '../services/quota.service';
 import { GitHubAppService } from '../services/github-app.service';
-import { MarketplaceService } from '../services/marketplace.service';
 
 export class WebhookController {
   static async handleGitHubEvent(req: Request, res: Response) {
@@ -27,11 +26,8 @@ export class WebhookController {
       return await WebhookController.handleInstallationRepositoriesEvent(payload, res);
     }
 
-    // 4. Handle GitHub Marketplace Billing events
-    if (githubEventHeader === 'marketplace_purchase') {
-      return await WebhookController.handleMarketplaceEvent(payload, res);
-    }
-
+    // 4. Handle PR review events (pull_request, etc.)
+    //    Billing moved to Polar and arrives on /api/billing/webhook.
     try {
       const repoFullName = payload?.repository?.full_name;
       if (!repoFullName) {
@@ -306,19 +302,6 @@ export class WebhookController {
     }
 
     return res.status(200).json({ status: 'PROCESSED', action });
-  }
-
-  /**
-   * Handles GitHub Marketplace purchase, change, and cancellation webhook events.
-   */
-  private static async handleMarketplaceEvent(payload: any, res: Response) {
-    try {
-      const result = await MarketplaceService.handleMarketplaceEvent(payload);
-      return res.status(200).json(result);
-    } catch (err: any) {
-      console.error('💥 Error processing marketplace_purchase payload:', err);
-      return res.status(500).json({ error: (err as Error).message });
-    }
   }
 }
 

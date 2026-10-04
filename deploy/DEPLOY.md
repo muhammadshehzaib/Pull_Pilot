@@ -25,7 +25,8 @@ git clone https://github.com/muhammadshehzaib/ai-pr-reviewer.git /opt/ai-pr-revi
 cd /opt/ai-pr-reviewer
 cp .env.prod.example .env.prod
 # fill in: POSTGRES_PASSWORD + ENCRYPTION_KEY + JWT_SECRET (openssl rand -hex 32 each),
-# prod OAuth app client id/secret, GITHUB_APP_ID, bot PAT, random GITHUB_WEBHOOK_SECRET
+# prod OAuth app client id/secret, GITHUB_APP_ID, bot PAT, random GITHUB_WEBHOOK_SECRET,
+# and the Polar token/secret/product ids (see step 1c)
 nano .env.prod
 ```
 
@@ -55,6 +56,30 @@ On boot the backend logs which mode is active. This is the line to check:
 
 - `🔐 GitHub auth: App mode (App ID ...)` — correct, multi-tenant
 - `⚠️  GitHub auth: PAT fallback` — the key is missing or unreadable; check step 1b
+
+## 1c. Polar billing setup
+
+Billing runs through Polar as merchant of record. Do this once, before the first
+paid user, and again whenever a price changes.
+
+1. In the Polar dashboard, create four **products** (one per tier per cycle) with
+   these prices: Indie `$2/month`, Indie `$10/year`, Team `$5/month`,
+   Team `$50/year`. Copy each product id.
+2. Add to `.env.prod`:
+   - `POLAR_ACCESS_TOKEN` — Polar → Settings → Developers → Access tokens
+     (organization token with Checkouts write + webhooks).
+   - `POLAR_WEBHOOK_SECRET` — created in the next step.
+   - `POLAR_PRODUCT_INDIE_MONTHLY`, `POLAR_PRODUCT_INDIE_YEARLY`,
+     `POLAR_PRODUCT_TEAM_MONTHLY`, `POLAR_PRODUCT_TEAM_YEARLY` — the product ids.
+   - leave `POLAR_SANDBOX=false`.
+3. In Polar → Settings → Webhooks, add endpoint
+   `https://reviewerapi.shehzaib.com/api/billing/webhook` and subscribe to the
+   `subscription.*` events. Copy the signing secret into `POLAR_WEBHOOK_SECRET`.
+4. Redeploy (step 2), then verify checkout end-to-end with a real card in
+   sandbox first (`POLAR_SANDBOX=true`) before switching it to production.
+
+Anything Polar fails to deliver is retried by Polar; the handler returns 500 on a
+persistence error and 202 on success so retries stop once the row is written.
 
 ## 2. Build and start
 

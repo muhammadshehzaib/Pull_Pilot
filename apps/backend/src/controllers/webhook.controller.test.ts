@@ -11,7 +11,6 @@ const {
   mockInstallationUpsert,
   mockInstallationDeleteMany,
   mockInstallationFindUnique,
-  mockMarketplaceHandle,
 } = vi.hoisted(() => ({
   mockRepoFindFirst: vi.fn(),
   mockRepoCreate: vi.fn(),
@@ -23,7 +22,6 @@ const {
   mockInstallationUpsert: vi.fn(),
   mockInstallationDeleteMany: vi.fn(),
   mockInstallationFindUnique: vi.fn(),
-  mockMarketplaceHandle: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -48,12 +46,6 @@ vi.mock('../config/prisma', () => ({
 vi.mock('../config/queue', () => ({
   analysisQueue: { add: mockQueueAdd },
   ANALYSIS_QUEUE_NAME: 'test-queue',
-}));
-
-vi.mock('../services/marketplace.service', () => ({
-  MarketplaceService: {
-    handleMarketplaceEvent: mockMarketplaceHandle,
-  },
 }));
 
 import { WebhookController } from './webhook.controller';
@@ -127,9 +119,9 @@ describe('WebhookController.handleGitHubEvent — installation', () => {
 });
 
 describe('WebhookController.handleGitHubEvent — marketplace_purchase', () => {
-  it('delegates to MarketplaceService and returns processed result', async () => {
-    mockMarketplaceHandle.mockResolvedValueOnce({ status: 'ACTIVE', plan: 'INDIE' });
-
+  it('no longer treats marketplace_purchase as a billing event', async () => {
+    // Billing moved to Polar. A stale GitHub Marketplace delivery must not
+    // touch plan state; it should fall through to the normal repo handling.
     const req = mockReq({
       headers: { 'x-github-event': 'marketplace_purchase' },
       body: {
@@ -144,24 +136,10 @@ describe('WebhookController.handleGitHubEvent — marketplace_purchase', () => {
 
     await WebhookController.handleGitHubEvent(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ status: 'ACTIVE', plan: 'INDIE' });
-    expect(mockMarketplaceHandle).toHaveBeenCalledWith(req.body);
-  });
-
-  it('returns 500 when MarketplaceService throws an error', async () => {
-    mockMarketplaceHandle.mockRejectedValueOnce(new Error('Invalid marketplace payload'));
-
-    const req = mockReq({
-      headers: { 'x-github-event': 'marketplace_purchase' },
-      body: { action: 'purchased' },
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Invalid repository structure in payload',
     });
-    const res = mockRes();
-
-    await WebhookController.handleGitHubEvent(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(500);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid marketplace payload' });
   });
 });
 

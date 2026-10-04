@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Sparkles, ArrowUpRight, CheckCircle2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
 
 interface BillingUsageResponse {
   plan: 'FREE' | 'INDIE' | 'TEAM';
   billingCycle: string;
-  marketplaceStatus: string;
-  marketplaceUrl: string;
+  subscriptionStatus: string;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
   usage: {
     billingMonth: string;
     publicReviewsUsed: number;
@@ -41,7 +43,7 @@ export function UsageMeter() {
 
   if (loading || !data) return null;
 
-  const { plan, usage, marketplaceUrl } = data;
+  const { plan, usage } = data;
   const isFree = plan === 'FREE';
   const limit = usage.privateReviewLimit || 50;
   const used = usage.privateReviewsUsed;
@@ -65,15 +67,13 @@ export function UsageMeter() {
           </span>
         </div>
 
-        <a
-          href={marketplaceUrl}
-          target="_blank"
-          rel="noreferrer"
+        <Link
+          href="/pricing"
           className="link-button"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}
         >
-          {isFree ? 'Upgrade Plan' : 'Manage on GitHub'} <ArrowUpRight size={12} />
-        </a>
+          {isFree ? 'Upgrade Plan' : 'Manage Billing'} <ArrowUpRight size={12} />
+        </Link>
       </div>
 
       {isFree ? (

@@ -9,6 +9,14 @@ vi.mock('../lib/api', () => ({
   api: mockApi,
 }));
 
+vi.mock('next/link', () => ({
+  default: ({ href, children, ...rest }: any) => (
+    <a href={typeof href === 'string' ? href : '#'} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock('lucide-react', () => {
   const stub = (name: string) => (props: any) => (
     <span data-testid={`icon-${name}`} aria-label={name} {...props} />
@@ -41,8 +49,7 @@ describe('UsageMeter component', () => {
     mockApi.mockResolvedValueOnce({
       plan: 'FREE',
       billingCycle: 'monthly',
-      marketplaceStatus: 'ACTIVE',
-      marketplaceUrl: 'https://github.com/marketplace/ai-pr-reviewer',
+      subscriptionStatus: 'active',
       usage: {
         billingMonth: '2026-09',
         publicReviewsUsed: 5,
@@ -67,8 +74,7 @@ describe('UsageMeter component', () => {
     mockApi.mockResolvedValueOnce({
       plan: 'FREE',
       billingCycle: 'monthly',
-      marketplaceStatus: 'ACTIVE',
-      marketplaceUrl: 'https://github.com/marketplace/ai-pr-reviewer',
+      subscriptionStatus: 'active',
       usage: {
         billingMonth: '2026-09',
         publicReviewsUsed: 12,
@@ -91,8 +97,7 @@ describe('UsageMeter component', () => {
     mockApi.mockResolvedValueOnce({
       plan: 'INDIE',
       billingCycle: 'monthly',
-      marketplaceStatus: 'ACTIVE',
-      marketplaceUrl: 'https://github.com/marketplace/ai-pr-reviewer',
+      subscriptionStatus: 'active',
       usage: {
         billingMonth: '2026-09',
         publicReviewsUsed: 40,
@@ -108,7 +113,7 @@ describe('UsageMeter component', () => {
     await waitFor(() => {
       expect(screen.getByText('INDIE Plan Active')).toBeInTheDocument();
       expect(screen.getByText(/Unlimited private & public reviews active/i)).toBeInTheDocument();
-      expect(screen.getByText('Manage on GitHub')).toBeInTheDocument();
+      expect(screen.getByText('Manage Billing')).toBeInTheDocument();
     });
   });
 });

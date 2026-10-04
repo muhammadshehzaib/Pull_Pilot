@@ -8,7 +8,6 @@ import {
   Star,
   CheckCircle2,
   ChevronRight,
-  ExternalLink,
   ShieldCheck,
   Zap,
   Sparkles,
@@ -26,6 +25,7 @@ import { ComparisonSection } from '../components/ComparisonSection';
 import { UseCasesSection } from '../components/UseCasesSection';
 import { TestimonialsSection } from '../components/TestimonialsSection';
 import { FaqAccordion } from '../components/FaqAccordion';
+import { UpgradeButton } from '../components/UpgradeButton';
 import { PullPilotLogo } from '../components/PullPilotLogo';
 import { Footer } from '../components/Footer';
 
@@ -291,7 +291,7 @@ export default function HomePage() {
               className={`pill-switch-btn ${annualBilling ? 'pill-switch-active' : ''}`}
             >
               Annual Billing{' '}
-              <span style={{ color: '#10b981', fontWeight: 700 }}>(Save 58%)</span>
+              <span style={{ color: '#10b981', fontWeight: 700 }}>(Save up to 58%)</span>
             </button>
           </div>
         </div>
@@ -364,19 +364,18 @@ export default function HomePage() {
               </p>
             ) : (
               <p style={{ color: '#64748b', fontSize: '0.84rem', marginBottom: '1.75rem' }}>
-                Switch to annual and get <strong style={{ color: '#10b981' }}>2 months free</strong>
+                Switch to annual and <strong style={{ color: '#10b981' }}>save $14 a year</strong>
               </p>
             )}
 
-            <a
-              href="https://github.com/marketplace/ai-pr-reviewer"
-              target="_blank"
-              rel="noreferrer"
+            <UpgradeButton
+              tier="INDIE"
+              billingCycle={annualBilling ? 'yearly' : 'monthly'}
               className="btn-primary-pill"
-              style={{ width: '100%', marginBottom: '2rem' }}
+              style={{ marginBottom: '2rem' }}
             >
-              Subscribe on GitHub <ExternalLink size={14} />
-            </a>
+              Subscribe Now <ArrowRight size={14} />
+            </UpgradeButton>
 
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.88rem', color: '#334155' }}>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Your Own AI Key — <strong>0% markup, always</strong></li>
@@ -399,15 +398,14 @@ export default function HomePage() {
               {annualBilling ? '$50' : '$5'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annualBilling ? ' / year' : ' / mo'}</span>
             </div>
 
-            <a
-              href="https://github.com/marketplace/ai-pr-reviewer"
-              target="_blank"
-              rel="noreferrer"
+            <UpgradeButton
+              tier="TEAM"
+              billingCycle={annualBilling ? 'yearly' : 'monthly'}
               className="btn-secondary-pill"
-              style={{ width: '100%', marginBottom: '2rem' }}
+              style={{ marginBottom: '2rem' }}
             >
-              Upgrade Organization <ExternalLink size={14} />
-            </a>
+              Upgrade Team <ArrowRight size={14} />
+            </UpgradeButton>
 
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.88rem', color: '#475569' }}>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Everything in Indie Plan</li>

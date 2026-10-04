@@ -36,11 +36,11 @@ const FAQS: Faq[] = [
   },
   {
     q: 'What is the difference between monthly and annual billing?',
-    a: 'Monthly is $2/month ($24/year). Annual is $10/year — that is just $0.83/month, saving you $14 every year and getting you roughly two months free.',
+    a: 'Monthly is $2/month ($24/year). Annual is $10/year — that is just $0.83/month, saving you $14 every year.',
   },
   {
-    q: 'How does billing through GitHub Marketplace work?',
-    a: 'All paid plans are billed directly through GitHub Marketplace with automated tax handling, team seat pooling, and 1-click cancellation via your GitHub account settings. Your AI token usage is billed separately by your AI provider, never through us.',
+    q: 'How does billing work?',
+    a: 'Paid plans are billed securely through Polar, our merchant of record, which handles payment processing, taxes, and invoicing. You can upgrade, downgrade, or cancel anytime from the billing page. Your AI token usage is billed separately by your AI provider, never through us.',
   },
 ];
 

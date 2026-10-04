@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, CheckCircle2, ShieldCheck, Zap, Sparkles, ExternalLink, GitBranch } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
 import { PullPilotLogo } from '../../components/PullPilotLogo';
 import { Footer } from '../../components/Footer';
+import { UpgradeButton } from '../../components/UpgradeButton';
 import { BACKEND_URL } from '../../lib/api';
 
 export default function PricingPage() {
@@ -31,7 +32,7 @@ export default function PricingPage() {
       <main style={{ maxWidth: 1140, margin: '0 auto', padding: '7rem 1.5rem 6rem', textAlign: 'center' }}>
         <div className="badge-social-dark" style={{ marginBottom: '1rem' }}>
           <Sparkles size={14} color="#2563eb" />
-          <span>GitHub Marketplace Billing</span>
+          <span>Secure Checkout · Polar</span>
         </div>
 
         <h1 style={{ fontSize: 'clamp(2.25rem, 4vw, 3.25rem)', marginBottom: '0.75rem', color: '#0f172a' }}>
@@ -54,7 +55,7 @@ export default function PricingPage() {
               onClick={() => setAnnual(true)}
               className={`pill-switch-btn ${annual ? 'pill-switch-active' : ''}`}
             >
-              Annual Billing <span style={{ color: '#10b981', fontWeight: 700 }}>(Save 58%)</span>
+              Annual Billing <span style={{ color: '#10b981', fontWeight: 700 }}>(Save up to 58%)</span>
             </button>
           </div>
         </div>
@@ -121,19 +122,18 @@ export default function PricingPage() {
               </p>
             ) : (
               <p style={{ color: '#64748b', fontSize: '0.84rem', marginBottom: '1.75rem' }}>
-                Switch to annual and get <strong style={{ color: '#10b981' }}>2 months free</strong>
+                Switch to annual and <strong style={{ color: '#10b981' }}>save $14 a year</strong>
               </p>
             )}
 
-            <a
-              href="https://github.com/marketplace/ai-pr-reviewer"
-              target="_blank"
-              rel="noreferrer"
+            <UpgradeButton
+              tier="INDIE"
+              billingCycle={annual ? 'yearly' : 'monthly'}
               className="btn-primary-pill"
-              style={{ width: '100%', marginBottom: '2rem' }}
+              style={{ marginBottom: '2rem' }}
             >
-              Subscribe on GitHub <ExternalLink size={14} />
-            </a>
+              Subscribe Now
+            </UpgradeButton>
 
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.88rem', color: '#334155' }}>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#2563eb" /> Your Own AI Key — <strong>0% markup, always</strong></li>
@@ -155,15 +155,14 @@ export default function PricingPage() {
               {annual ? '$50' : '$5'} <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 400 }}>/ user{annual ? ' / year' : ' / mo'}</span>
             </div>
 
-            <a
-              href="https://github.com/marketplace/ai-pr-reviewer"
-              target="_blank"
-              rel="noreferrer"
+            <UpgradeButton
+              tier="TEAM"
+              billingCycle={annual ? 'yearly' : 'monthly'}
               className="btn-secondary-pill"
-              style={{ width: '100%', marginBottom: '2rem' }}
+              style={{ marginBottom: '2rem' }}
             >
-              Upgrade Organization <ExternalLink size={14} />
-            </a>
+              Upgrade Team
+            </UpgradeButton>
 
             <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.85rem', fontSize: '0.88rem', color: '#475569' }}>
               <li style={{ display: 'flex', gap: '0.6rem' }}><CheckCircle2 size={17} color="#10b981" /> Everything in Indie Plan</li>

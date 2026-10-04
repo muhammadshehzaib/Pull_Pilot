@@ -18,6 +18,7 @@ model User {
   vault         Vault?
   repositories  Repository[]
   installations Installation[]
+  subscriptions Subscription[]
 
   @@map("users")
 }
@@ -49,6 +50,34 @@ enum PlanTier {
   TEAM
 }
 
+/// A paid subscription held with Polar (our merchant of record).
+/// Entitlement is derived from these rows and mirrored onto Installation.plan,
+/// which is what the quota gate reads.
+model Subscription {
+  id                   String    @id @default(uuid())
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider             String    @default("polar")
+  /// Nullable: a user can have a Polar customer record before any subscription exists.
+  polarCustomerId      String?
+  /// Unique so a redelivered Polar webhook cannot create a duplicate row.
+  /// Postgres excludes NULLs from unique constraints, so orders without a
+  /// subscription (one-time purchases) do not collide.
+  polarSubscriptionId  String?   @unique
+  polarProductId       String?
+  plan                 PlanTier  @default(FREE)
+  status               String    @default("inactive")
+  billingCycle         String    @default("monthly")
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([polarCustomerId])
+  @@map("subscriptions")
+}
+
 model Installation {
   id                   String        @id @default(uuid())
   githubInstallationId BigInt        @unique
@@ -56,12 +85,6 @@ model Installation {
   accountType          String        @default("User") // "User" or "Organization"
   avatarUrl            String?
   plan                 PlanTier      @default(FREE)
-  marketplacePlanId    BigInt?
-  marketplacePlanName  String?
-  marketplaceUnitCount Int           @default(1)
-  marketplaceStatus    String        @default("ACTIVE")
-  billingCycle         String        @default("monthly")
-  nextBillingDate      DateTime?
   userId               String?
   user                 User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   repositories         Repository[]
