@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
-import { PullPilotLogo } from '../../components/PullPilotLogo';
+import { BrandLogo } from '../../components/BrandLogo';
+import { SITE_HOST } from '../../config/brand';
 import { Footer } from '../../components/Footer';
 import { UpgradeButton } from '../../components/UpgradeButton';
 import { BACKEND_URL } from '../../utils/constants';
@@ -17,9 +18,9 @@ export default function PricingPage() {
       <header className="nav-pill-wrapper">
         <nav className="nav-pill-container" style={{ position: 'relative' }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
-            <PullPilotLogo size={28} />
+            <BrandLogo size={28} />
             <span style={{ fontSize: '0.84rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f172a' }}>
-              pullpilot.ai
+              {SITE_HOST}
             </span>
           </Link>
 

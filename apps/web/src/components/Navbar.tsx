@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Cpu, ChevronRight, Menu, X, GitBranch, ArrowUpRight } from 'lucide-react';
 import { BACKEND_URL, GITHUB_APP_INSTALL_URL } from '../utils/constants';
+import { BRAND_NAME, SITE_HOST } from '../config/brand';
 
-import { PullPilotLogo } from './PullPilotLogo';
+import { BrandLogo } from './BrandLogo';
 
 interface NavbarProps {
   user?: { username: string; avatarUrl?: string | null } | null;
@@ -37,7 +38,7 @@ export function Navbar({ user }: NavbarProps) {
               textDecoration: 'none',
             }}
           >
-            <PullPilotLogo size={28} />
+            <BrandLogo size={28} />
             <span
               style={{
                 fontSize: '0.84rem',
@@ -47,7 +48,7 @@ export function Navbar({ user }: NavbarProps) {
                 color: '#0f172a',
               }}
             >
-              pullpilot.ai
+              {SITE_HOST}
             </span>
           </Link>
 
@@ -64,7 +65,7 @@ export function Navbar({ user }: NavbarProps) {
               Live Demo
             </a>
             <a href="#why-pullpilot" className="nav-link-item">
-              Why PullPilot
+              Why {BRAND_NAME}
             </a>
             <a href="#compare" className="nav-link-item">
               Compare
@@ -190,7 +191,7 @@ export function Navbar({ user }: NavbarProps) {
               className="nav-link-item"
               style={{ fontSize: '1.05rem', padding: '0.6rem 0.5rem' }}
             >
-              Why PullPilot
+              Why {BRAND_NAME}
             </a>
             <a
               href="#compare"

@@ -1,10 +1,12 @@
 import Link from 'next/link';
 import { ArrowLeft, FileText } from 'lucide-react';
-import { PullPilotLogo } from '../../components/PullPilotLogo';
+import { BrandLogo } from '../../components/BrandLogo';
+import { BRAND_NAME, SITE_HOST } from '../../config/brand';
 
 export const metadata = {
-  title: 'Terms of Service | PullPilot AI PR Reviewer',
-  description: 'Terms and conditions governing the use of PullPilot AI PR Reviewer service and GitHub App.',
+  // Bare page name: the root layout's title template appends the brand.
+  title: 'Terms of Service',
+  description: `Terms and conditions governing the use of ${BRAND_NAME} and its GitHub App.`,
 };
 
 export default function TermsPage() {
@@ -14,9 +16,9 @@ export default function TermsPage() {
       <header className="nav-pill-wrapper">
         <nav className="nav-pill-container" style={{ position: 'relative' }}>
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
-            <PullPilotLogo size={28} />
+            <BrandLogo size={28} />
             <span style={{ fontSize: '0.84rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f172a' }}>
-              pullpilot.ai
+              {SITE_HOST}
             </span>
           </Link>
           <Link href="/" className="btn-secondary-pill" style={{ fontSize: '0.84rem', padding: '0.45rem 1rem' }}>

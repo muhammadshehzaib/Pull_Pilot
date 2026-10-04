@@ -13,7 +13,8 @@ import {
   ArrowRight,
   GitBranch,
 } from 'lucide-react';
-import { PullPilotLogo } from './PullPilotLogo';
+import { BrandLogo } from './BrandLogo';
+import { BRAND_NAME } from '../config/brand';
 
 interface CompetitorComparison {
   feature: string;
@@ -182,8 +183,8 @@ export function ComparisonSection() {
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <PullPilotLogo size={22} />
-                  <span>PullPilot</span>
+                  <BrandLogo size={22} />
+                  <span>{BRAND_NAME}</span>
                   <span
                     style={{
                       fontSize: '0.65rem',

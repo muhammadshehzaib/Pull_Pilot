@@ -10,7 +10,8 @@ import {
   Terminal,
   Zap,
 } from 'lucide-react';
-import { PullPilotLogo } from './PullPilotLogo';
+import { BrandLogo } from './BrandLogo';
+import { BRAND_NAME, SITE_HOST } from '../config/brand';
 
 export function Footer() {
   const [isWatermarkHovered, setIsWatermarkHovered] = useState(false);
@@ -48,7 +49,7 @@ export function Footer() {
                 marginBottom: '1rem',
               }}
             >
-              <PullPilotLogo size={28} />
+              <BrandLogo size={28} />
               <span
                 style={{
                   fontSize: '0.82rem',
@@ -58,7 +59,7 @@ export function Footer() {
                   color: '#0f172a',
                 }}
               >
-                pullpilot.ai
+                {SITE_HOST}
               </span>
             </Link>
 
@@ -267,7 +268,7 @@ export function Footer() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-            <span>© 2026 PullPilot. All rights reserved.</span>
+            <span>© {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.</span>
             <span style={{ color: '#cbd5e1' }}>•</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#10b981', fontWeight: 600 }}>
               <CheckCircle2 size={13} /> Zero Code Retention
@@ -320,7 +321,7 @@ export function Footer() {
           transition: 'color 0.35s ease',
         }}
       >
-        pullpilot.ai
+        {SITE_HOST}
       </motion.div>
     </footer>
   );

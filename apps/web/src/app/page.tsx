@@ -26,7 +26,7 @@ import { UseCasesSection } from '../components/UseCasesSection';
 import { TestimonialsSection } from '../components/TestimonialsSection';
 import { FaqAccordion } from '../components/FaqAccordion';
 import { UpgradeButton } from '../components/UpgradeButton';
-import { PullPilotLogo } from '../components/PullPilotLogo';
+import { BrandLogo } from '../components/BrandLogo';
 import { Footer } from '../components/Footer';
 
 export default function HomePage() {

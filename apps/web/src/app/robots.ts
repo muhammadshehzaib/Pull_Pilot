@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next';
+import { absoluteUrl } from '../config/brand';
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -9,6 +10,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/dashboard/', '/vault/', '/history/', '/repositories/'],
       },
     ],
-    sitemap: 'https://pullpilot.ai/sitemap.xml',
+    sitemap: absoluteUrl('/sitemap.xml'),
   };
 }

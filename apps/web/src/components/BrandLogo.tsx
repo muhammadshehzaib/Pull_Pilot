@@ -1,12 +1,12 @@
 import React from 'react';
 
-interface PullPilotLogoProps {
+interface BrandLogoProps {
   size?: number;
   className?: string;
   showSparkle?: boolean;
 }
 
-export function PullPilotLogo({ size = 28, className = '', showSparkle = true }: PullPilotLogoProps) {
+export function BrandLogo({ size = 28, className = '', showSparkle = true }: BrandLogoProps) {
   const iconSize = Math.round(size * 0.58);
 
   return (

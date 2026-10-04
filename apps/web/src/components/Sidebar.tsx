@@ -5,7 +5,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Activity, Key, GitBranch, LogOut, History } from 'lucide-react';
 import { api } from '../lib/api';
 import { AuthUser } from '../lib/useAuth';
-import { PullPilotLogo } from './PullPilotLogo';
+import { BrandLogo } from './BrandLogo';
+import { BRAND_NAME } from '../config/brand';
 
 interface SidebarProps {
   user: AuthUser | null;
@@ -51,9 +52,9 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
           cursor: 'pointer',
         }}
       >
-        <PullPilotLogo size={24} />
+        <BrandLogo size={24} />
         <span style={{ fontWeight: 700, fontSize: '0.95rem', letterSpacing: '-0.02em', color: '#0f172a' }}>
-          PullPilot
+          {BRAND_NAME}
         </span>
       </Link>
 

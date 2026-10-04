@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { BRAND_NAME } from '../config/brand';
 import {
   ShieldCheck,
   Zap,
@@ -245,7 +246,7 @@ export function InteractiveDiffPlayground() {
               }}
             >
               <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} className="pulse-indicator" />
-              <span>PullPilot Bot Active</span>
+              <span>{BRAND_NAME} Bot Active</span>
             </span>
           </div>
         </div>

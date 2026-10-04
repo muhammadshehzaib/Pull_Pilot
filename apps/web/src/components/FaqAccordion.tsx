@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChevronDown, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { BRAND_NAME } from '../config/brand';
 
 interface Faq {
   q: string;
@@ -11,8 +12,8 @@ interface Faq {
 
 const FAQS: Faq[] = [
   {
-    q: 'How does PullPilot review pull requests?',
-    a: 'When you open or update a PR, GitHub sends a secure webhook to PullPilot. Our backend analyzes the AST and changed diff lines, evaluates your .aipr.yml rules, and posts actionable inline comments with one-click patches directly on the modified lines in GitHub.',
+    q: `How does ${BRAND_NAME} review pull requests?`,
+    a: `When you open or update a PR, GitHub sends a secure webhook to ${BRAND_NAME}. Our backend analyzes the AST and changed diff lines, evaluates your .aipr.yml rules, and posts actionable inline comments with one-click patches directly on the modified lines in GitHub.`,
   },
   {
     q: 'Is my proprietary code stored or used to train AI models?',

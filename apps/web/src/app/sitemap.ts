@@ -1,7 +1,8 @@
 import { MetadataRoute } from 'next';
+import { SITE_URL } from '../config/brand';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://pullpilot.ai';
+  const baseUrl = SITE_URL;
 
   return [
     {
