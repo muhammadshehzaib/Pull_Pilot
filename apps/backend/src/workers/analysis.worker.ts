@@ -1,4 +1,4 @@
-﻿import { Worker, Job, UnrecoverableError } from 'bullmq';
+import { Worker, Job, UnrecoverableError } from 'bullmq';
 import { redisConnection } from '../config/redis';
 import { ANALYSIS_QUEUE_NAME } from '../config/queue';
 import prisma from '../config/prisma';
@@ -15,7 +15,7 @@ import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
   async (job: Job) => {
-    console.log(`\nâš™ï¸  WORKER: Awakening for Job ${job.id}...`);
+    console.log(`\n⚙️  WORKER: Awakening for Job ${job.id}...`);
 
     const {
       jobId,
@@ -36,10 +36,10 @@ export const analysisWorker = new Worker(
       // 1. Update state to RUNNING
       await prisma.analysisJob.update({
         where: { id: jobId },
-        data: { status: 'POSTING' },
+        data: { status: 'RUNNING' },
       });
 
-      SocketService.emitStatus(userId, jobId, 'ðŸš€ Worker Active: Analysis Cycle Commenced', 'POSTING');
+      SocketService.emitStatus(userId, jobId, '🚀 Worker Active: Analysis Cycle Commenced', 'RUNNING');
 
       // 2. Fetch User associated with Repository & retrieve their SECURE KEY
       const dbRepo = await prisma.repository.findUnique({
@@ -56,8 +56,8 @@ export const analysisWorker = new Worker(
       }
 
       const vault = dbRepo.user.vault;
-      console.log(`ðŸ”‘ Vault Detected: Using user preference [${vault.provider}] engine.`);
-      SocketService.emitStatus(userId, jobId, `ðŸ” Unlocking Security Vault [Provider: ${vault.provider}]`, 'POSTING');
+      console.log(`🔑 Vault Detected: Using user preference [${vault.provider}] engine.`);
+      SocketService.emitStatus(userId, jobId, `🔐 Unlocking Security Vault [Provider: ${vault.provider}]`, 'RUNNING');
 
       // 3. DECRYPT THE KEY IN RAM TEMPORARILY
       const rawApiKey = EncryptionService.decrypt(
@@ -73,15 +73,15 @@ export const analysisWorker = new Worker(
 
       // 5. FETCH REPO CONFIGURATION (.aipr.yml)
       const { baseSha, headSha } = payloadSnapshot;
-      SocketService.emitStatus(userId, jobId, `âš™ï¸ Inspecting repository rules (.aipr.yml)`, 'POSTING');
+      SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'RUNNING');
       const repoConfig = await ConfigService.fetchRepoConfig(ghService, owner, repo, headSha);
 
       // 6. FETCH & FILTER RAW DIFF STREAM
-      SocketService.emitStatus(userId, jobId, `ðŸ“¡ Fetching & Filtering Diff Stream`, 'POSTING');
+      SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'RUNNING');
       const rawDiff = await ghService.fetchDiff(owner, repo, baseSha, headSha);
 
       if (!rawDiff || rawDiff.length < 5) {
-        console.log(`ðŸ’¨ Diff empty or too small. Finishing early.`);
+        console.log(`💨 Diff empty or too small. Finishing early.`);
         return await prisma.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
       }
 
@@ -89,18 +89,18 @@ export const analysisWorker = new Worker(
       const { filteredDiff, ignoredFiles, includedFiles } = DiffFilterService.filterDiff(rawDiff, repoConfig);
 
       if (ignoredFiles.length > 0) {
-        console.log(`ðŸ›¡ï¸ Ignored ${ignoredFiles.length} files matching .aipr.yml patterns: ${ignoredFiles.join(', ')}`);
+        console.log(`🛡️ Ignored ${ignoredFiles.length} files matching .aipr.yml patterns: ${ignoredFiles.join(', ')}`);
       }
 
       if (!filteredDiff || filteredDiff.trim().length < 5) {
-        console.log(`ðŸ’¨ Diff empty after applying .aipr.yml ignore filters. Finishing early.`);
-        SocketService.emitStatus(userId, jobId, `ðŸ’¨ All changed files matched ignore rules. No audit required.`, 'COMPLETED');
+        console.log(`💨 Diff empty after applying .aipr.yml ignore filters. Finishing early.`);
+        SocketService.emitStatus(userId, jobId, `💨 All changed files matched ignore rules. No audit required.`, 'COMPLETED');
         return await prisma.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
       }
 
       // 7. ENGAGE AI ENGINE VIA FACTORY
-      console.log(`ðŸ§  Contacting ${vault.provider} for Analysis Strategy...`);
-      SocketService.emitStatus(userId, jobId, `ðŸ§  AI Dispatching to ${vault.provider} Models`, 'POSTING');
+      console.log(`🧠 Contacting ${vault.provider} for Analysis Strategy...`);
+      SocketService.emitStatus(userId, jobId, `🧠 AI Dispatching to ${vault.provider} Models`, 'RUNNING');
 
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
@@ -110,8 +110,8 @@ export const analysisWorker = new Worker(
         rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
       );
 
-      console.log(`ðŸŽ¯ AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
-      SocketService.emitStatus(userId, jobId, `ðŸŽ¯ Scan Complete: ${suggestions.length} items flagged`, 'POSTING');
+      console.log(`🎯 AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
+      SocketService.emitStatus(userId, jobId, `🎯 Scan Complete: ${suggestions.length} items flagged`, 'RUNNING');
 
       // 9. POST SUGGESTIONS TO GITHUB & SAVE TO DB
       await prisma.analysisJob.update({
@@ -129,7 +129,7 @@ export const analysisWorker = new Worker(
 
       // 10. POST INLINE REVIEWS AND SUMMARY ON PULL REQUESTS
       // Comment posting reports instead of throwing, so a rejected comment
-      // (wrong line, renamed file, stale SHA) must be counted and surfaced â€”
+      // (wrong line, renamed file, stale SHA) must be counted and surfaced —
       // otherwise the user is told the review succeeded with zero comments.
       const commentFailures: string[] = [];
       let summaryPosted = true;
@@ -138,12 +138,12 @@ export const analysisWorker = new Worker(
         const prNum = parseInt(referenceId, 10);
 
         if (suggestions.length > 0) {
-          console.log(`ðŸ“¬ Broadcasting inline review comments back to Pull Request #${referenceId}...`);
-          SocketService.emitStatus(userId, jobId, `ðŸ“¬ Injecting Inline Comments onto GitHub PR`, 'POSTING');
+          console.log(`📬 Broadcasting inline review comments back to Pull Request #${referenceId}...`);
+          SocketService.emitStatus(userId, jobId, `📬 Injecting Inline Comments onto GitHub PR`, 'RUNNING');
 
           for (const suggestion of suggestions) {
             const priorityBadge = suggestion.priority ? `[${suggestion.priority}] ` : '';
-            const commentBody = `### ðŸ¤– AI Code Review: ${priorityBadge}${suggestion.agentType}\n**Issue:** ${suggestion.issue}\n\n\`\`\`\n${suggestion.suggestion}\n\`\`\``;
+            const commentBody = `### 🤖 AI Code Review: ${priorityBadge}${suggestion.agentType}\n**Issue:** ${suggestion.issue}\n\n\`\`\`\n${suggestion.suggestion}\n\`\`\``;
 
             const result = await ghService.createReviewComment(
               owner,
@@ -157,7 +157,7 @@ export const analysisWorker = new Worker(
 
             if (result && result.ok === false) {
               commentFailures.push(
-                `${suggestion.filePath}:${suggestion.lineNumber} â€” ${result.error ?? 'unknown error'}`
+                `${suggestion.filePath}:${suggestion.lineNumber} — ${result.error ?? 'unknown error'}`
               );
             }
           }
@@ -170,14 +170,14 @@ export const analysisWorker = new Worker(
 
         if (commentFailures.length > 0) {
           console.warn(
-            `âš ï¸ ${commentFailures.length}/${suggestions.length} inline comments rejected for PR #${referenceId}. ` +
+            `⚠️ ${commentFailures.length}/${suggestions.length} inline comments rejected for PR #${referenceId}. ` +
             `Falling back to a single consolidated comment.`,
           );
           SocketService.emitStatus(
             userId,
             jobId,
-            `âš ï¸ ${commentFailures.length} comment(s) could not be placed inline â€” posting a consolidated summary instead.`,
-            'POSTING',
+            `⚠️ ${commentFailures.length} comment(s) could not be placed inline — posting a consolidated summary instead.`,
+            'RUNNING',
           );
         }
 
@@ -185,7 +185,7 @@ export const analysisWorker = new Worker(
         if (repoConfig.summarize && typeof ghService.createIssueComment === 'function') {
           const fallbackSection =
             commentFailures.length > 0
-              ? `\n\n> âš ï¸ **${commentFailures.length} of ${suggestions.length} findings could not be attached inline** (the cited lines are not part of this diff). They are listed below and saved in full in the AI PR Reviewer dashboard.`
+              ? `\n\n> ⚠️ **${commentFailures.length} of ${suggestions.length} findings could not be attached inline** (the cited lines are not part of this diff). They are listed below and saved in full in the AI PR Reviewer dashboard.`
               : '';
 
           const findingsSection =
@@ -198,7 +198,7 @@ export const analysisWorker = new Worker(
                   .join('\n')}`
               : '';
 
-          const summaryMarkdown = `## ðŸ¤– AI PR Review Summary\n\n- **Status**: Audit completed\n- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)\n- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)\n- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}\n\n*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*${findingsSection}`;
+          const summaryMarkdown = `## 🤖 AI PR Review Summary\n\n- **Status**: Audit completed\n- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)\n- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)\n- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}\n\n*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*${findingsSection}`;
 
           const summaryResult = await ghService.createIssueComment(owner, repo, prNum, summaryMarkdown);
           summaryPosted = !summaryResult || summaryResult.ok !== false;
@@ -226,7 +226,7 @@ export const analysisWorker = new Worker(
         SocketService.emitStatus(
           userId,
           jobId,
-          `âš ï¸ Review finished, but ${commentFailures.length} comment(s) could not be placed inline. See the PR summary for details.`,
+          `⚠️ Review finished, but ${commentFailures.length} comment(s) could not be placed inline. See the PR summary for details.`,
           'COMPLETED',
           { suggestions },
         );
@@ -236,8 +236,8 @@ export const analysisWorker = new Worker(
       const resolvedInstallationRecordId = installationId || dbRepo.installationId;
       await QuotaService.incrementUsage(resolvedInstallationRecordId, Boolean(isPrivate ?? dbRepo.isPrivate));
 
-      console.log(`ðŸ Job Cycle ${jobId} gracefully exited with 100% success.\n`);
-      SocketService.emitStatus(userId, jobId, `âœ… All Analysis Finalized. Results fully loaded.`, 'COMPLETED', { suggestions });
+      console.log(`🏁 Job Cycle ${jobId} gracefully exited with 100% success.\n`);
+      SocketService.emitStatus(userId, jobId, `✅ All Analysis Finalized. Results fully loaded.`, 'COMPLETED', { suggestions });
 
       return { status: 'success', findingCount: suggestions.length };
     } catch (err) {
@@ -248,8 +248,8 @@ export const analysisWorker = new Worker(
       // you" rather than "broken", and UnrecoverableError stops BullMQ replaying
       // a job that cannot succeed. Logged once, not once per attempt.
       if (permanent) {
-        console.warn(`â­ï¸  JOB SKIPPED (needs user action): ${jobId} â€” ${message}`);
-        SocketService.emitStatus(userId, jobId, `â­ï¸ Skipped: ${message}`, 'SKIPPED');
+        console.warn(`⏭️  JOB SKIPPED (needs user action): ${jobId} — ${message}`);
+        SocketService.emitStatus(userId, jobId, `⏭️ Skipped: ${message}`, 'SKIPPED');
 
         await prisma.analysisJob.update({
           where: { id: jobId },
@@ -263,8 +263,8 @@ export const analysisWorker = new Worker(
       }
 
       // Transient: log and let BullMQ use the remaining attempts.
-      console.error(`ðŸš¨ JOB FATALITY (attempt will retry): ${jobId} died:`, err);
-      SocketService.emitStatus(userId, jobId, `ðŸš¨ Fatal Error Encountered: ${message}`, 'FAILED');
+      console.error(`🚨 JOB FATALITY (attempt will retry): ${jobId} died:`, err);
+      SocketService.emitStatus(userId, jobId, `🚨 Fatal Error Encountered: ${message}`, 'FAILED');
 
       await prisma.analysisJob.update({
         where: { id: jobId },
@@ -283,4 +283,4 @@ export const analysisWorker = new Worker(
   }
 );
 
-analysisWorker.on('ready', () => console.log(`ðŸ‘· Multi-tenant Background worker fleet active.`));
+analysisWorker.on('ready', () => console.log(`👷 Multi-tenant Background worker fleet active.`));
