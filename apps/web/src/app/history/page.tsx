@@ -5,11 +5,24 @@ import { History, GitPullRequest, GitCommit, CheckCircle2, XCircle, Loader2, Che
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
 import { api } from '../../lib/api';
+import {
+  AGENT_LABELS,
+  PRIORITY_ICONS,
+  PRIORITY_LABELS,
+  PRIORITY_ORDER,
+  STATUS_COLORS,
+  isBlocking,
+  isInProgress,
+  isTerminalFailure,
+  statusLabel,
+  tallyBySeverity,
+  type AiSuggestion,
+  type CommentFailure,
+  type EventType,
+  type JobStatus,
+} from '../../lib/review';
 
-type EventType = 'PULL_REQUEST' | 'PUSH';
-type JobStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
-
-interface JobSummary {
+export interface JobSummary {
   id: string;
   eventType: EventType;
   referenceId: string;
@@ -20,98 +33,11 @@ interface JobSummary {
   repository: { id: string; fullName: string };
 }
 
-type Priority = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO';
-
-type AgentType =
-  | 'SECURITY'
-  | 'BUG'
-  | 'CORRECTNESS'
-  | 'PERFORMANCE'
-  | 'ARCHITECTURE'
-  | 'MAINTAINABILITY'
-  | 'TESTING';
-
-interface AiSuggestion {
-  filePath: string;
-  lineNumber: number;
-  agentType: AgentType;
-  issue: string;
-  suggestion: string;
-  priority: Priority;
-}
-
-/**
- * Delivery problems recorded by the worker. A finding listed here was found but
- * GitHub refused the inline comment (usually the cited line is not in the diff),
- * so it only appears in the PR summary — not as an inline comment.
- */
-interface CommentFailure {
-  location: string;
-  error: string;
-}
-
 interface JobDetail extends JobSummary {
   results: AiSuggestion[] | null;
   commentFailures?: CommentFailure[];
   summaryPosted?: boolean;
 }
-
-const STATUS_COLORS: Record<JobStatus, string> = {
-  QUEUED: 'var(--text-secondary)',
-  RUNNING: 'var(--accent)',
-  COMPLETED: 'var(--success)',
-  FAILED: 'var(--danger)',
-};
-
-const PRIORITY_COLORS: Record<Priority, string> = {
-  CRITICAL: '#a21caf',
-  HIGH: 'var(--danger)',
-  MEDIUM: 'var(--warning)',
-  LOW: 'var(--accent)',
-  INFO: 'var(--text-secondary)',
-};
-
-const STATUS_LABELS: Record<JobStatus, string> = {
-  QUEUED: 'Queued',
-  RUNNING: 'Running',
-  COMPLETED: 'Completed',
-  FAILED: 'Failed',
-};
-
-const PRIORITY_LABELS: Record<Priority, string> = {
-  CRITICAL: 'Critical',
-  HIGH: 'High',
-  MEDIUM: 'Medium',
-  LOW: 'Low',
-  INFO: 'Info',
-};
-
-const AGENT_LABELS: Record<AgentType, string> = {
-  SECURITY: 'Security',
-  BUG: 'Bug',
-  CORRECTNESS: 'Correctness',
-  PERFORMANCE: 'Performance',
-  ARCHITECTURE: 'Architecture',
-  MAINTAINABILITY: 'Maintainability',
-  TESTING: 'Testing',
-};
-
-/** Most severe first. Mirrors the backend SEVERITY_RANK. */
-const PRIORITY_ORDER: Record<Priority, number> = {
-  CRITICAL: 0,
-  HIGH: 1,
-  MEDIUM: 2,
-  LOW: 3,
-  INFO: 4,
-};
-
-const PRIORITY_ICONS: Record<Priority, string> = {
-  CRITICAL: '🔥',
-  HIGH: '🚨',
-  MEDIUM: '⚠️',
-  LOW: '🔎',
-  INFO: 'ℹ️',
-};
 
 export default function HistoryPage() {
   const { user, loading: authLoading } = useAuth();
@@ -141,9 +67,11 @@ export default function HistoryPage() {
     });
   }, [user]);
 
-  // If any job is currently RUNNING or QUEUED, auto-poll every 3 seconds to keep UI synced
+  // Auto-poll while any review is in flight. This used to test for RUNNING and
+  // QUEUED only, so the moment the backend reported ANALYZING the page stopped
+  // refreshing and the user watched a stale review until they reloaded.
   useEffect(() => {
-    const hasActiveJob = jobs.some((j) => j.status === 'RUNNING' || j.status === 'QUEUED');
+    const hasActiveJob = jobs.some((j) => isInProgress(j.status));
     if (!hasActiveJob) return;
 
     const interval = setInterval(async () => {
@@ -283,10 +211,14 @@ export default function HistoryPage() {
 }
 
 function StatusIcon({ status }: { status: JobStatus }) {
-  const color = STATUS_COLORS[status];
+  const color = STATUS_COLORS[status] ?? 'var(--text-secondary)';
   if (status === 'COMPLETED') return <CheckCircle2 size={18} color={color} />;
-  if (status === 'FAILED') return <XCircle size={18} color={color} />;
-  if (status === 'RUNNING') return <Loader2 size={18} color={color} className="spin" />;
+  if (isTerminalFailure(status)) return <XCircle size={18} color={color} />;
+  // Every in-flight phase spins, not just RUNNING, so a review that is waiting
+  // on the model still reads as active.
+  if (isInProgress(status) && status !== 'QUEUED') {
+    return <Loader2 size={18} color={color} className="spin" />;
+  }
   return <div style={{ width: 8, height: 8, borderRadius: 4, background: color, marginLeft: 5, marginRight: 5 }} />;
 }
 
@@ -297,6 +229,10 @@ function JobDetailView({ job }: { job: JobDetail }) {
   const sortedSuggestions = (job.results || []).slice().sort(
     (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority],
   );
+
+  // CRITICAL + HIGH. Surfaced separately because a reviewer deciding whether to
+  // approve only needs this number, not the full breakdown.
+  const blockingCount = sortedSuggestions.filter((s) => isBlocking(s.priority)).length;
 
   async function handleCopyAll() {
     const plan = generateFixPlanForLLM(job, sortedSuggestions);
@@ -335,8 +271,8 @@ function JobDetailView({ job }: { job: JobDetail }) {
                 <span>{copiedAll ? 'Fix Plan Copied to Clipboard!' : 'Copy Fix Plan for AI'}</span>
               </button>
             )}
-            <span style={{ color: STATUS_COLORS[job.status], fontWeight: 600, fontSize: '0.85rem' }}>
-              {STATUS_LABELS[job.status]}
+            <span style={{ color: STATUS_COLORS[job.status] ?? 'var(--text-secondary)', fontWeight: 600, fontSize: '0.85rem' }}>
+              {statusLabel(job.status)}
             </span>
           </div>
         </div>
@@ -346,15 +282,16 @@ function JobDetailView({ job }: { job: JobDetail }) {
           </div>
           {sortedSuggestions.length > 0 && (
             <div className="detail-badge-group">
-              {(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as Priority[]).map((level) => {
-                const count = sortedSuggestions.filter((r) => r.priority === level).length;
-                if (count === 0) return null;
-                return (
-                  <span key={level} className={`badge-${level.toLowerCase()}`}>
-                    {count} {PRIORITY_LABELS[level]}
-                  </span>
-                );
-              })}
+              {tallyBySeverity(sortedSuggestions).map(({ level, label, icon, count }) => (
+                <span key={level} className={`badge-${level.toLowerCase()}`} title={`${count} ${label}`}>
+                  <span aria-hidden="true">{icon}</span> {count} {label}
+                </span>
+              ))}
+              {blockingCount > 0 && (
+                <span className="badge-critical" title="Severities that should block a merge">
+                  🚧 {blockingCount} blocking
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -390,27 +327,42 @@ function JobDetailView({ job }: { job: JobDetail }) {
 
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
-          {job.status === 'COMPLETED' ? 'No issues found' : 'No findings recorded.'}
+          {job.status === 'COMPLETED' ? (
+            <>
+              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--success)', marginBottom: '0.4rem' }}>
+                ✅ No issues found
+              </div>
+              Nothing in this diff met the reporting bar. That is a real result, not
+              a failed review.
+            </>
+          ) : isTerminalFailure(job.status) ? (
+            <>
+              <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--danger)', marginBottom: '0.4rem' }}>
+                ⚠️ Review {statusLabel(job.status).toLowerCase()}
+              </div>
+              This review ended without findings. Check the repository configuration
+              and webhook delivery, then re-run it.
+            </>
+          ) : (
+            <>
+              <div style={{ marginBottom: '0.4rem' }}>{statusLabel(job.status)}…</div>
+              Findings appear here as soon as the review reaches this stage.
+            </>
+          )}
         </div>
       ) : (
         sortedSuggestions.map((s, i) => (
           <div key={i} className="glass-card">
             <div className="finding-card-header">
               <span
-                style={{
-                  fontSize: '0.68rem',
-                  fontWeight: 600,
-                  padding: '2px 8px',
-                  borderRadius: 6,
-                  background: 'transparent',
-                  border: `1px solid ${PRIORITY_COLORS[s.priority]}`,
-                  color: PRIORITY_COLORS[s.priority],
-                }}
+                className={`badge-${s.priority.toLowerCase()}`}
+                title={isBlocking(s.priority) ? 'Should block a merge' : undefined}
               >
+                <span aria-hidden="true">{PRIORITY_ICONS[s.priority]}</span>{' '}
                 {PRIORITY_LABELS[s.priority]}
               </span>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                {AGENT_LABELS[s.agentType]}
+                {AGENT_LABELS[s.agentType] ?? s.agentType}
               </span>
               <span className="mono" style={{ fontSize: '0.8rem', marginLeft: 'auto', marginRight: '0.5rem', color: 'var(--text-secondary)' }}>
                 {s.filePath}:{s.lineNumber}
@@ -439,13 +391,14 @@ function JobDetailView({ job }: { job: JobDetail }) {
 function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): string {
   const repoName = job.repository.fullName;
   const refLabel = job.eventType === 'PULL_REQUEST' ? `PR #${job.referenceId}` : `Commit ${job.referenceId}`;
-  const countBy = (level: Priority) => suggestions.filter((s) => s.priority === level).length;
-  const breakdown = (['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'] as Priority[])
-    .map((level) => `${countBy(level)} ${PRIORITY_LABELS[level]}`)
+  const breakdown = tallyBySeverity(suggestions)
+    .map(({ level, count }) => `${count} ${PRIORITY_LABELS[level]}`)
     .join(', ');
 
   let markdown = `# 🛠️ Comprehensive Code Fix Plan: ${repoName}\n`;
-  markdown += `**Target:** ${refLabel} | **Total Findings:** ${suggestions.length} (${breakdown})\n\n`;
+  markdown += `**Target:** ${refLabel} | **Total Findings:** ${suggestions.length}${
+    breakdown ? ` (${breakdown})` : ''
+  }\n\n`;
   markdown += `You are an expert Principal Software Engineer and Architect. An automated code review identified ${suggestions.length} issue(s) in this repository. Follow the strategic plan below to solve each issue with production-ready, strictly typed code.\n\n`;
 
   markdown += `## 🧭 Execution Strategy\n`;
@@ -459,9 +412,9 @@ function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): str
   markdown += `## 📋 Actionable Findings (Most Severe First)\n\n`;
 
   suggestions.forEach((item, index) => {
-    markdown += `### ${index + 1}. ${PRIORITY_ICONS[item.priority]} [${item.priority}] ${AGENT_LABELS[item.agentType]} Flaw\n`;
+    markdown += `### ${index + 1}. ${PRIORITY_ICONS[item.priority]} [${item.priority}] ${AGENT_LABELS[item.agentType] ?? item.agentType} Flaw\n`;
     markdown += `- **Location:** \`${item.filePath}:${item.lineNumber}\`\n`;
-    markdown += `- **Category:** ${AGENT_LABELS[item.agentType]}\n`;
+    markdown += `- **Category:** ${AGENT_LABELS[item.agentType] ?? item.agentType}\n`;
     markdown += `- **Priority:** ${item.priority}\n\n`;
     markdown += `**Problem Statement:**\n${item.issue}\n\n`;
     markdown += `**Prescribed Fix / Implementation Guidance:**\n\`\`\`\n${item.suggestion}\n\`\`\`\n\n`;
@@ -478,12 +431,12 @@ function generateFixPlanForLLM(job: JobDetail, suggestions: AiSuggestion[]): str
 }
 
 function generateSingleFindingPrompt(item: AiSuggestion, repoName: string): string {
-  return `### Task: Fix ${PRIORITY_ICONS[item.priority]} [${item.priority}] ${AGENT_LABELS[item.agentType]} in \`${item.filePath}:${item.lineNumber}\`
+  return `### Task: Fix ${PRIORITY_ICONS[item.priority]} [${item.priority}] ${AGENT_LABELS[item.agentType] ?? item.agentType} in \`${item.filePath}:${item.lineNumber}\`
 
 **Context:**
 - **Repository:** \`${repoName}\`
 - **File:** \`${item.filePath}\` (around line ${item.lineNumber})
-- **Category:** ${AGENT_LABELS[item.agentType]}
+- **Category:** ${AGENT_LABELS[item.agentType] ?? item.agentType}
 - **Severity:** ${item.priority}
 
 ---

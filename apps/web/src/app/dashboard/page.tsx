@@ -8,6 +8,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { UsageMeter } from '../../components/UsageMeter';
 import { useAuth } from '../../lib/useAuth';
 import { BACKEND_URL } from '../../lib/api';
+import { isInProgress, isTerminalFailure, statusLabel } from '../../lib/review';
 
 interface ActivityLog {
   id: string;
@@ -15,6 +16,21 @@ interface ActivityLog {
   message: string;
   status: string;
   timestamp: Date;
+}
+
+/**
+ * A failed run used to render exactly like a running one — same neutral colour,
+ * same pulsing icon — which made the difference between "working" and "broken"
+ * invisible in the one feed meant to explain what the system is doing.
+ */
+function feedAccent(status: string): { color: string; failed: boolean } {
+  if (status === 'COMPLETED' || status === 'SKIPPED') {
+    return { color: 'var(--success)', failed: false };
+  }
+  if (isTerminalFailure(status)) {
+    return { color: 'var(--danger)', failed: true };
+  }
+  return { color: isInProgress(status) ? 'var(--accent)' : 'var(--text-secondary)', failed: false };
 }
 
 export default function DashboardPage() {
@@ -79,45 +95,39 @@ export default function DashboardPage() {
               )}
 
               <AnimatePresence initial={false}>
-                {logs.map((log) => (
+                {logs.map((log) => {
+                  const accent = feedAccent(log.status);
+                  return (
                   <motion.div
                     key={log.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0 }}
                     className="feed-item"
-                    style={{
-                      borderLeftColor:
-                        log.status === 'COMPLETED'
-                          ? 'var(--success)'
-                          : log.status === 'FAILED'
-                          ? 'var(--danger)'
-                          : 'var(--accent)',
-                    }}
+                    style={{ borderLeftColor: accent.color }}
                   >
                     <div
                       className="mono"
                       style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
                     >
                       <span>Job #{log.jobId.slice(0, 8)}</span>
-                      <span>{log.timestamp.toLocaleTimeString()}</span>
+                      <span title={statusLabel(log.status)}>{log.timestamp.toLocaleTimeString()}</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {log.status === 'COMPLETED' ? (
+                      {accent.failed ? (
+                        <AlertCircle size={16} strokeWidth={2} color="var(--danger)" />
+                      ) : log.status === 'COMPLETED' ? (
                         <CheckCircle2 size={16} strokeWidth={2} color="var(--success)" />
                       ) : (
                         <Activity size={16} strokeWidth={2} />
                       )}
-                      <span
-                        style={{
-                          color: log.status === 'COMPLETED' ? 'var(--success)' : 'var(--text-primary)',
-                        }}
-                      >
+                      <span style={{ color: accent.color }}>
                         {log.message}
                       </span>
                     </div>
                   </motion.div>
-                ))}
+                  );
+                })}
               </AnimatePresence>
             </div>
           </div>
