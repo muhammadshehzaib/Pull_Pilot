@@ -120,10 +120,16 @@ enum EventType {
 
 enum JobStatus {
   QUEUED
+  FETCHING
+  ANALYZING
+  GENERATING
+  POSTING
   RUNNING
   COMPLETED
   FAILED
   SKIPPED
+  CANCELLED
+  TIMEOUT
 }
 
 model AnalysisJob {
