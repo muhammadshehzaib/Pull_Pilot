@@ -5,6 +5,32 @@ import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxon
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 50;
 
+/**
+ * Every value the `JobStatus` enum can hold. Kept as an explicit list because
+ * Prisma's generated type is not usable as a runtime guard — the filter is user
+ * input arriving as a string.
+ */
+const JOB_STATUSES = [
+  'QUEUED',
+  'FETCHING',
+  'ANALYZING',
+  'GENERATING',
+  'POSTING',
+  'RUNNING',
+  'COMPLETED',
+  'FAILED',
+  'SKIPPED',
+  'CANCELLED',
+  'TIMEOUT',
+] as const;
+
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+/** Returns the status if it is a real enum value, otherwise undefined. */
+export function parseJobStatus(value: unknown): JobStatus | undefined {
+  return JOB_STATUSES.includes(value as JobStatus) ? (value as JobStatus) : undefined;
+}
+
 export type { AiSuggestion };
 
 export function extractNormalizedFindings(results: unknown): AiSuggestion[] {
@@ -22,9 +48,16 @@ export function extractNormalizedFindings(results: unknown): AiSuggestion[] {
 export class JobController {
   /**
    * Lists past analysis jobs for the authenticated user's repos.
-   * Supports ?limit= and ?repositoryId= filtering. Returns lightweight
-   * rows (no findings) — use the detail endpoint to fetch the full
-   * results JSON.
+   *
+   * Filters: ?limit=, ?repositoryId=, ?referenceId=, ?status=
+   *
+   * `referenceId` is what makes "every review this PR has had" answerable — it
+   * is the PR number for PULL_REQUEST events and the commit SHA for PUSH events,
+   * so one PR's full history is a single query instead of paging the global list
+   * and hoping the PR's reviews are still in the first 50 rows.
+   *
+   * Returns lightweight rows (no findings) — use the detail endpoint to fetch the
+   * full results JSON.
    */
   static async list(req: Request, res: Response) {
     const limit = Math.min(
@@ -32,11 +65,17 @@ export class JobController {
       MAX_LIMIT,
     );
     const repositoryId = (req.query.repositoryId as string) || undefined;
+    const referenceId = (req.query.referenceId as string) || undefined;
+    const status = parseJobStatus(req.query.status as string);
 
     const jobs = await prisma.analysisJob.findMany({
       where: {
         repository: { userId: req.auth!.userId },
         ...(repositoryId ? { repositoryId } : {}),
+        ...(referenceId ? { referenceId } : {}),
+        // An unrecognised status is ignored rather than 400'd: the filter is a
+        // UI convenience and must never be able to break the list endpoint.
+        ...(status ? { status } : {}),
       },
       include: {
         repository: { select: { id: true, fullName: true } },

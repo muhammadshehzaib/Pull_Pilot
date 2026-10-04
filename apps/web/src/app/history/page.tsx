@@ -45,11 +45,40 @@ export default function HistoryPage() {
   const [selected, setSelected] = useState<JobDetail | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  // Narrowing to a repository or a single PR. The backend filters on these, so
+  // "every review this PR has had" no longer depends on the global 50-row list
+  // happening to still contain it.
+  const [repoFilter, setRepoFilter] = useState('');
+  const [scopeToSelected, setScopeToSelected] = useState(false);
+  // Accumulated across fetches on purpose. Deriving the dropdown from `jobs`
+  // would hide every other repository the moment a filter was applied, leaving
+  // no way to switch to a different one.
+  const [knownRepos, setKnownRepos] = useState<{ id: string; fullName: string }[]>([]);
 
+  // When scoping to the selected PR, the referenceId drives the request. PUSH
+  // reviews key on a commit SHA, so scoping only makes sense for pull requests.
+  const scopedReferenceId =
+    scopeToSelected && selected?.eventType === 'PULL_REQUEST' ? selected.referenceId : '';
+
+  /**
+   * Does not touch loading state on its own. Loading is owned by whoever caused
+   * the fetch (the mount, or a filter click) so that setting it here would not
+   * turn the background poll into a skeleton flash every 3 seconds.
+   */
   const fetchJobs = async () => {
     try {
-      const res = await api<{ jobs: JobSummary[] }>('/api/jobs?limit=50');
+      const params = new URLSearchParams({ limit: '50' });
+      if (repoFilter) params.set('repositoryId', repoFilter);
+      if (scopedReferenceId) params.set('referenceId', scopedReferenceId);
+      const res = await api<{ jobs: JobSummary[] }>(`/api/jobs?${params.toString()}`);
       setJobs(res.jobs);
+      setKnownRepos((prev) => {
+        const merged = new Map(prev.map((r) => [r.id, r.fullName]));
+        for (const job of res.jobs) merged.set(job.repository.id, job.repository.fullName);
+        return Array.from(merged, ([id, fullName]) => ({ id, fullName })).sort((a, b) =>
+          a.fullName.localeCompare(b.fullName),
+        );
+      });
       return res.jobs;
     } catch {
       return [];
@@ -58,14 +87,18 @@ export default function HistoryPage() {
     }
   };
 
+  /** Every filter change goes through here so the skeleton and the query agree. */
+  function applyFilter(update: () => void) {
+    setLoadingList(true);
+    update();
+  }
+
+  // Fetch on mount and whenever a filter changes. `loadingList` already starts
+  // true, so mounting needs no explicit setState here.
   useEffect(() => {
     if (!user) return;
-    fetchJobs().then((loadedJobs) => {
-      if (loadedJobs && loadedJobs.length > 0 && !selected) {
-        openJob(loadedJobs[0].id);
-      }
-    });
-  }, [user]);
+    fetchJobs();
+  }, [user, repoFilter, scopedReferenceId]);
 
   // Auto-poll while any review is in flight. This used to test for RUNNING and
   // QUEUED only, so the moment the backend reported ANALYZING the page stopped
@@ -144,8 +177,75 @@ export default function HistoryPage() {
       <main className="main-content">
         <header className="page-header-container">
           <h1 className="page-title">History</h1>
-          <p className="page-header-subtitle">The last 50 reviews across your connected repositories.</p>
+          <p className="page-header-subtitle">
+            Every review across your connected repositories, filterable by repo or pull request.
+          </p>
         </header>
+
+        <div
+          className="history-filter-bar"
+          style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}
+        >
+          <label className="section-label" htmlFor="repo-filter" style={{ marginBottom: 0 }}>
+            Repository
+          </label>
+          <select
+            id="repo-filter"
+            className="history-filter-select"
+            value={repoFilter}
+            onChange={(e) => applyFilter(() => setRepoFilter(e.target.value))}
+            style={{
+              background: 'var(--bg-card, rgba(255,255,255,0.05))',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color, rgba(148,163,184,0.25))',
+              borderRadius: 6,
+              padding: '4px 8px',
+              fontSize: '0.8rem',
+              minWidth: '14rem',
+            }}
+          >
+            <option value="">All repositories</option>
+            {knownRepos.map((repo) => (
+              <option key={repo.id} value={repo.id}>
+                {repo.fullName}
+              </option>
+            ))}
+          </select>
+
+          {selected?.eventType === 'PULL_REQUEST' && (
+            <button
+              type="button"
+              className={scopeToSelected ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => applyFilter(() => setScopeToSelected((prev) => !prev))}
+              aria-pressed={scopeToSelected}
+              title="Show only previous reviews of this pull request"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <GitPullRequest size={13} />
+              {scopeToSelected ? `PR #${selected.referenceId} only` : 'Scope to this PR'}
+            </button>
+          )}
+
+          {(repoFilter || scopeToSelected) && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() =>
+                applyFilter(() => {
+                  setRepoFilter('');
+                  setScopeToSelected(false);
+                })
+              }
+            >
+              Clear
+            </button>
+          )}
+
+          <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {jobs.length} review{jobs.length === 1 ? '' : 's'}
+            {scopedReferenceId ? ` on PR #${scopedReferenceId}` : ''}
+          </span>
+        </div>
 
         <div className="history-layout-grid">
           <div>
@@ -159,7 +259,11 @@ export default function HistoryPage() {
             ) : jobs.length === 0 ? (
               <div className="glass-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                 <History size={20} strokeWidth={2} style={{ marginBottom: '1rem' }} />
-                <p>No reviews yet. Connect a repo and push some code.</p>
+                <p>
+                  {repoFilter || scopeToSelected
+                    ? 'No reviews match this filter.'
+                    : 'No reviews yet. Connect a repo and push some code.'}
+                </p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>

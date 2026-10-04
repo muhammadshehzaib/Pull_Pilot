@@ -11,7 +11,7 @@ vi.mock('../config/prisma', () => ({
   },
 }));
 
-import { JobController } from './job.controller';
+import { JobController, parseJobStatus } from './job.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
 
 const authedReq = (overrides = {}) => {
@@ -160,6 +160,106 @@ describe('JobController.list', () => {
 
     const arg = mockJobFindMany.mock.calls[0][0];
     expect(arg.where.repository).toEqual({ userId: 'u-1' });
+  });
+
+  it('filters by referenceId so one PR\'s review history is one query', async () => {
+    // The roadmap asks for "every previous review on a PR". Without this the only
+    // way to find them was paging the global 50-row list.
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { referenceId: '42' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(mockJobFindMany.mock.calls[0][0].where).toMatchObject({ referenceId: '42' });
+  });
+
+  it('scopes a referenceId filter to the user, not just the PR number', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { referenceId: '42' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    const where = mockJobFindMany.mock.calls[0][0].where;
+    expect(where.referenceId).toBe('42');
+    expect(where.repository).toEqual({ userId: 'u-1' });
+  });
+
+  it('combines referenceId and repositoryId filters', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { referenceId: '42', repositoryId: 'r-1' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(mockJobFindMany.mock.calls[0][0].where).toMatchObject({
+      referenceId: '42',
+      repositoryId: 'r-1',
+    });
+  });
+
+  it('applies a valid status filter', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { status: 'FAILED' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(mockJobFindMany.mock.calls[0][0].where).toMatchObject({ status: 'FAILED' });
+  });
+
+  it('accepts the new review phases as a status filter', async () => {
+    for (const phase of ['FETCHING', 'ANALYZING', 'GENERATING', 'POSTING']) {
+      mockJobFindMany.mockResolvedValueOnce([]);
+      await JobController.list(authedReq({ query: { status: phase } }), mockRes());
+      const where = mockJobFindMany.mock.calls.at(-1)![0].where;
+      expect(where, phase).toMatchObject({ status: phase });
+    }
+  });
+
+  it('ignores an unrecognised status rather than erroring', async () => {
+    // The filter must never be able to break the list endpoint.
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { status: 'NOT_A_STATUS' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(mockJobFindMany.mock.calls[0][0].where).not.toHaveProperty('status');
+    expect(res.json).toHaveBeenCalledWith({ jobs: [] });
+  });
+
+  it('does not add empty-string filters', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { referenceId: '', repositoryId: '', status: '' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    const where = mockJobFindMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty('referenceId');
+    expect(where).not.toHaveProperty('repositoryId');
+    expect(where).not.toHaveProperty('status');
+  });
+});
+
+describe('parseJobStatus', () => {
+  it('accepts every enum value', () => {
+    for (const status of [
+      'QUEUED', 'FETCHING', 'ANALYZING', 'GENERATING', 'POSTING', 'RUNNING',
+      'COMPLETED', 'FAILED', 'SKIPPED', 'CANCELLED', 'TIMEOUT',
+    ]) {
+      expect(parseJobStatus(status), status).toBe(status);
+    }
+  });
+
+  it('rejects anything else, including case variants', () => {
+    expect(parseJobStatus('completed')).toBeUndefined();
+    expect(parseJobStatus('')).toBeUndefined();
+    expect(parseJobStatus(undefined)).toBeUndefined();
+    expect(parseJobStatus(null)).toBeUndefined();
+    expect(parseJobStatus(123)).toBeUndefined();
   });
 });
 
