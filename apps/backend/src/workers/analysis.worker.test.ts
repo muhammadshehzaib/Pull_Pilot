@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * handler that the source code passes in, and then invoke it directly with
  * fake job payloads.
  */
-const { capturedHandler, WorkerMock, mockJobUpdate, mockRepoFindUnique, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
+const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
   const capturedHandler: { fn?: (job: any) => Promise<any> } = {};
 
   const WorkerMock = vi.fn(function (this: any, _name: string, handler: any) {
@@ -15,6 +15,8 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockRepoFindUnique, mockDecr
   });
 
   const mockJobUpdate = vi.fn();
+  // Read by advanceReview() to decide whether a transition moves the job forward.
+  const mockJobFindUnique = vi.fn();
   const mockRepoFindUnique = vi.fn();
   const mockDecrypt = vi.fn();
   const mockFetchDiff = vi.fn();
@@ -34,6 +36,7 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockRepoFindUnique, mockDecr
     capturedHandler,
     WorkerMock,
     mockJobUpdate,
+    mockJobFindUnique,
     mockRepoFindUnique,
     mockDecrypt,
     mockFetchDiff,
@@ -64,7 +67,7 @@ vi.mock('../config/queue', () => ({
 
 vi.mock('../config/prisma', () => ({
   default: {
-    analysisJob: { update: mockJobUpdate },
+    analysisJob: { update: mockJobUpdate, findUnique: mockJobFindUnique },
     repository: { findUnique: mockRepoFindUnique },
   },
 }));
@@ -121,6 +124,9 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockDecrypt.mockReturnValue('sk-decrypted');
   mockGetProvider.mockReturnValue({ analyzeCode: mockAnalyzeCode });
+  // Default: the job has not entered the pipeline, so every advanceReview()
+  // transition is a forward move and gets persisted.
+  mockJobFindUnique.mockResolvedValue({ status: 'QUEUED' });
   process.env.GITHUB_ACCESS_TOKEN = 'ghp-bot';
 });
 
@@ -149,11 +155,16 @@ describe('analysis worker — happy path', () => {
 
     const result = await capturedHandler.fn!(makeJobPayload());
 
-    // Set RUNNING first, then COMPLETED with results
-    expect(mockJobUpdate).toHaveBeenNthCalledWith(1, {
-      where: { id: 'job-1' },
-      data: { status: 'RUNNING' },
-    });
+    // The pipeline walks FETCHING -> ANALYZING -> GENERATING -> POSTING, and
+    // only reaches COMPLETED once delivery has finished.
+    const phases = mockJobUpdate.mock.calls
+      .map(([arg]: any[]) => arg?.data?.status)
+      .filter(Boolean);
+    expect(phases[0]).toBe('FETCHING');
+    expect(phases).toContain('ANALYZING');
+    expect(phases).toContain('GENERATING');
+    expect(phases).toContain('POSTING');
+    expect(phases[phases.length - 1]).toBe('COMPLETED');
     expect(mockJobUpdate).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'COMPLETED' }),
@@ -231,11 +242,14 @@ describe('analysis worker — happy path', () => {
 
     await capturedHandler.fn!(makeJobPayload());
 
-    // No delivery-problem update should have been written.
-    const resultsPayloads = mockJobUpdate.mock.calls
+    // Every comment landed, so the final results payload records an empty
+    // failure list rather than omitting it.
+    const finalResults = mockJobUpdate.mock.calls
       .map((c: any[]) => c[0]?.data?.results)
-      .filter(Boolean);
-    expect(resultsPayloads.some((r: any) => 'commentFailures' in r)).toBe(false);
+      .filter(Boolean)
+      .pop();
+    expect(finalResults.commentFailures).toEqual([]);
+    expect(finalResults.summaryPosted).toBe(true);
   });
 
   it('sorts findings most severe first before posting', async () => {

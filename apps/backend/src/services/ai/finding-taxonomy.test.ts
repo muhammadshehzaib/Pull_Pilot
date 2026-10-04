@@ -52,9 +52,14 @@ describe('normalizeCategory', () => {
 
   it('maps legacy and synonym categories', () => {
     expect(normalizeCategory('BUG_RISK')).toBe('BUG');
-    expect(normalizeCategory('STYLE')).toBe('MAINTAINABILITY');
+    expect(normalizeCategory('CLEANUP')).toBe('MAINTAINABILITY');
     expect(normalizeCategory('type safety')).toBe('CORRECTNESS');
     expect(normalizeCategory('TESTS')).toBe('TESTING');
+  });
+
+  it('keeps cosmetic feedback separate from maintainability', () => {
+    expect(normalizeCategory('STYLE')).toBe('STYLE');
+    expect(normalizeCategory('FORMATTING')).toBe('STYLE');
   });
 
   it('returns null for unknown categories', () => {

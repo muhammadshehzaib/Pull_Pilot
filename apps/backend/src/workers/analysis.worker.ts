@@ -9,8 +9,10 @@ import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { sortBySeverity } from '../services/ai/finding-taxonomy';
+import { deduplicate } from '../services/ai/finding-dedup.service';
 import { QuotaService } from '../services/quota.service';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
+import { advanceReview } from './job-state';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -33,13 +35,9 @@ export const analysisWorker = new Worker(
     const [owner, repo] = fullName.split('/');
 
     try {
-      // 1. Update state to RUNNING
-      await prisma.analysisJob.update({
-        where: { id: jobId },
-        data: { status: 'RUNNING' },
-      });
-
-      SocketService.emitStatus(userId, jobId, '🚀 Worker Active: Analysis Cycle Commenced', 'RUNNING');
+      // 1. Enter the pipeline. Every step below advances the phase rather than
+      //    re-asserting RUNNING, so the dashboard reflects real progress.
+      await advanceReview(jobId, userId, 'FETCHING', '🚀 Worker Active: Analysis Cycle Commenced');
 
       // 2. Fetch User associated with Repository & retrieve their SECURE KEY
       const dbRepo = await prisma.repository.findUnique({
@@ -57,7 +55,7 @@ export const analysisWorker = new Worker(
 
       const vault = dbRepo.user.vault;
       console.log(`🔑 Vault Detected: Using user preference [${vault.provider}] engine.`);
-      SocketService.emitStatus(userId, jobId, `🔐 Unlocking Security Vault [Provider: ${vault.provider}]`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `🔐 Unlocking Security Vault [Provider: ${vault.provider}]`, 'FETCHING');
 
       // 3. DECRYPT THE KEY IN RAM TEMPORARILY
       const rawApiKey = EncryptionService.decrypt(
@@ -73,11 +71,11 @@ export const analysisWorker = new Worker(
 
       // 5. FETCH REPO CONFIGURATION (.aipr.yml)
       const { baseSha, headSha } = payloadSnapshot;
-      SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'FETCHING');
       const repoConfig = await ConfigService.fetchRepoConfig(ghService, owner, repo, headSha);
 
       // 6. FETCH & FILTER RAW DIFF STREAM
-      SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'FETCHING');
       const rawDiff = await ghService.fetchDiff(owner, repo, baseSha, headSha);
 
       if (!rawDiff || rawDiff.length < 5) {
@@ -100,24 +98,27 @@ export const analysisWorker = new Worker(
 
       // 7. ENGAGE AI ENGINE VIA FACTORY
       console.log(`🧠 Contacting ${vault.provider} for Analysis Strategy...`);
-      SocketService.emitStatus(userId, jobId, `🧠 AI Dispatching to ${vault.provider} Models`, 'RUNNING');
+      await advanceReview(jobId, userId, 'ANALYZING', `🧠 AI Dispatching to ${vault.provider} Models`);
 
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
 
-      // 8. FILTER SUGGESTIONS BY MIN_SEVERITY & SORT MOST SEVERE FIRST
+      // 8. FILTER SUGGESTIONS BY MIN_SEVERITY, DEDUPE, SORT MOST SEVERE FIRST
       const suggestions = sortBySeverity(
-        rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
+        deduplicate(
+          rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
+        ),
       );
 
       console.log(`🎯 AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
-      SocketService.emitStatus(userId, jobId, `🎯 Scan Complete: ${suggestions.length} items flagged`, 'RUNNING');
+      await advanceReview(jobId, userId, 'GENERATING', `🎯 Scan Complete: ${suggestions.length} items flagged`);
 
-      // 9. POST SUGGESTIONS TO GITHUB & SAVE TO DB
+      // Persist the findings now, but not as COMPLETED: comments still have to
+      // be delivered, and a crash during delivery must not read as a finished
+      // review. The final COMPLETED write happens after posting succeeds.
       await prisma.analysisJob.update({
         where: { id: jobId },
         data: {
-          status: 'COMPLETED',
           results: {
             suggestions,
             ignoredFiles,
@@ -127,7 +128,7 @@ export const analysisWorker = new Worker(
         },
       });
 
-      // 10. POST INLINE REVIEWS AND SUMMARY ON PULL REQUESTS
+      // 9. POST INLINE REVIEWS AND SUMMARY ON PULL REQUESTS
       // Comment posting reports instead of throwing, so a rejected comment
       // (wrong line, renamed file, stale SHA) must be counted and surfaced —
       // otherwise the user is told the review succeeded with zero comments.
@@ -139,7 +140,7 @@ export const analysisWorker = new Worker(
 
         if (suggestions.length > 0) {
           console.log(`📬 Broadcasting inline review comments back to Pull Request #${referenceId}...`);
-          SocketService.emitStatus(userId, jobId, `📬 Injecting Inline Comments onto GitHub PR`, 'RUNNING');
+          await advanceReview(jobId, userId, 'POSTING', `📬 Injecting Inline Comments onto GitHub PR`);
 
           for (const suggestion of suggestions) {
             const priorityBadge = suggestion.priority ? `[${suggestion.priority}] ` : '';
@@ -177,7 +178,7 @@ export const analysisWorker = new Worker(
             userId,
             jobId,
             `⚠️ ${commentFailures.length} comment(s) could not be placed inline — posting a consolidated summary instead.`,
-            'RUNNING',
+            'POSTING',
           );
         }
 
@@ -205,22 +206,23 @@ export const analysisWorker = new Worker(
         }
       }
 
-      // Persist delivery outcome so the dashboard can explain an empty PR.
-      if (commentFailures.length > 0 || !summaryPosted) {
-        await prisma.analysisJob.update({
-          where: { id: jobId },
-          data: {
-            results: {
-              suggestions,
-              ignoredFiles,
-              includedFiles,
-              config: repoConfig,
-              commentFailures,
-              summaryPosted,
-            } as any,
-          },
-        });
-      }
+      // Persist delivery outcome and mark the review finished. This is the
+      // single terminal write, so a review can never read as COMPLETED while
+      // its comments are still in flight.
+      await prisma.analysisJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'COMPLETED',
+          results: {
+            suggestions,
+            ignoredFiles,
+            includedFiles,
+            config: repoConfig,
+            commentFailures,
+            summaryPosted,
+          } as any,
+        },
+      });
 
       if (commentFailures.length > 0) {
         SocketService.emitStatus(
@@ -238,7 +240,6 @@ export const analysisWorker = new Worker(
 
       console.log(`🏁 Job Cycle ${jobId} gracefully exited with 100% success.\n`);
       SocketService.emitStatus(userId, jobId, `✅ All Analysis Finalized. Results fully loaded.`, 'COMPLETED', { suggestions });
-
       return { status: 'success', findingCount: suggestions.length };
     } catch (err) {
       const message = (err as Error).message;
