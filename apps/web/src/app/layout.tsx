@@ -1,5 +1,17 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+import {
+  BRAND_AUTHOR,
+  BRAND_NAME,
+  BRAND_TAGLINE,
+  DEFAULT_TITLE,
+  FAVICON_PATH,
+  LOGO_PATH,
+  ORGANIZATION_SAME_AS,
+  SITE_URL,
+  TWITTER_HANDLE,
+  absoluteUrl,
+} from "../config/brand";
 import "./globals.css";
 
 const inter = Inter({
@@ -15,10 +27,10 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://pullpilot.ai"),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "PullPilot | AI PR Reviewer | Beautiful Code by Default",
-    template: "%s | PullPilot AI",
+    default: DEFAULT_TITLE,
+    template: `%s | ${BRAND_NAME}`,
   },
   description:
     "Automated AI code review for GitHub and GitLab pull requests. Catch timing attacks, N+1 query bottlenecks, and memory leaks with 1-click inline mergeable patches.",
@@ -27,17 +39,17 @@ export const metadata: Metadata = {
     "CodeRabbit alternative",
     "automated code review",
     "GitHub PR review bot",
+    "GitLab AI code review",
+    "AST security scanner",
+    "pull request automation",
     "AI code auditor",
     "Claude 5 code review",
     "ChatGPT 5.6 PR reviewer",
     "Gemini 3.0 Pro code review",
-    "AST security scanner",
-    "pull request automation",
-    "GitLab AI code review",
   ],
-  authors: [{ name: "PullPilot Team", url: "https://pullpilot.ai" }],
-  creator: "PullPilot",
-  publisher: "PullPilot",
+  authors: [{ name: BRAND_AUTHOR, url: SITE_URL }],
+  creator: BRAND_NAME,
+  publisher: BRAND_NAME,
   robots: {
     index: true,
     follow: true,
@@ -52,37 +64,37 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://pullpilot.ai",
-    siteName: "PullPilot AI PR Reviewer",
-    title: "PullPilot | AI PR Reviewer | Beautiful Code by Default",
+    url: SITE_URL,
+    siteName: `${BRAND_NAME} AI PR Reviewer`,
+    title: `${BRAND_NAME} | AI PR Reviewer | ${BRAND_TAGLINE}`,
     description:
-      "Automated AI code review on every pull request with Claude 5, ChatGPT 5.6, and Gemini 3.0 Pro. Catch timing attacks, N+1 bottlenecks, and memory leaks.",
+      "Automated AI code review on every pull request with Claude 5, ChatGPT 5.6, and Gemini 3.0 Pro. Catch timing attacks, N+1 query bottlenecks, and memory leaks.",
     images: [
       {
-        url: "/icon.svg",
+        url: LOGO_PATH,
         width: 512,
         height: 512,
-        alt: "PullPilot AI PR Reviewer Logo",
+        alt: `${BRAND_NAME} AI PR Reviewer Logo`,
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "PullPilot | AI PR Reviewer | Beautiful Code by Default",
+    title: `${BRAND_NAME} | AI PR Reviewer | ${BRAND_TAGLINE}`,
     description:
       "Automated AI code review on every pull request with Claude 5, ChatGPT 5.6 & Gemini 3.0 Pro.",
-    images: ["/icon.svg"],
-    creator: "@pullpilot",
+    images: [LOGO_PATH],
+    creator: `@${TWITTER_HANDLE}`,
   },
   alternates: {
-    canonical: "https://pullpilot.ai",
+    canonical: SITE_URL,
   },
   icons: {
     icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: FAVICON_PATH, type: "image/svg+xml" },
+      { url: LOGO_PATH, type: "image/svg+xml" },
     ],
-    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: LOGO_PATH }],
   },
 };
 
@@ -91,12 +103,12 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "SoftwareApplication",
-      name: "PullPilot",
+      name: BRAND_NAME,
       applicationCategory: "DeveloperApplication",
       operatingSystem: "Cloud, Linux, Docker, macOS, Windows",
-      url: "https://pullpilot.ai",
+      url: SITE_URL,
       offers: {
-        "@type": "Offer",
+        type: "Offer",
         price: "0",
         priceCurrency: "USD",
       },
@@ -112,13 +124,10 @@ const jsonLd = {
     },
     {
       "@type": "Organization",
-      name: "PullPilot",
-      url: "https://pullpilot.ai",
-      logo: "https://pullpilot.ai/icon.svg",
-      sameAs: [
-        "https://github.com/muhammadshehzaib/ai-pr-reviewer",
-        "https://twitter.com/pullpilot",
-      ],
+      name: BRAND_NAME,
+      url: SITE_URL,
+      logo: absoluteUrl(LOGO_PATH),
+      sameAs: [...ORGANIZATION_SAME_AS],
     },
   ],
 };
@@ -131,10 +140,15 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <head>
-        <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+        <link rel="icon" type="image/svg+xml" href={LOGO_PATH} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        <script
+          defer
+          src="http://109.123.244.167:3008/script.js"
+          data-website-id="4fd14c41-b3d3-4442-9fa2-2dd11b10c437"
         />
       </head>
       <body>{children}</body>
