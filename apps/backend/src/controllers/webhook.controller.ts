@@ -89,6 +89,44 @@ export class WebhookController {
         return res.status(200).json({ status: 'SKIPPED', reason: 'unsupported-event-type' });
       }
 
+      // 5a. Resolve the head SHA, and refuse the delivery if we cannot.
+      //
+      // The head SHA is the identity of a review. It is the column in
+      // @@unique([repositoryId, eventType, referenceId, commitSha]) that makes
+      // redelivery a no-op, and it is what the worker anchors the diff fetch to.
+      // PostgreSQL treats NULLs as distinct inside a unique constraint, so a
+      // payload without a resolvable SHA can never match an earlier row: every
+      // redelivery would queue another review and spend the quota again. That
+      // defeats the guarantee the index exists to provide.
+      //
+      // Declining is also the honest answer on review quality grounds — with no
+      // head SHA there is no commit for the diff to be taken against, so the
+      // "review" could not have been meaningful. Checked here, before the quota
+      // gate, so a declined delivery leaves no trace beyond a SKIPPED row.
+      const commitSha =
+        jobType === 'PULL_REQUEST'
+          ? payload.pull_request?.head?.sha ?? null
+          : payload.after ?? null;
+
+      if (!commitSha) {
+        console.warn(
+          `⚠️ Skipping review for ${repoFullName} ${jobType} ${refId}: payload carried no head commit SHA.`,
+        );
+        await prisma.analysisJob.create({
+          data: {
+            repositoryId: dbRepo.id,
+            eventType: jobType,
+            referenceId: refId,
+            status: 'SKIPPED',
+            results: {
+              reason: 'missing-head-sha',
+              details: 'Webhook payload did not include a resolvable head commit SHA, so the review could not be identified or anchored to a diff.',
+            },
+          },
+        });
+        return res.status(200).json({ status: 'SKIPPED', reason: 'missing-head-sha' });
+      }
+
       const isPrivate = Boolean(payload.repository?.private);
 
       // Keep repository private flag updated if changed
@@ -141,15 +179,9 @@ export class WebhookController {
         });
       }
 
-      // 7. Persist basic Analysis Job log in DB as QUEUED
-      // The head SHA is the identity of this review: GitHub may redeliver the same
-      // webhook any number of times, and a new commit on the same PR is a
-      // genuinely new review. Persisting it makes that distinction possible.
-      const commitSha =
-        jobType === 'PULL_REQUEST'
-          ? payload.pull_request?.head?.sha ?? null
-          : payload.after ?? null;
-
+      // 7. Persist basic Analysis Job log in DB as QUEUED.
+      // `commitSha` was resolved in 5a and is guaranteed non-null by this point,
+      // which is what makes the insert below idempotent against redelivery.
       let newJob;
       try {
         newJob = await prisma.analysisJob.create({
@@ -168,7 +200,7 @@ export class WebhookController {
           (createErr as { code?: string })?.code === 'P2002' ||
           /unique|already exists/i.test((createErr as Error)?.message ?? '');
 
-        if (isDuplicate && commitSha) {
+        if (isDuplicate) {
           console.log(`♻️  Duplicate webhook ignored: ${repoFullName} ${jobType} ${refId} @ ${commitSha.slice(0, 7)}`);
           // 200, not an error: GitHub retries anything non-2xx, which would
           // deliver the very duplicate we are trying to avoid.
@@ -192,7 +224,7 @@ export class WebhookController {
         installationId: dbRepo.installationId,
         isPrivate,
         payloadSnapshot: {
-          headSha: commitSha ?? undefined,
+          headSha: commitSha,
           baseSha: jobType === 'PULL_REQUEST' ? payload.pull_request?.base?.sha : payload.before,
         },
       });

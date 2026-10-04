@@ -347,7 +347,7 @@ describe('WebhookController.handleGitHubEvent — breaking path', () => {
   });
 });
 
-describe('WebhookController idempotency �?" duplicate webhook deliveries', () => {
+describe('WebhookController idempotency — duplicate webhook deliveries', () => {
   const baseRepo = { id: 'r1', userId: 'u-owner', isActive: true, isPrivate: false };
   const prBody = () => ({
     action: 'synchronize',
@@ -435,5 +435,137 @@ describe('WebhookController idempotency �?" duplicate webhook deliveries', () 
     await WebhookController.handleGitHubEvent(req, res);
 
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+});
+
+describe('WebhookController idempotency — payloads with no head SHA', () => {
+  // PostgreSQL treats NULLs as distinct inside a unique constraint, so a row
+  // persisted with commitSha = NULL can never conflict with another one. Before
+  // this was handled, a delivery arriving without a head SHA bypassed the index
+  // entirely: every redelivery queued another job and charged the quota again.
+  const baseRepo = { id: 'r1', userId: 'u-owner', isActive: true, isPrivate: false };
+
+  const prWithoutSha = () => ({
+    action: 'synchronize',
+    repository: { full_name: 'o/r', private: false },
+    pull_request: { number: 7, base: { sha: 'base-sha' } },
+  });
+
+  const pushWithoutSha = () => ({
+    repository: { full_name: 'o/r', private: false },
+    before: 'old-sha',
+  });
+
+  it('skips a pull_request delivery whose head SHA is missing', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'skipped-1' });
+
+    const req = mockReq({
+      headers: { 'x-github-event': 'pull_request' },
+      body: prWithoutSha(),
+    });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ status: 'SKIPPED', reason: 'missing-head-sha' });
+  });
+
+  it('never enqueues a review for a SHA-less delivery', async () => {
+    // The whole point: no second review, no second quota charge.
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'skipped-1' });
+
+    const res = mockRes();
+    await WebhookController.handleGitHubEvent(
+      mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prWithoutSha() }),
+      res,
+    );
+
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('skips a push delivery with no after SHA', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'skipped-1' });
+
+    const req = mockReq({ headers: { 'x-github-event': 'push' }, body: pushWithoutSha() });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+
+  it('records why the review was declined so it is visible in history', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'skipped-1' });
+
+    await WebhookController.handleGitHubEvent(
+      mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prWithoutSha() }),
+      mockRes(),
+    );
+
+    expect(mockJobCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        repositoryId: 'r1',
+        eventType: 'PULL_REQUEST',
+        referenceId: '7',
+        status: 'SKIPPED',
+        results: expect.objectContaining({ reason: 'missing-head-sha' }),
+      }),
+    });
+  });
+
+  it('does not record a QUEUED row, so the review is never mistaken for real', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'skipped-1' });
+
+    await WebhookController.handleGitHubEvent(
+      mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prWithoutSha() }),
+      mockRes(),
+    );
+
+    expect(mockJobCreate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'QUEUED' }) }),
+    );
+  });
+
+  it('still reviews normally when the head SHA is present', async () => {
+    // Guard against the guard: the happy path must be untouched.
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'job-1' });
+
+    const req = mockReq({
+      headers: { 'x-github-event': 'pull_request' },
+      body: {
+        action: 'synchronize',
+        repository: { full_name: 'o/r', private: false },
+        pull_request: { number: 7, head: { sha: 'head-sha' }, base: { sha: 'base-sha' } },
+      },
+    });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(mockQueueAdd).toHaveBeenCalled();
+  });
+
+  it('returns 200 rather than 500 so GitHub does not retry the unresolvable payload', async () => {
+    // A non-2xx would make GitHub redeliver forever, which is exactly the loop
+    // the idempotency work is meant to stop.
+    mockRepoFindFirst.mockResolvedValueOnce(baseRepo);
+    mockJobCreate.mockResolvedValueOnce({ id: 'skipped-1' });
+
+    const res = mockRes();
+    await WebhookController.handleGitHubEvent(
+      mockReq({ headers: { 'x-github-event': 'pull_request' }, body: prWithoutSha() }),
+      res,
+    );
+
+    expect(res.status).not.toHaveBeenCalledWith(500);
   });
 });
