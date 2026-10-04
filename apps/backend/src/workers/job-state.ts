@@ -134,6 +134,12 @@ export async function markReviewTerminal(
  * Going backwards is a no-op rather than an error: BullMQ retries re-enter at
  * FETCHING, and a late write from an earlier step must not make a review that
  * is already posting look like it is still analysing.
+ *
+ * A review that has already finished is likewise left alone. This is what stops
+ * a cancelled or timed-out review being resurrected: BullMQ re-delivers a job
+ * whose worker died before it could record the abort, so without this guard a
+ * cancelled review that coincided with a crash would quietly restart and post
+ * comments on a PR the user had already stopped.
  */
 export async function advanceReview(
   jobId: string,
@@ -147,9 +153,9 @@ export async function advanceReview(
   });
 
   if (current && isReviewPhase(current.status)) {
-    if (PHASE_RANK[phase] <= PHASE_RANK[current.status]) {
-      return;
-    }
+    if (PHASE_RANK[phase] <= PHASE_RANK[current.status]) return;
+  } else if (current && isTerminalStatus(current.status)) {
+    return;
   }
 
   await prisma.analysisJob.update({

@@ -17,8 +17,10 @@ vi.mock('../config/socket', () => ({
 }));
 
 import {
+  REVIEW_PHASES,
   SUPERSEDED_REVIEW_STATUSES,
   TERMINAL_REVIEW_STATUSES,
+  advanceReview,
   isInProgressStatus,
   isSupersededStatus,
   isTerminalStatus,
@@ -160,5 +162,80 @@ describe('markReviewTerminal', () => {
     // is the durable record. Order matters less than both happening.
     await markReviewTerminal('job-1', 'u-1', 'CANCELLED', 'bye');
     expect(mockEmitStatus).toHaveBeenCalledOnce();
+  });
+});
+
+describe('advanceReview', () => {
+  const advanceFrom = (status: string | null, phase: (typeof REVIEW_PHASES)[number] = 'FETCHING') => {
+    mockJobFindUnique.mockResolvedValue(status === null ? null : { status });
+    return advanceReview('job-1', 'u-1', phase, `msg:${phase}`);
+  };
+
+  it('records the first phase of a queued review', async () => {
+    await advanceFrom('QUEUED');
+
+    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'FETCHING' } });
+    expect(mockEmitStatus).toHaveBeenCalledWith('u-1', 'job-1', 'msg:FETCHING', 'FETCHING');
+  });
+
+  it('moves forward through the pipeline', async () => {
+    await advanceFrom('FETCHING', 'ANALYZING');
+    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'ANALYZING' } });
+  });
+
+  it('refuses to move backwards', async () => {
+    // A late write from an earlier step must not make a review that is already
+    // posting look like it is still analysing.
+    await advanceFrom('POSTING', 'FETCHING');
+
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+    expect(mockEmitStatus).not.toHaveBeenCalled();
+  });
+
+  it('ignores a repeat of the current phase', async () => {
+    await advanceFrom('ANALYZING', 'ANALYZING');
+
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+    expect(mockEmitStatus).not.toHaveBeenCalled();
+  });
+
+  it('lets a retry re-enter the pipeline at FETCHING from a phase', async () => {
+    // BullMQ retries restart at FETCHING; a genuine restart must be allowed to
+    // record it, even though FETCHING ranks below POSTING.
+    await advanceFrom('POSTING', 'FETCHING');
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+
+    mockJobUpdate.mockClear();
+    await advanceFrom('FAILED', 'FETCHING');
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect a review that already finished', async () => {
+    // Regression guard: BullMQ re-delivers a job whose worker died before it
+    // could record the abort. Without this, a cancelled review that coincided
+    // with a crash restarts and posts comments on a PR the user stopped.
+    for (const status of TERMINAL_REVIEW_STATUSES) {
+      mockJobUpdate.mockClear();
+      mockEmitStatus.mockClear();
+      await advanceFrom(status, 'FETCHING');
+
+      expect(mockJobUpdate, `status ${status}`).not.toHaveBeenCalled();
+      expect(mockEmitStatus, `status ${status}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not resurrect a cancelled or timed-out review', async () => {
+    for (const status of SUPERSEDED_REVIEW_STATUSES) {
+      mockJobUpdate.mockClear();
+      await advanceFrom(status, 'POSTING');
+      expect(mockJobUpdate, `status ${status}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it('advances when the row is missing', async () => {
+    // A deleted job is not a reason to skip the write.
+    await advanceFrom(null);
+
+    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'FETCHING' } });
   });
 });
