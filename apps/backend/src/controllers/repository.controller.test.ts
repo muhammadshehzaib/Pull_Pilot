@@ -64,7 +64,6 @@ vi.mock('../services/github.service', () => ({
 
 vi.mock('../config/queue', () => ({
   analysisQueue: { add: mockQueueAdd },
-  ANALYSIS_QUEUE_NAME: 'test-queue',
 }));
 
 import { RepositoryController } from './repository.controller';

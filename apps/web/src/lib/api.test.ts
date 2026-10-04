@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { api, BACKEND_URL } from './api';
+import { api } from './api';
+import { BACKEND_URL } from '../utils/constants';
 
 function jsonResponse(body: unknown, init: { status?: number; statusText?: string } = {}) {
   const text = body === null ? '' : JSON.stringify(body);
@@ -152,13 +153,6 @@ describe('api()', () => {
       );
 
       await expect(api('/api/foo')).rejects.toThrow();
-    });
-  });
-
-  describe('BACKEND_URL', () => {
-    it('defaults to http://localhost:4000 when env is not set', () => {
-      // The constant is bound at import time; we just assert it is a URL-shaped string.
-      expect(BACKEND_URL).toMatch(/^https?:\/\//);
     });
   });
 });

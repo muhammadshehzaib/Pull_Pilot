@@ -1,14 +1,7 @@
 import { Request, Response } from 'express';
-import { AiProvider } from '@prisma/client';
 import prisma from '../config/prisma';
 import { EncryptionService } from '../services/encryption.service';
-
-const VALID_PROVIDERS = new Set<AiProvider>([
-  AiProvider.GEMINI,
-  AiProvider.OPENAI,
-  AiProvider.CLAUDE,
-  AiProvider.GROK,
-]);
+import { VALID_PROVIDERS } from '../utils/constants';
 
 export class VaultController {
   static async getVault(req: Request, res: Response) {

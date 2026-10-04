@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Cpu, ChevronRight, Menu, X, GitBranch, ArrowUpRight } from 'lucide-react';
-import { BACKEND_URL, GITHUB_APP_INSTALL_URL } from '../lib/api';
+import { BACKEND_URL, GITHUB_APP_INSTALL_URL } from '../utils/constants';
 
 import { PullPilotLogo } from './PullPilotLogo';
 

@@ -7,7 +7,7 @@ import { Terminal, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { UsageMeter } from '../../components/UsageMeter';
 import { useAuth } from '../../lib/useAuth';
-import { BACKEND_URL } from '../../lib/api';
+import { BACKEND_URL } from '../../utils/constants';
 import { isInProgress, isTerminalFailure, statusLabel } from '../../lib/review';
 
 interface ActivityLog {

@@ -1,9 +1,4 @@
-export const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4000';
-
-export const GITHUB_APP_INSTALL_URL =
-  process.env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL ||
-  'https://github.com/apps/pull-pilot-shehzaib/installations/new';
+import { BACKEND_URL } from '../utils/constants';
 
 export interface ApiError {
   status: number;

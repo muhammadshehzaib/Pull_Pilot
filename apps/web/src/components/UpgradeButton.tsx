@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { api, ApiError, BACKEND_URL } from '../lib/api';
+import { api, ApiError } from '../lib/api';
+import { BACKEND_URL } from '../utils/constants';
 
 interface UpgradeButtonProps {
   tier: 'INDIE' | 'TEAM';

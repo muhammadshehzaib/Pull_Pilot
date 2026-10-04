@@ -1,13 +1,17 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import http from 'http';
+import { PORT_DEFAULT } from './utils/constants';
 
 // Load root project .env and apps/backend/.env
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
-const PORT = process.env.PORT || 4000;
+// Read after dotenv.config(): the default lives in utils/constants.ts, but
+// process.env must be resolved here, in the module body, so the .env files above
+// have already been loaded.
+const PORT = process.env.PORT || PORT_DEFAULT;
 
 async function startServer() {
   try {

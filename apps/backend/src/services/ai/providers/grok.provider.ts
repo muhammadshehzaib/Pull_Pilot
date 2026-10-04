@@ -1,8 +1,6 @@
 import OpenAI from 'openai';
 import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
-
-const GROK_BASE_URL = process.env.GROK_BASE_URL || 'https://api.x.ai/v1';
-const GROK_MODEL = process.env.GROK_MODEL || 'grok-2-1212';
+import { GROK_BASE_URL, GROK_MODEL } from '../../../utils/constants';
 
 export class GrokProvider extends BaseAiProvider {
   private aiClient: OpenAI;

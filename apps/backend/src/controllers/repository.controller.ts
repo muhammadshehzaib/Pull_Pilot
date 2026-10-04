@@ -3,8 +3,7 @@ import prisma from '../config/prisma';
 import { GitHubService } from '../services/github.service';
 import { GitHubAppService } from '../services/github-app.service';
 import { analysisQueue } from '../config/queue';
-
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
+import { BACKEND_URL } from '../utils/constants';
 
 async function getGitHub(installationId?: string | number | null): Promise<GitHubService> {
   return await GitHubAppService.getInstallationService(installationId);

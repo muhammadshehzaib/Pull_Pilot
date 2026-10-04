@@ -2,16 +2,15 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import prisma from '../config/prisma';
 import { AuthService } from '../services/auth.service';
-
-const GITHUB_AUTHORIZE_URL = 'https://github.com/login/oauth/authorize';
-const GITHUB_TOKEN_URL = 'https://github.com/login/oauth/access_token';
-const GITHUB_USER_URL = 'https://api.github.com/user';
-
-const COOKIE_NAME = 'auth_token';
-const COOKIE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
+import {
+  BACKEND_URL,
+  COOKIE_MAX_AGE_MS,
+  COOKIE_NAME,
+  FRONTEND_URL,
+  GITHUB_AUTHORIZE_URL,
+  GITHUB_TOKEN_URL,
+  GITHUB_USER_URL,
+} from '../utils/constants';
 
 export class AuthController {
   static async startGitHubLogin(req: Request, res: Response) {

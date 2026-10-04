@@ -1,10 +1,10 @@
 import prisma from '../config/prisma';
-
-const RETENTION_DAYS = parseInt(process.env.JOB_RETENTION_DAYS || '7', 10);
-const SWEEP_INTERVAL_MS = parseInt(process.env.JOB_SWEEP_INTERVAL_MS || '21600000', 10); // 6h
-const SWEEP_ENABLED = process.env.JOB_RETENTION_SWEEP !== 'false';
-
-const DELETE_BATCH_SIZE = 500;
+import {
+  DELETE_BATCH_SIZE,
+  JOB_RETENTION_DAYS,
+  SWEEP_ENABLED,
+  SWEEP_INTERVAL_MS,
+} from '../utils/constants';
 
 /**
  * Deletes FAILED analysis_jobs rows older than JOB_RETENTION_DAYS.
@@ -17,7 +17,7 @@ const DELETE_BATCH_SIZE = 500;
  * Runs in batches so a large backlog cannot build one enormous DELETE.
  * Returns the number of rows removed.
  */
-export async function sweepFailedJobsOnce(retentionDays = RETENTION_DAYS): Promise<number> {
+export async function sweepFailedJobsOnce(retentionDays = JOB_RETENTION_DAYS): Promise<number> {
   if (!Number.isFinite(retentionDays) || retentionDays <= 0) return 0;
 
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
@@ -60,7 +60,7 @@ export function startJobRetentionSweep(): void {
     try {
       const removed = await sweepFailedJobsOnce();
       if (removed > 0) {
-        console.log(`🧹 Retention sweep removed ${removed} failed job(s) older than ${RETENTION_DAYS}d.`);
+        console.log(`🧹 Retention sweep removed ${removed} failed job(s) older than ${JOB_RETENTION_DAYS}d.`);
       }
     } catch (err) {
       console.error('⚠️  Job retention sweep failed:', err);
@@ -72,6 +72,6 @@ export function startJobRetentionSweep(): void {
   setInterval(tick, SWEEP_INTERVAL_MS).unref();
   void tick();
   console.log(
-    `🧹 Job retention sweep active (every ${Math.round(SWEEP_INTERVAL_MS / 60000)}m): failed jobs are kept ${RETENTION_DAYS}d.`,
+    `🧹 Job retention sweep active (every ${Math.round(SWEEP_INTERVAL_MS / 60000)}m): failed jobs are kept ${JOB_RETENTION_DAYS}d.`,
   );
 }

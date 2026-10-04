@@ -8,7 +8,6 @@ const { mockApi } = vi.hoisted(() => ({
 
 vi.mock('../lib/api', () => ({
   api: mockApi,
-  BACKEND_URL: 'http://localhost:4000',
 }));
 
 import { UpgradeButton } from './UpgradeButton';

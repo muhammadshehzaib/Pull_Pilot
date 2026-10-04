@@ -19,7 +19,6 @@ vi.mock('../config/prisma', () => ({
 
 vi.mock('../config/queue', () => ({
   analysisQueue: { add: mockQueueAdd },
-  ANALYSIS_QUEUE_NAME: 'test-queue',
 }));
 
 vi.mock('../config/redis', () => ({

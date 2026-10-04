@@ -3,14 +3,16 @@ import prisma from '../config/prisma';
 import { analysisQueue } from '../config/queue';
 import { isInProgressStatus, markReviewTerminal } from '../workers/job-state';
 import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxonomy';
-
-const MAX_LIMIT = 100;
-const DEFAULT_LIMIT = 50;
+import { DEFAULT_LIMIT, MAX_LIMIT } from '../utils/constants';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
  * Prisma's generated type is not usable as a runtime guard — the filter is user
  * input arriving as a string.
+ *
+ * Stays here rather than in utils/constants.ts: this list is the source of the
+ * JobStatus type exported below, and it is review-lifecycle vocabulary, which
+ * belongs with workers/job-state.ts.
  */
 const JOB_STATUSES = [
   'QUEUED',

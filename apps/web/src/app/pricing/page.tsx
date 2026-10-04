@@ -6,7 +6,7 @@ import { ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
 import { PullPilotLogo } from '../../components/PullPilotLogo';
 import { Footer } from '../../components/Footer';
 import { UpgradeButton } from '../../components/UpgradeButton';
-import { BACKEND_URL } from '../../lib/api';
+import { BACKEND_URL } from '../../utils/constants';
 
 export default function PricingPage() {
   const [annual, setAnnual] = useState(false);

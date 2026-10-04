@@ -6,24 +6,7 @@ import {
   PaidTier,
   PolarSubscriptionLike,
 } from '../services/billing.service';
-
-const PAID_TIERS = new Set<string>(['INDIE', 'TEAM']);
-
-/** Events that (re)write entitlement state. */
-const SYNC_EVENTS = new Set([
-  'subscription.created',
-  'subscription.active',
-  'subscription.updated',
-  'subscription.resumed',
-  'subscription.uncanceled',
-  'subscription.cycled',
-  'subscription.migrated',
-  'subscription.past_due',
-  'subscription.paused',
-]);
-
-/** Events that end entitlement for the referenced subscription. */
-const CANCEL_EVENTS = new Set(['subscription.canceled', 'subscription.revoked']);
+import { CANCEL_EVENTS, PAID_TIERS, SYNC_EVENTS } from '../utils/constants';
 
 export class BillingController {
   /**

@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
-
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
+import { CLAUDE_MODEL } from '../../../utils/constants';
 
 export class ClaudeProvider extends BaseAiProvider {
   private aiClient: Anthropic;
@@ -16,7 +15,7 @@ export class ClaudeProvider extends BaseAiProvider {
       const systemPrompt = this.getSystemPrompt(customRules);
 
       const response = await this.aiClient.messages.create({
-        model: MODEL,
+        model: CLAUDE_MODEL,
         max_tokens: 4096,
         system: systemPrompt,
         messages: [

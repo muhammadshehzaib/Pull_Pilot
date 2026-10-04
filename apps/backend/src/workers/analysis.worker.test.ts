@@ -62,7 +62,7 @@ vi.mock('bullmq', () => ({
 vi.mock('../config/redis', () => ({ redisConnection: { host: 'mock' } }));
 
 vi.mock('../config/queue', () => ({
-  ANALYSIS_QUEUE_NAME: 'test-queue',
+analysisQueue: { add: vi.fn() },
 }));
 
 vi.mock('../config/prisma', () => ({

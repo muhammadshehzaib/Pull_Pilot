@@ -3,9 +3,7 @@ import { redisConnection } from '../config/redis';
 import { analysisQueue } from '../config/queue';
 import { GitHubService } from '../services/github.service';
 import { GitHubAppService } from '../services/github-app.service';
-
-const POLL_INTERVAL_MS = parseInt(process.env.REPO_POLL_INTERVAL_MS || '60000', 10);
-const POLL_ENABLED = process.env.REPO_POLL_ENABLED !== 'false';
+import { POLL_ENABLED, POLL_INTERVAL_MS } from '../utils/constants';
 
 type PolledRepo = {
   id: string;

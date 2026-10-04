@@ -1,6 +1,5 @@
 import { Worker, Job, UnrecoverableError } from 'bullmq';
 import { redisConnection } from '../config/redis';
-import { ANALYSIS_QUEUE_NAME } from '../config/queue';
 import prisma from '../config/prisma';
 import { EncryptionService } from '../services/encryption.service';
 import { GitHubAppService } from '../services/github-app.service';
@@ -18,20 +17,7 @@ import {
 import { QuotaService } from '../services/quota.service';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
 import { advanceReview, markReviewTerminal, wasSuperseded } from './job-state';
-
-/**
- * How long a single review may take before it is abandoned.
- *
- * BullMQ 5 removed the per-job `timeout` option, so this is enforced here rather
- * than by the queue. Without it, a review that hangs — a provider that never
- * returns, a GitHub call that never resolves — holds its BullMQ slot forever and
- * the job sits in a permanent in-flight phase with no way for the user to tell
- * that from a slow review.
- *
- * Exceeding this is a terminal outcome, not a retryable one: the attempt that
- * overran is not going to get faster on a third try.
- */
-const REVIEW_TIMEOUT_MS = parseInt(process.env.REVIEW_TIMEOUT_MS || '', 10) || 10 * 60 * 1000;
+import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS } from '../utils/constants';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,

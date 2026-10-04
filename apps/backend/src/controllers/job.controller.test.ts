@@ -20,7 +20,6 @@ vi.mock('../config/prisma', () => ({
 
 vi.mock('../config/queue', () => ({
   analysisQueue: { remove: mockQueueRemove },
-  ANALYSIS_QUEUE_NAME: 'test-queue',
 }));
 
 vi.mock('../config/socket', () => ({
