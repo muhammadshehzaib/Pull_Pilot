@@ -149,3 +149,38 @@ export const VALID_PROVIDERS = new Set<AiProvider>([
 export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 export const GROK_BASE_URL = process.env.GROK_BASE_URL || 'https://api.x.ai/v1';
 export const GROK_MODEL = process.env.GROK_MODEL || 'grok-2-1212';
+
+/* -------------------------------------------------------------------------- */
+/* Review context (Phase 2)                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** How far to walk the import graph out from the changed files. */
+export const CONTEXT_MAX_HOPS = parseInt(process.env.CONTEXT_MAX_HOPS || '2', 10);
+
+/** Hard ceiling on neighbour files fetched and sent to the model. */
+export const CONTEXT_MAX_FILES = parseInt(process.env.CONTEXT_MAX_FILES || '25', 10);
+
+/** Ceiling on context characters, ~4 chars per token. Keeps cost predictable. */
+export const CONTEXT_MAX_TOKENS = parseInt(process.env.CONTEXT_MAX_TOKENS || '30000', 10);
+export const CONTEXT_MAX_CHARS = CONTEXT_MAX_TOKENS * 4;
+
+/**
+ * Retention for cached source blobs. This is customer code, so the window is
+ * short and every row carries an absolute expiry that the sweeper enforces.
+ */
+export const CONTEXT_RETENTION_HOURS = parseInt(process.env.CONTEXT_RETENTION_HOURS || '24', 10);
+export const CONTEXT_SWEEP_ENABLED = process.env.CONTEXT_SWEEP_ENABLED !== 'false';
+
+/** File extensions parsed for import edges and symbol occurrences. */
+export const CONTEXT_SOURCE_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs',
+]);
+
+/** Files above this size are fetched but skipped for parsing/context. */
+export const CONTEXT_MAX_FILE_BYTES = parseInt(process.env.CONTEXT_MAX_FILE_BYTES || '200000', 10);
+
+/** Directories never worth walking into for context. */
+export const CONTEXT_EXCLUDED_SEGMENTS = new Set([
+  'node_modules', 'dist', 'build', 'out', 'coverage', '.next', 'vendor',
+  '__pycache__', '.venv', 'venv', 'target', 'bower_components',
+]);

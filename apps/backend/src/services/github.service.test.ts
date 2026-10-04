@@ -10,6 +10,8 @@ const {
   mockGetPullRequest,
   mockGetContent,
   mockCreateIssueComment,
+  mockGetTree,
+  mockGetBlob,
   OctokitCtor,
 } = vi.hoisted(() => {
   const mockCompareCommits = vi.fn();
@@ -20,6 +22,8 @@ const {
   const mockGetPullRequest = vi.fn();
   const mockGetContent = vi.fn();
   const mockCreateIssueComment = vi.fn();
+  const mockGetTree = vi.fn();
+  const mockGetBlob = vi.fn();
 
   const OctokitCtor = vi.fn(function (this: any, _opts?: unknown) {
     this.repos = {
@@ -36,6 +40,10 @@ const {
     this.issues = {
       createComment: mockCreateIssueComment,
     };
+    this.git = {
+      getTree: mockGetTree,
+      getBlob: mockGetBlob,
+    };
   });
 
   return {
@@ -47,6 +55,8 @@ const {
     mockGetPullRequest,
     mockGetContent,
     mockCreateIssueComment,
+    mockGetTree,
+    mockGetBlob,
     OctokitCtor,
   };
 });
@@ -279,6 +289,106 @@ describe('GitHubService', () => {
     it('propagates a not-found error when the PR does not exist', async () => {
       mockGetPullRequest.mockRejectedValueOnce(new Error('Not Found'));
       await expect(svc.getPullRequest('o', 'r', 999)).rejects.toThrow();
+    });
+  });
+
+  describe('getTree()', () => {
+    it('requests a recursive listing for the given sha', async () => {
+      mockGetTree.mockResolvedValueOnce({ data: { tree: [], truncated: false } });
+
+      await svc.getTree('o', 'r', 'headsha123');
+
+      expect(mockGetTree).toHaveBeenCalledWith({
+        owner: 'o',
+        repo: 'r',
+        tree_sha: 'headsha123',
+        recursive: 'true',
+      });
+    });
+
+    it('keeps only blobs, skipping trees and submodule gitlinks', async () => {
+      mockGetTree.mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [
+            { type: 'tree', path: 'src', sha: 'tree1' },
+            { type: 'blob', path: 'src/a.ts', sha: 'blobA', size: 120, mode: '100644' },
+            { type: 'commit', path: 'vendor/lib', sha: 'sub1' },
+            { type: 'blob', path: 'README.md', sha: 'blobB', size: 40, mode: '100644' },
+          ],
+        },
+      });
+
+      const tree = await svc.getTree('o', 'r', 'sha');
+
+      expect(tree?.files.map((f) => f.path)).toEqual(['src/a.ts', 'README.md']);
+      expect(tree?.files[0]).toEqual({
+        path: 'src/a.ts',
+        blobSha: 'blobA',
+        size: 120,
+        mode: '100644',
+      });
+    });
+
+    it('reports truncation so callers do not treat a partial map as complete', async () => {
+      mockGetTree.mockResolvedValueOnce({ data: { tree: [], truncated: true } });
+
+      const tree = await svc.getTree('o', 'r', 'sha');
+
+      expect(tree?.truncated).toBe(true);
+    });
+
+    it('defaults size to 0 when the entry omits it', async () => {
+      mockGetTree.mockResolvedValueOnce({
+        data: { truncated: false, tree: [{ type: 'blob', path: 'a.ts', sha: 's', mode: '100644' }] },
+      });
+
+      const tree = await svc.getTree('o', 'r', 'sha');
+
+      expect(tree?.files[0].size).toBe(0);
+    });
+
+    it('returns null on a bad sha rather than an empty inventory', async () => {
+      mockGetTree.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }));
+
+      await expect(svc.getTree('o', 'r', 'bogus')).resolves.toBeNull();
+    });
+
+    it('rethrows unexpected errors so a transient failure is not silently empty', async () => {
+      mockGetTree.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
+
+      await expect(svc.getTree('o', 'r', 'sha')).rejects.toThrow('boom');
+    });
+  });
+
+  describe('getBlob()', () => {
+    it('decodes base64 content by sha', async () => {
+      mockGetBlob.mockResolvedValueOnce({
+        data: { content: Buffer.from('const x = 1;').toString('base64'), encoding: 'base64' },
+      });
+
+      await expect(svc.getBlob('o', 'r', 'blobA')).resolves.toBe('const x = 1;');
+      expect(mockGetBlob).toHaveBeenCalledWith({ owner: 'o', repo: 'r', file_sha: 'blobA' });
+    });
+
+    it('handles content that needs multi-byte utf-8 decoding', async () => {
+      mockGetBlob.mockResolvedValueOnce({
+        data: { content: Buffer.from('const emoji = "🎯";', 'utf8').toString('base64'), encoding: 'base64' },
+      });
+
+      await expect(svc.getBlob('o', 'r', 'blobB')).resolves.toContain('🎯');
+    });
+
+    it('refuses a non-base64 encoding instead of returning garbage', async () => {
+      mockGetBlob.mockResolvedValueOnce({ data: { content: 'raw', encoding: 'utf-8' } });
+
+      await expect(svc.getBlob('o', 'r', 'blobC')).resolves.toBeNull();
+    });
+
+    it('returns null when the blob is missing', async () => {
+      mockGetBlob.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }));
+
+      await expect(svc.getBlob('o', 'r', 'gone')).resolves.toBeNull();
     });
   });
 });

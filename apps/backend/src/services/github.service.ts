@@ -6,6 +6,21 @@ export interface CommentPostResult {
   error?: string;
 }
 
+/** One file from a repository tree listing. */
+export interface RepoTreeEntry {
+  path: string;
+  /** Git blob SHA. Content-addressed, so this is the cache key. */
+  blobSha: string;
+  size: number;
+  mode: string;
+}
+
+export interface RepoTreeResult {
+  files: RepoTreeEntry[];
+  /** True when GitHub cut the listing short; the map is then incomplete. */
+  truncated: boolean;
+}
+
 export class GitHubService {
   private octokit: Octokit;
 
@@ -231,6 +246,75 @@ export class GitHubService {
         return null;
       }
       console.warn(`⚠️ Failed to retrieve ${path} from ${owner}/${repo}:`, err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Lists every file in the repo at a given commit: one recursive Trees call.
+   *
+   * This is the inventory step for context-aware reviews. It returns paths and
+   * blob SHAs but no file contents, so a whole-repo map costs a single request
+   * instead of one per file. Contents are fetched separately via getBlob().
+   *
+   * GitHub truncates recursive trees for very large repos; when that happens
+   * `truncated` is true and the caller must not assume the listing is
+   * complete, or context retrieval will quietly miss neighbours.
+   */
+  async getTree(owner: string, repo: string, sha: string): Promise<RepoTreeResult | null> {
+    try {
+      const { data } = await this.octokit.git.getTree({
+        owner,
+        repo,
+        tree_sha: sha,
+        recursive: 'true',
+      });
+
+      const files: RepoTreeEntry[] = [];
+      for (const node of data.tree) {
+        if (node.type !== 'blob' || !node.sha) continue;
+        files.push({
+          path: node.path,
+          blobSha: node.sha,
+          // Only set for symlinks and (for submodules) gitlinks; both are
+          // skipped during import resolution rather than parsed as source.
+          size: node.size ?? 0,
+          mode: node.mode ?? '',
+        });
+      }
+
+      return { files, truncated: data.truncated === true };
+    } catch (err: any) {
+      const status = err.status ?? err?.response?.status;
+      console.warn(`⚠️ Failed to list tree for ${owner}/${repo}@${sha}:`, err.message);
+      // 404 means a bad/missing SHA; surface it as "no inventory" rather than
+      // letting context look like an empty repository.
+      if (status === 404 || status === 409) return null;
+      throw err;
+    }
+  }
+
+  /**
+   * Fetches one file's content by blob SHA.
+   *
+   * Addressing by SHA (not path) is what makes caching work: the same blob
+   * returns the same SHA at every commit it appears in, so an unchanged file is
+   * fetched once and then served from the cache.
+   */
+  async getBlob(owner: string, repo: string, blobSha: string): Promise<string | null> {
+    try {
+      const { data } = await this.octokit.git.getBlob({ owner, repo, file_sha: blobSha });
+
+      if (!data.content) return null;
+      if (data.encoding !== 'base64') {
+        console.warn(`⚠️ Unexpected blob encoding "${data.encoding}" for ${blobSha}; skipping`);
+        return null;
+      }
+      return Buffer.from(data.content, 'base64').toString('utf-8');
+    } catch (err: any) {
+      const status = err.status ?? err?.response?.status;
+      if (status === 404) return null;
+      console.warn(`⚠️ Failed to retrieve blob ${blobSha} from ${owner}/${repo}:`, err.message);
       return null;
     }
   }

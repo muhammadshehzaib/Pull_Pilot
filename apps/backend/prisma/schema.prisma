@@ -109,8 +109,39 @@ model Repository {
   lastScannedSha String?       // default-branch head last seen by the repo poller (webhook-less repos)
   createdAt      DateTime      @default(now())
   analysisJobs   AnalysisJob[]
+  cachedFiles    CachedFile[]
 
   @@map("repositories")
+}
+
+/// A single file's content, encrypted, keyed by its Git blob SHA so identical
+/// content is stored once and never refetched. Used to assemble review context
+/// beyond the diff.
+///
+/// This holds customer source code, so rows are deliberately ephemeral: a
+/// sweeper deletes everything past `expiresAt`. Keeping it content-addressed
+/// also means a rebase or an unrelated commit does not create a new row.
+model CachedFile {
+  id            String     @id @default(uuid())
+  repositoryId  String
+  repository    Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  blobSha       String
+  /// Last known path for this blob. Authoritative path always comes from a
+  /// fresh tree listing; this is only a human-readable hint.
+  path          String
+  sizeBytes     Int
+  /// AES-256-GCM envelope from EncryptionService.encrypt (hex).
+  encryptedData String
+  iv            String
+  authTag       String
+  salt          String
+  createdAt     DateTime   @default(now())
+  /// Absolute expiry; enforced by the cache sweep, not by read time.
+  expiresAt     DateTime
+
+  @@unique([repositoryId, blobSha])
+  @@index([expiresAt])
+  @@map("cached_files")
 }
 
 enum EventType {

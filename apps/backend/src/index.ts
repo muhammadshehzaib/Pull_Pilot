@@ -25,6 +25,7 @@ async function startServer() {
     await import('./workers/analysis.worker');
     const { startRepoPoller } = await import('./workers/repo-poller');
     const { startJobRetentionSweep } = await import('./workers/job-retention');
+    const { startContextRetentionSweep } = await import('./workers/context-retention');
 
     // Wrap Express with HTTP Server required for WebSockets
     const server = http.createServer(app);
@@ -51,6 +52,11 @@ async function startServer() {
 
     // 6. Drop aged-out failed jobs from Redis and the database
     startJobRetentionSweep();
+
+    // 7. Enforce the short retention window on cached source blobs. This is
+    // what keeps cached review context from becoming a long-term copy of
+    // customer repositories, so it must not be disabled in production.
+    startContextRetentionSweep();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);
