@@ -17,7 +17,21 @@ import {
 } from '../services/ai/finding-format';
 import { QuotaService } from '../services/quota.service';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
-import { advanceReview } from './job-state';
+import { advanceReview, markReviewTerminal, wasSuperseded } from './job-state';
+
+/**
+ * How long a single review may take before it is abandoned.
+ *
+ * BullMQ 5 removed the per-job `timeout` option, so this is enforced here rather
+ * than by the queue. Without it, a review that hangs — a provider that never
+ * returns, a GitHub call that never resolves — holds its BullMQ slot forever and
+ * the job sits in a permanent in-flight phase with no way for the user to tell
+ * that from a slow review.
+ *
+ * Exceeding this is a terminal outcome, not a retryable one: the attempt that
+ * overran is not going to get faster on a third try.
+ */
+const REVIEW_TIMEOUT_MS = parseInt(process.env.REVIEW_TIMEOUT_MS || '', 10) || 10 * 60 * 1000;
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -38,6 +52,48 @@ export const analysisWorker = new Worker(
     } = job.data;
 
     const [owner, repo] = fullName.split('/');
+
+    /**
+     * Set when this attempt is abandoned — by the deadline below, or by someone
+     * cancelling the review while a provider call is still outstanding. Read at
+     * step boundaries so an abandoned review never goes on to post comments onto
+     * a PR the user cancelled or a review already written off as timed out.
+     */
+    let superseded = false;
+
+    /**
+     * Abandons this attempt if the review was cancelled or timed out.
+     *
+     * Checks the in-process flag first so the overwhelmingly common case costs
+     * nothing, then the persisted status so a cancellation issued by another
+     * process is still noticed. Throws UnrecoverableError: the reason the
+     * attempt was dropped is not something a retry could resolve.
+     */
+    const assertNotSuperseded = async (): Promise<void> => {
+      if (!superseded && !(await wasSuperseded(jobId))) return;
+      superseded = true;
+      throw new UnrecoverableError(
+        'Review was cancelled or timed out before this attempt finished; abandoning without posting.',
+      );
+    };
+
+    const deadline = setTimeout(() => {
+      superseded = true;
+      console.error(
+        `⏱️  REVIEW TIMED OUT after ${REVIEW_TIMEOUT_MS}ms: ${jobId} (${fullName} ${eventType} ${referenceId}). Marking TIMEOUT and abandoning this attempt.`,
+      );
+      // Best-effort: the pipeline may be blocked on a promise that will not settle
+      // soon, and a failure to record the timeout must not take the worker with it.
+      void markReviewTerminal(
+        jobId,
+        userId,
+        'TIMEOUT',
+        `⏱️ Review timed out after ${Math.round(REVIEW_TIMEOUT_MS / 1000)}s and was abandoned.`,
+        { reason: 'review-timeout', error: `Exceeded the ${REVIEW_TIMEOUT_MS}ms review budget.` },
+      ).catch((err) => {
+        console.error(`Could not persist TIMEOUT for ${jobId}:`, err);
+      });
+    }, REVIEW_TIMEOUT_MS);
 
     try {
       // 1. Enter the pipeline. Every step below advances the phase rather than
@@ -83,6 +139,8 @@ export const analysisWorker = new Worker(
       SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'FETCHING');
       const rawDiff = await ghService.fetchDiff(owner, repo, baseSha, headSha);
 
+      await assertNotSuperseded();
+
       if (!rawDiff || rawDiff.length < 5) {
         console.log(`💨 Diff empty or too small. Finishing early.`);
         return await prisma.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
@@ -107,6 +165,10 @@ export const analysisWorker = new Worker(
 
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
+
+      // The provider call is the step most likely to overrun, so this is the
+      // first place it matters whether the review was abandoned while we waited.
+      await assertNotSuperseded();
 
       // 8. FILTER SUGGESTIONS BY MIN_SEVERITY, DEDUPE, SORT MOST SEVERE FIRST
       const suggestions = sortBySeverity(
@@ -145,6 +207,12 @@ export const analysisWorker = new Worker(
 
         if (suggestions.length > 0) {
           console.log(`📬 Broadcasting inline review comments back to Pull Request #${referenceId}...`);
+
+          // Last checkpoint before anything is written to the PR. Comments are
+          // the only step with an effect the user cannot undo from here, so this
+          // is where abandoning the attempt matters most.
+          await assertNotSuperseded();
+
           await advanceReview(jobId, userId, 'POSTING', `📬 Injecting Inline Comments onto GitHub PR`);
 
           for (const suggestion of suggestions) {
@@ -219,6 +287,12 @@ export const analysisWorker = new Worker(
       // Persist delivery outcome and mark the review finished. This is the
       // single terminal write, so a review can never read as COMPLETED while
       // its comments are still in flight.
+      //
+      // Re-checked immediately before: the deadline can fire during delivery, and
+      // without this a review already written off as TIMEOUT would be overwritten
+      // with a cheerful COMPLETED.
+      await assertNotSuperseded();
+
       await prisma.analysisJob.update({
         where: { id: jobId },
         data: {
@@ -253,6 +327,19 @@ export const analysisWorker = new Worker(
       return { status: 'success', findingCount: suggestions.length };
     } catch (err) {
       const message = (err as Error).message;
+
+      // An abandoned attempt must not be rewritten as a failure. CANCELLED and
+      // TIMEOUT are the accurate outcomes and were persisted by whoever stopped
+      // the review; overwriting either with FAILED would tell the user their
+      // review broke when in fact they — or a clock — ended it deliberately.
+      // Re-thrown so BullMQ stops retrying, with no further write.
+      if (superseded || err instanceof UnrecoverableError) {
+        console.warn(
+          `🚫 Job ${jobId} abandoned mid-flight (${superseded ? 'cancelled or timed out' : 'unrecoverable'}). Status left as-is: ${message}`,
+        );
+        throw err;
+      }
+
       const permanent = isPermanentJobError(err);
 
       // A permanent failure is the user's to fix. SKIPPED reads as "waiting on
@@ -286,6 +373,11 @@ export const analysisWorker = new Worker(
       });
 
       throw err;
+    } finally {
+      // A review that finishes in 4 seconds must not leave a 10-minute timer
+      // armed behind it; otherwise the process holds the job open and the timer
+      // later writes TIMEOUT over an already-COMPLETED review.
+      clearTimeout(deadline);
     }
   },
   {

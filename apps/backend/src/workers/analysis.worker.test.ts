@@ -402,3 +402,91 @@ describe('analysis worker — failure paths', () => {
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow(/DB connection lost/);
   });
 });
+
+describe('analysis worker — cancellation and timeout', () => {
+  // Before this, CANCELLED and TIMEOUT were enum values nothing could ever
+  // produce: a hung review held its worker slot forever and a cancelled review
+  // kept posting comments. These guard both exits.
+  const reviewWithFindings = () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff --git a/foo b/foo\n+ x');
+    mockAnalyzeCode.mockResolvedValueOnce([
+      { filePath: 'foo.ts', lineNumber: 10, agentType: 'SECURITY', issue: 'x', suggestion: 'y', priority: 'HIGH' },
+    ]);
+  };
+
+  it('abandons the attempt when the review was cancelled while awaiting the model', async () => {
+    reviewWithFindings();
+    // The cancellation lands after FETCHING is written but before the AI call
+    // returns — exactly the window where a naive worker would carry on.
+    mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED' })
+      .mockResolvedValueOnce({ status: 'CANCELLED' });
+
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
+
+    expect(mockCreateReviewComment).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite CANCELLED with FAILED', async () => {
+    reviewWithFindings();
+    mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED' })
+      .mockResolvedValueOnce({ status: 'CANCELLED' });
+
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
+
+    const statuses = mockJobUpdate.mock.calls.map((c: any[]) => c[0]?.data?.status);
+    expect(statuses).not.toContain('FAILED');
+    expect(statuses).not.toContain('COMPLETED');
+  });
+
+  it('does not overwrite TIMEOUT with FAILED', async () => {
+    reviewWithFindings();
+    mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED' })
+      .mockResolvedValueOnce({ status: 'TIMEOUT' });
+
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
+
+    const statuses = mockJobUpdate.mock.calls.map((c: any[]) => c[0]?.data?.status);
+    expect(statuses).not.toContain('FAILED');
+    expect(statuses).not.toContain('COMPLETED');
+  });
+
+  it('still completes normally when nothing superseded the review', async () => {
+    // Guard against the guard over-triggering on the happy path.
+    reviewWithFindings();
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+
+    expect(result).toEqual({ status: 'success', findingCount: 1 });
+    const statuses = mockJobUpdate.mock.calls.map((c: any[]) => c[0]?.data?.status);
+    expect(statuses[statuses.length - 1]).toBe('COMPLETED');
+  });
+
+  it('does not post comments when the review was cancelled before analysis finished', async () => {
+    reviewWithFindings();
+    mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED' })
+      .mockResolvedValueOnce({ status: 'CANCELLED' });
+
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
+
+    // The whole point of the guard: nothing reaches the PR.
+    expect(mockCreateReviewComment).not.toHaveBeenCalled();
+  });
+
+  it('leaves the job CANCELLED rather than SKIPPED when it was cancelled mid-flight', async () => {
+    reviewWithFindings();
+    mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED' })
+      .mockResolvedValueOnce({ status: 'TIMEOUT' });
+
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow();
+
+    const statuses = mockJobUpdate.mock.calls.map((c: any[]) => c[0]?.data?.status);
+    expect(statuses).not.toContain('SKIPPED');
+  });
+});

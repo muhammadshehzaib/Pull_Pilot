@@ -163,3 +163,24 @@ describe('AGENT_LABELS', () => {
     expect(AGENT_LABELS.STYLE).toBe('Style');
   });
 });
+
+describe('severity glyphs', () => {
+  // Regression: the dashboard used 🔥🚨⚠️🔎ℹ️ while GitHub review comments used
+  // 🔴🟠🟡🔵⚪, so the same finding was badged differently depending on where it
+  // was read. These are the glyphs the product promises in review comments.
+  it('uses the documented circle scale for every severity', () => {
+    expect(PRIORITY_ICONS).toEqual({
+      CRITICAL: '🔴',
+      HIGH: '🟠',
+      MEDIUM: '🟡',
+      LOW: '🔵',
+      INFO: '⚪',
+    });
+  });
+
+  it('does not reintroduce the older emoji scale', () => {
+    for (const stale of ['🔥', '🚨', '⚠️', '🔎', 'ℹ️']) {
+      expect(Object.values(PRIORITY_ICONS)).not.toContain(stale);
+    }
+  });
+});

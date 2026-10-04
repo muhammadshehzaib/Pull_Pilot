@@ -7,5 +7,6 @@ const router = Router();
 router.use(requireAuth);
 router.get('/', JobController.list);
 router.get('/:id', JobController.get);
+router.post('/:id/cancel', JobController.cancel);
 
 export default router;

@@ -1,14 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockJobFindMany, mockJobFindFirst } = vi.hoisted(() => ({
+const { mockJobFindMany, mockJobFindFirst, mockJobUpdate, mockQueueRemove, mockEmitStatus } = vi.hoisted(() => ({
   mockJobFindMany: vi.fn(),
   mockJobFindFirst: vi.fn(),
+  mockJobUpdate: vi.fn(),
+  mockQueueRemove: vi.fn(),
+  mockEmitStatus: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
   default: {
-    analysisJob: { findMany: mockJobFindMany, findFirst: mockJobFindFirst },
+    analysisJob: {
+      findMany: mockJobFindMany,
+      findFirst: mockJobFindFirst,
+      update: mockJobUpdate,
+    },
   },
+}));
+
+vi.mock('../config/queue', () => ({
+  analysisQueue: { remove: mockQueueRemove },
+  ANALYSIS_QUEUE_NAME: 'test-queue',
+}));
+
+vi.mock('../config/socket', () => ({
+  SocketService: { emitStatus: mockEmitStatus },
 }));
 
 import { JobController, parseJobStatus } from './job.controller';
@@ -322,5 +338,142 @@ describe('JobController.get', () => {
     const arg = mockJobFindFirst.mock.calls[0][0];
     expect(arg.where.id).toBe('j1');
     expect(arg.where.repository).toEqual({ userId: 'u-1' });
+  });
+});
+
+describe('JobController.cancel', () => {
+  const queuedJob = { id: 'j1', status: 'ANALYZING' };
+
+  beforeEach(() => {
+    mockQueueRemove.mockResolvedValue(1);
+  });
+
+  it('cancels an in-flight review and persists CANCELLED', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(queuedJob);
+
+    const req = authedReq({ params: { id: 'j1' } });
+    const res = mockRes();
+
+    await JobController.cancel(req, res);
+
+    expect(mockJobUpdate).toHaveBeenCalledWith({
+      where: { id: 'j1' },
+      data: { status: 'CANCELLED', results: { reason: 'cancelled-by-user' } },
+    });
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ status: 'CANCELLED', id: 'j1' });
+  });
+
+  it('removes the job from the queue so a queued review never starts', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(queuedJob);
+
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), mockRes());
+
+    expect(mockQueueRemove).toHaveBeenCalledWith('j1');
+  });
+
+  it('cancels in every in-flight phase', async () => {
+    for (const status of ['QUEUED', 'FETCHING', 'ANALYZING', 'GENERATING', 'POSTING']) {
+      mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status });
+      const res = mockRes();
+      await JobController.cancel(authedReq({ params: { id: 'j1' } }), res);
+      expect(res.json, status).toHaveBeenCalledWith({ status: 'CANCELLED', id: 'j1' });
+    }
+  });
+
+  it('notifies the dashboard so the UI updates without a reload', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(queuedJob);
+
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), mockRes());
+
+    expect(mockEmitStatus).toHaveBeenCalledWith(
+      'u-1',
+      'j1',
+      expect.stringContaining('cancelled'),
+      'CANCELLED',
+    );
+  });
+
+  it('still persists CANCELLED when the queue removal fails', async () => {
+    // queue.remove cannot stop a job that already holds its lock, and a Redis
+    // error must not strand the review as permanently running.
+    mockJobFindFirst.mockResolvedValueOnce(queuedJob);
+    mockQueueRemove.mockRejectedValueOnce(new Error('redis down'));
+
+    const res = mockRes();
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), res);
+
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'CANCELLED' }) }),
+    );
+    expect(res.json).toHaveBeenCalledWith({ status: 'CANCELLED', id: 'j1' });
+  });
+
+  it('still persists CANCELLED when the job was already running', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(queuedJob);
+    mockQueueRemove.mockResolvedValue(0); // not found in queue == already running
+
+    const res = mockRes();
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), res);
+
+    expect(mockJobUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'CANCELLED' }) }),
+    );
+  });
+
+  it('refuses to cancel a finished review with 409', async () => {
+    // The user pressed cancel on a review whose comments are already on the PR.
+    // Reporting success would be a lie.
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'COMPLETED' });
+
+    const res = mockRes();
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({
+      error: expect.stringContaining('COMPLETED'),
+      status: 'COMPLETED',
+    });
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+    expect(mockQueueRemove).not.toHaveBeenCalled();
+  });
+
+  it('refuses to cancel an already-cancelled review', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'CANCELLED' });
+
+    const res = mockRes();
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses to cancel a timed-out review', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'TIMEOUT' });
+
+    const res = mockRes();
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  it('returns 404 for a job owned by another user', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(null);
+
+    const res = mockRes();
+    await JobController.cancel(authedReq({ params: { id: 'j-not-mine' } }), res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(mockJobUpdate).not.toHaveBeenCalled();
+  });
+
+  it('scopes the lookup to the authenticated user (IDOR guard)', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(null);
+
+    await JobController.cancel(authedReq({ params: { id: 'j1' } }), mockRes());
+
+    const where = mockJobFindFirst.mock.calls[0][0].where;
+    expect(where.id).toBe('j1');
+    expect(where.repository).toEqual({ userId: 'u-1' });
   });
 });

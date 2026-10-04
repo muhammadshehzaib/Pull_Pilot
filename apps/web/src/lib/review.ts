@@ -157,12 +157,21 @@ export const PRIORITY_COLORS: Record<Priority, string> = {
   INFO: 'var(--text-secondary)',
 };
 
+/**
+ * Severity glyphs.
+ *
+ * These must match `apps/backend/src/services/ai/finding-format.ts` exactly.
+ * They previously did not — the dashboard used 🔥🚨⚠️🔎ℹ️ while GitHub comments
+ * used 🔴🟠🟡🔵⚪ — so the same finding wore a different badge depending on where
+ * you read it, and the colour language the product promises in review comments
+ * was absent from the dashboard.
+ */
 export const PRIORITY_ICONS: Record<Priority, string> = {
-  CRITICAL: '🔥',
-  HIGH: '🚨',
-  MEDIUM: '⚠️',
-  LOW: '🔎',
-  INFO: 'ℹ️',
+  CRITICAL: '🔴',
+  HIGH: '🟠',
+  MEDIUM: '🟡',
+  LOW: '🔵',
+  INFO: '⚪',
 };
 
 /** Most severe first. Mirrors the backend `SEVERITY_RANK`. */

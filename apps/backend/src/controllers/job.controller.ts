@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/prisma';
+import { analysisQueue } from '../config/queue';
+import { isInProgressStatus, markReviewTerminal } from '../workers/job-state';
 import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxonomy';
 
 const MAX_LIMIT = 100;
@@ -125,5 +127,67 @@ export class JobController {
         },
       },
     });
+  }
+
+  /**
+   * Cancels an in-flight review.
+   *
+   * Two things happen, and both are needed:
+   *
+   *  - The queued job is removed from BullMQ, so a review that has not started
+   *    yet never starts.
+   *  - CANCELLED is persisted, which is what an already-running worker reads at
+   *    its next step boundary and abandons. `queue.remove` cannot stop a job that
+   *    already holds its lock, so the status write is the only thing that
+   *    actually halts one in flight.
+   *
+   * Cancelling something already finished is a 409 rather than a silent success:
+   * the user pressed cancel on a review that had already posted its comments,
+   * and telling them it was cancelled would be a lie.
+   */
+  static async cancel(req: Request, res: Response) {
+    const id = String(req.params.id);
+
+    const job = await prisma.analysisJob.findFirst({
+      where: {
+        id,
+        repository: { userId: req.auth!.userId },
+      },
+      select: { id: true, status: true, repository: { select: { userId: true } } },
+    });
+
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+
+    if (!isInProgressStatus(job.status)) {
+      return res.status(409).json({
+        error: `Job is already ${parseJobStatus(job.status) ?? job.status} and cannot be cancelled.`,
+        status: job.status,
+      });
+    }
+
+    // Drop it from the queue first: a job still sitting in Redis should never be
+    // picked up, even briefly, after the user asked us to stop.
+    try {
+      const removed = await analysisQueue.remove(id);
+      if (!removed) {
+        // Not in the queue — either already running, or Redis does not know it.
+        // Either way the persisted CANCELLED is what stops a running attempt.
+        console.log(`↩️  Job ${id} was not removable from the queue (likely already running); relying on CANCELLED status.`);
+      }
+    } catch (err) {
+      // A Redis hiccup must not strand the review as "running forever" — the
+      // status write below still takes effect.
+      console.warn(`Could not remove job ${id} from the queue:`, err);
+    }
+
+    await markReviewTerminal(
+      job.id,
+      req.auth!.userId,
+      'CANCELLED',
+      '🚫 Review cancelled. No further comments will be posted.',
+      { reason: 'cancelled-by-user' },
+    );
+
+    return res.json({ status: 'CANCELLED', id: job.id });
   }
 }
