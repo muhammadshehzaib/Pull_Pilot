@@ -52,17 +52,24 @@ export abstract class BaseAiProvider {
       - CORRECTNESS: logic that is wrong but not immediately crashing — bad bounds, wrong formula, incorrect edge-case handling.
       - PERFORMANCE: slow paths, unnecessary re-renders, N+1 queries, leaks, blocking the event loop.
       - ARCHITECTURE: coupling, layering violations, unclear boundaries, non-extensible design.
-      - MAINTAINABILITY: dead code, duplication, poor naming, inconsistent style, missing types.
-      - TESTING: missing or weak test coverage for the changed behavior, untestable design, flaky-test causes.
+      - MAINTAINABILITY: dead code, duplication, poor naming, missing types, hard-to-extend logic.
+      - STYLE: purely cosmetic — formatting, import ordering, whitespace. Never use this to report a real defect.
+      - TESTING: missing or weak test coverage for the changed behavior, flaky-test causes.
 
-      CALIBRATION RULES:
+      CALIBRATION RULES (these decide whether the review is worth reading):
       - Only report a finding you can point at a specific changed line for. Never speculate about code you cannot see.
-      - Do not pad the array with restatements of the same issue. One finding per distinct problem.
-      - Report genuine problems only. If the diff has no meaningful issues, return an empty array [].
+      - One finding per distinct problem. Reporting the same defect once per line is a failure, not thoroughness.
+      - Before writing a finding, state the input or sequence that triggers it. If you cannot, downgrade to INFO or drop it.
+      - CRITICAL and HIGH both require a concrete failure scenario. No scenario means it is MEDIUM at most.
+      - A finding you cannot anchor to a line in this diff is not a finding. Drop it.
+      - Prefer five findings you would defend in person over twenty you would apologise for.
+      - If the diff has no meaningful issues, return an empty array []. An empty array is a valid, useful review.
     `;
 
-    const rulesInjection = customRules.length > 0 
-      ? `\nADDITIONAL USER RULES TO ENFORCE:\n${customRules.join('\n')}` 
+    const rulesInjection = customRules.length > 0
+      ? `\nADDITIONAL USER RULES TO ENFORCE:\nEach rule below is binding. When a changed line breaks one, report it as a finding and quote the rule in the issue text:\n${customRules
+          .map((rule) => `- ${rule}`)
+          .join('\n')}`
       : '';
 
     return basePrompt + rulesInjection;

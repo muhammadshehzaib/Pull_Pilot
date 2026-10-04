@@ -10,6 +10,11 @@ import { ConfigService } from '../services/config.service';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { sortBySeverity } from '../services/ai/finding-taxonomy';
 import { deduplicate } from '../services/ai/finding-dedup.service';
+import {
+  renderFindingListItem,
+  renderInlineComment,
+  severityTally,
+} from '../services/ai/finding-format';
 import { QuotaService } from '../services/quota.service';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
 import { advanceReview } from './job-state';
@@ -143,9 +148,6 @@ export const analysisWorker = new Worker(
           await advanceReview(jobId, userId, 'POSTING', `📬 Injecting Inline Comments onto GitHub PR`);
 
           for (const suggestion of suggestions) {
-            const priorityBadge = suggestion.priority ? `[${suggestion.priority}] ` : '';
-            const commentBody = `### 🤖 AI Code Review: ${priorityBadge}${suggestion.agentType}\n**Issue:** ${suggestion.issue}\n\n\`\`\`\n${suggestion.suggestion}\n\`\`\``;
-
             const result = await ghService.createReviewComment(
               owner,
               repo,
@@ -153,7 +155,7 @@ export const analysisWorker = new Worker(
               headSha,
               suggestion.filePath,
               suggestion.lineNumber,
-              commentBody
+              renderInlineComment(suggestion)
             );
 
             if (result && result.ok === false) {
@@ -191,15 +193,23 @@ export const analysisWorker = new Worker(
 
           const findingsSection =
             commentFailures.length > 0
-              ? `\n\n## Findings\n\n${suggestions
-                  .map(
-                    (s, i) =>
-                      `${i + 1}. **[${s.priority}] ${s.agentType}** \`${s.filePath}:${s.lineNumber}\`\n   - **Issue:** ${s.issue}\n   - **Suggestion:** ${s.suggestion}`,
-                  )
-                  .join('\n')}`
+              ? `\n\n## Findings\n\n${suggestions.map(renderFindingListItem).join('\n')}`
               : '';
 
-          const summaryMarkdown = `## 🤖 AI PR Review Summary\n\n- **Status**: Audit completed\n- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)\n- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)\n- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}\n\n*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*${findingsSection}`;
+          const summaryMarkdown = [
+            '## 🤖 AI PR Review Summary',
+            '',
+            '- **Status**: Audit completed',
+            `- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)`,
+            suggestions.length > 0
+              ? `- **Breakdown**: ${severityTally(suggestions)}`
+              : '- **Breakdown**: no findings',
+            `- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)`,
+            `- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}`,
+            '',
+            '*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*',
+            findingsSection,
+          ].join('\n');
 
           const summaryResult = await ghService.createIssueComment(owner, repo, prNum, summaryMarkdown);
           summaryPosted = !summaryResult || summaryResult.ok !== false;
