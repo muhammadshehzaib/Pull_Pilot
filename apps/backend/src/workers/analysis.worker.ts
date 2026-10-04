@@ -36,10 +36,10 @@ export const analysisWorker = new Worker(
       // 1. Update state to RUNNING
       await prisma.analysisJob.update({
         where: { id: jobId },
-        data: { status: 'RUNNING' },
+        data: { status: 'FETCHING' },
       });
 
-      SocketService.emitStatus(userId, jobId, '🚀 Worker Active: Analysis Cycle Commenced', 'RUNNING');
+      SocketService.emitStatus(userId, jobId, '🚀 Worker Active: Analysis Cycle Commenced', 'FETCHING');
 
       // 2. Fetch User associated with Repository & retrieve their SECURE KEY
       const dbRepo = await prisma.repository.findUnique({
@@ -57,7 +57,7 @@ export const analysisWorker = new Worker(
 
       const vault = dbRepo.user.vault;
       console.log(`🔑 Vault Detected: Using user preference [${vault.provider}] engine.`);
-      SocketService.emitStatus(userId, jobId, `🔐 Unlocking Security Vault [Provider: ${vault.provider}]`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `🔐 Unlocking Security Vault [Provider: ${vault.provider}]`, 'FETCHING');
 
       // 3. DECRYPT THE KEY IN RAM TEMPORARILY
       const rawApiKey = EncryptionService.decrypt(
@@ -73,11 +73,11 @@ export const analysisWorker = new Worker(
 
       // 5. FETCH REPO CONFIGURATION (.aipr.yml)
       const { baseSha, headSha } = payloadSnapshot;
-      SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'FETCHING');
       const repoConfig = await ConfigService.fetchRepoConfig(ghService, owner, repo, headSha);
 
       // 6. FETCH & FILTER RAW DIFF STREAM
-      SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'FETCHING');
       const rawDiff = await ghService.fetchDiff(owner, repo, baseSha, headSha);
 
       if (!rawDiff || rawDiff.length < 5) {
@@ -100,7 +100,7 @@ export const analysisWorker = new Worker(
 
       // 7. ENGAGE AI ENGINE VIA FACTORY
       console.log(`🧠 Contacting ${vault.provider} for Analysis Strategy...`);
-      SocketService.emitStatus(userId, jobId, `🧠 AI Dispatching to ${vault.provider} Models`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `🧠 AI Dispatching to ${vault.provider} Models`, 'FETCHING');
 
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
@@ -111,7 +111,7 @@ export const analysisWorker = new Worker(
       );
 
       console.log(`🎯 AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
-      SocketService.emitStatus(userId, jobId, `🎯 Scan Complete: ${suggestions.length} items flagged`, 'RUNNING');
+      SocketService.emitStatus(userId, jobId, `🎯 Scan Complete: ${suggestions.length} items flagged`, 'FETCHING');
 
       // 9. POST SUGGESTIONS TO GITHUB & SAVE TO DB
       await prisma.analysisJob.update({
@@ -139,7 +139,7 @@ export const analysisWorker = new Worker(
 
         if (suggestions.length > 0) {
           console.log(`📬 Broadcasting inline review comments back to Pull Request #${referenceId}...`);
-          SocketService.emitStatus(userId, jobId, `📬 Injecting Inline Comments onto GitHub PR`, 'RUNNING');
+          SocketService.emitStatus(userId, jobId, `📬 Injecting Inline Comments onto GitHub PR`, 'FETCHING');
 
           for (const suggestion of suggestions) {
             const priorityBadge = suggestion.priority ? `[${suggestion.priority}] ` : '';
@@ -177,7 +177,7 @@ export const analysisWorker = new Worker(
             userId,
             jobId,
             `⚠️ ${commentFailures.length} comment(s) could not be placed inline — posting a consolidated summary instead.`,
-            'RUNNING',
+            'FETCHING',
           );
         }
 
