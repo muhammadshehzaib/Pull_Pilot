@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
 import { BRAND_NAME, SITE_HOST } from '../config/brand';
+import { CODE_HANDLING_BADGE } from '../config/privacy';
 
 export function Footer() {
   const [isWatermarkHovered, setIsWatermarkHovered] = useState(false);
@@ -271,7 +272,7 @@ export function Footer() {
             <span>© {new Date().getFullYear()} {BRAND_NAME}. All rights reserved.</span>
             <span style={{ color: '#cbd5e1' }}>•</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#10b981', fontWeight: 600 }}>
-              <CheckCircle2 size={13} /> Zero Code Retention
+              <CheckCircle2 size={13} /> {CODE_HANDLING_BADGE}
             </span>
             <span style={{ color: '#cbd5e1' }}>•</span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#2563eb', fontWeight: 600 }}>

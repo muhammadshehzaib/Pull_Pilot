@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ChevronDown, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BRAND_NAME } from '../config/brand';
+import { codeRetentionFaq } from '../config/privacy';
 
 interface Faq {
   q: string;
@@ -17,7 +18,7 @@ const FAQS: Faq[] = [
   },
   {
     q: 'Is my proprietary code stored or used to train AI models?',
-    a: 'No, absolutely not. Code diffs are held in volatile RAM only for the duration of the review execution and are purged immediately. We never train, fine-tune, or retain any customer code.',
+    a: codeRetentionFaq(),
   },
   {
     q: 'How do I ignore certain files like generated lockfiles or dist directories?',

@@ -13,6 +13,7 @@ import {
   absoluteUrl,
 } from "../config/brand";
 import "./globals.css";
+import { NO_TRAINING_CLAIM } from "../config/privacy";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -116,7 +117,7 @@ const jsonLd = {
         "AI-powered code review bot that automatically scans pull request diffs for security vulnerabilities, performance regressions, and architectural bugs.",
       featureList: [
         "Multi-model AI switching (Claude 5, ChatGPT 5.6, Gemini 3.0 Pro, Grok 4)",
-        "Zero code retention ephemeral RAM processing",
+        NO_TRAINING_CLAIM,
         "1-click inline GitHub mergeable patches",
         "Declarative .aipr.yml repository configuration",
         "GNU AGPL-3.0 auditable open core",

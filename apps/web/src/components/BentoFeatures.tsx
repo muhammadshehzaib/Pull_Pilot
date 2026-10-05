@@ -1,5 +1,6 @@
 'use client';
 
+import { CODE_HANDLING_BADGE, NO_TRAINING_CLAIM, codeHandlingSummary } from '../config/privacy';
 import { useState, useEffect } from 'react';
 import {
   Key,
@@ -482,7 +483,7 @@ export function BentoFeatures() {
                 gap: '6px',
               }}
             >
-              <CheckCircle2 size={13} color="#ea580c" /> Zero Code Retention Guarantee
+              <CheckCircle2 size={13} color="#ea580c" /> {CODE_HANDLING_BADGE}
             </div>
           </div>
 
@@ -491,7 +492,7 @@ export function BentoFeatures() {
               Strict Privacy & Security
             </h3>
             <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6 }}>
-              Your proprietary codebase is never stored on disk or used to train foundation models. All diff payloads are held only in RAM and discarded immediately.
+              {NO_TRAINING_CLAIM} {codeHandlingSummary()}
             </p>
           </div>
         </div>

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { BrandLogo } from '../../components/BrandLogo';
 import { BRAND_NAME, SITE_HOST } from '../../config/brand';
+import { retentionWindow } from '../../config/privacy';
 
 export const metadata = {
   // Bare page name: the root layout's title template appends the brand.
@@ -44,16 +45,39 @@ export default function PrivacyPage() {
             We adhere to a strict <strong>zero-training policy</strong>. Your proprietary code, pull request diffs, commits, and repository metadata are <strong>never</strong> used to train, fine-tune, or improve public or private AI foundation models.
           </p>
 
-          <h2>2. Code Handling & In-Memory Execution</h2>
+          <h2>2. Code Handling, Storage & Deletion</h2>
           <p>
             When a GitHub webhook triggers a review job:
           </p>
           <ul>
             <li>Code diffs are fetched securely over TLS directly from the GitHub API using temporary installation access tokens.</li>
-            <li>Diff content is held strictly in volatile worker memory (RAM) during parsing and analysis.</li>
-            <li>Once analysis completes and findings are posted to GitHub, diff buffers are immediately released and purged from memory.</li>
-            <li>We do not write your source code files to persistent disk storage or databases.</li>
+            <li>
+              To give the AI the code surrounding your changes, we also read repository
+              files reachable from the files you edited. Those files are{' '}
+              <strong>encrypted at rest with AES-256-GCM</strong>, using a unique
+              initialization vector and per-record key derivation for each file.
+            </li>
+            <li>
+              Cached files are stored under a content-addressed fingerprint rather than
+              by path, and are scoped per repository. Files are never shared between
+              repositories or customers.
+            </li>
+            <li>
+              Cached files are deleted automatically by a scheduled sweep within{' '}
+              <strong>{retentionWindow()}</strong> of being stored. The sweep runs
+              hourly, so expired content is removed promptly rather than lingering
+              until the next review.
+            </li>
+            <li>
+              Review jobs themselves (status, findings, and metadata) are retained
+              according to the job retention period described in section 4.
+            </li>
           </ul>
+          <p>
+            Deleting a repository, disconnecting the GitHub App, or uninstalling it
+            removes its cached file content. See section 4 for how to request deletion
+            of your data.
+          </p>
 
           <h2>3. Encrypted API Key Vault</h2>
           <p>

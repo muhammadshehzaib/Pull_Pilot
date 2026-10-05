@@ -35,11 +35,11 @@ const COMPARISON_DATA: CompetitorComparison[] = [
     sourcery: { supported: false, detail: 'Proprietary model only' },
   },
   {
-    feature: 'Zero Code Retention Guarantee (Ephemeral RAM)',
+    feature: 'No Training On Your Code',
     category: 'Security & Privacy',
-    pullpilot: { supported: true, detail: 'Purged immediately after review execution' },
+    pullpilot: { supported: true, detail: 'Never used to train any model' },
     coderabbit: { supported: true, detail: 'Encrypted storage policies' },
-    copilotPr: { supported: false, detail: 'Telemetry telemetry collection opt-in' },
+    copilotPr: { supported: false, detail: 'Telemetry collection opt-in' },
     sourcery: { supported: false, detail: 'Cloud index retention' },
   },
   {

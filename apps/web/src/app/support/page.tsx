@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { ArrowLeft, HelpCircle, Mail, MessageSquare, BookOpen, ExternalLink } from 'lucide-react';
 import { BrandLogo } from '../../components/BrandLogo';
 import { SITE_HOST } from '../../config/brand';
+import { codeRetentionFaq } from '../../config/privacy';
 
 const FAQS = [
   {
@@ -12,7 +13,7 @@ const FAQS = [
   },
   {
     q: 'Is my proprietary code stored or used to train AI models?',
-    a: 'No. Code diffs are held in memory only while the review is processing and then purged immediately. We never train or fine-tune models on your repository contents.',
+    a: codeRetentionFaq(),
   },
   {
     q: 'How do I ignore certain files (like lockfiles or dist/)?',
