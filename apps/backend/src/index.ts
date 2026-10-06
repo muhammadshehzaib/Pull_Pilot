@@ -1,25 +1,32 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import http from 'http';
-import { PORT_DEFAULT } from './utils/constants';
 
-// Load root project .env and apps/backend/.env
+// Load root project .env and apps/backend/.env.
+//
+// This must run before any module that reads process.env at import time, which
+// is most of them: utils/constants.ts snapshots limits such as
+// CONTEXT_MAX_TOKENS and JOB_RETENTION_DAYS at module scope. ES imports are
+// hoisted above this code, so a static `import { PORT_DEFAULT } from
+// './utils/constants'` would be evaluated first and would freeze every
+// env-derived constant to its default in local development. App modules are
+// therefore loaded with dynamic import inside startServer(), below.
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config();
 
-// Read after dotenv.config(): the default lives in utils/constants.ts, but
-// process.env must be resolved here, in the module body, so the .env files above
-// have already been loaded.
-const PORT = process.env.PORT || PORT_DEFAULT;
-
 async function startServer() {
   try {
-    const [{ default: app }, { default: prisma }, { SocketService }] = await Promise.all([
-      import('./app'),
-      import('./config/prisma'),
-      import('./config/socket'),
-    ]);
+    const [{ default: app }, { default: prisma }, { SocketService }, { PORT_DEFAULT }] =
+      await Promise.all([
+        import('./app'),
+        import('./config/prisma'),
+        import('./config/socket'),
+        import('./utils/constants'),
+      ]);
+
+    // Resolved here so the .env files above are in effect.
+    const PORT = process.env.PORT || PORT_DEFAULT;
 
     // Pre-initialize our background tasks immediately on boot, after env is loaded.
     await import('./workers/analysis.worker');
@@ -53,9 +60,10 @@ async function startServer() {
     // 6. Drop aged-out failed jobs from Redis and the database
     startJobRetentionSweep();
 
-    // 7. Enforce the short retention window on cached source blobs. This is
-    // what keeps cached review context from becoming a long-term copy of
-    // customer repositories, so it must not be disabled in production.
+    // 7. Enforce the configured retention on cached source blobs. With the
+    // default (indefinite) it collects rows left behind by an earlier finite
+    // policy; with a finite policy it deletes expired context. Either way this
+    // is what keeps cached review context from outliving its setting.
     startContextRetentionSweep();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
