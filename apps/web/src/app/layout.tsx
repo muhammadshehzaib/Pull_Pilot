@@ -14,6 +14,7 @@ import {
 } from "../config/brand";
 import "./globals.css";
 import { NO_TRAINING_CLAIM } from "../config/privacy";
+import { ANALYTICS_SCRIPT_SRC, ANALYTICS_WEBSITE_ID } from "../config/analytics";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -146,11 +147,9 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
-        <script
-          defer
-          src="http://109.123.244.167:3008/script.js"
-          data-website-id="4fd14c41-b3d3-4442-9fa2-2dd11b10c437"
-        />
+        {ANALYTICS_SCRIPT_SRC && ANALYTICS_WEBSITE_ID ? (
+          <script defer src={ANALYTICS_SCRIPT_SRC} data-website-id={ANALYTICS_WEBSITE_ID} />
+        ) : null}
       </head>
       <body>{children}</body>
     </html>

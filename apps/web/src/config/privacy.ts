@@ -7,20 +7,6 @@
  * duplicated across all of those, which is how "zero code retention" ended up
  * asserted in eight places — and how one of them could quietly become false.
  *
- * If the retention behaviour changes, change it here. The number below must
- * match CONTEXT_RETENTION_HOURS in the backend, because the privacy policy
- * states it as a factual promise rather than an aspiration.
- */
-
-/**
- * Single source of truth for how PullPilot describes its handling of
- * customer source code.
- *
- * These claims are published in the footer, the feature grid, the FAQ, the
- * comparison table, the page metadata and the privacy policy. They were
- * duplicated across all of those, which is how "zero code retention" ended up
- * asserted in eight places — and how one of them could quietly become false.
- *
  * If the retention behaviour changes, change it here. The value below must
  * match CONTEXT_RETENTION_HOURS in the backend, because the privacy policy
  * states it as a factual promise rather than an aspiration.

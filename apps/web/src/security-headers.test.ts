@@ -6,7 +6,12 @@ import type { NextConfig } from 'next';
  * is what an external site scan reported as "0 security headers".
  */
 
-const ENV_KEYS = ['NODE_ENV', 'NEXT_PUBLIC_BACKEND_URL'] as const;
+const ENV_KEYS = [
+  'NODE_ENV',
+  'NEXT_PUBLIC_BACKEND_URL',
+  'NEXT_PUBLIC_UMAMI_SRC',
+  'NEXT_PUBLIC_UMAMI_WEBSITE_ID',
+] as const;
 const savedEnv = new Map<string, string | undefined>();
 
 afterEach(() => {
@@ -124,5 +129,45 @@ describe('security headers', () => {
   it('never ships unsafe-eval to production', async () => {
     const { headers } = await loadHeaders({ NODE_ENV: 'production' });
     expect(headers.get('content-security-policy')).not.toContain('unsafe-eval');
+  });
+
+  it('allows no third-party script origin when analytics is unconfigured', async () => {
+    const { headers } = await loadHeaders({ NODE_ENV: 'production' });
+    const scriptSrc = (headers.get('content-security-policy') ?? '')
+      .split(';')
+      .find((part) => part.trim().startsWith('script-src'));
+
+    expect(scriptSrc).toBeDefined();
+    // The whole point of dropping the hardcoded tracker: with nothing
+    // configured, script-src grants no external origin at all.
+    expect(scriptSrc).not.toContain('https://');
+  });
+
+  it('allows the configured analytics origin for both the script and its beacons', async () => {
+    const { headers } = await loadHeaders({
+      NODE_ENV: 'production',
+      NEXT_PUBLIC_UMAMI_SRC: 'https://analytics.example.com/script.js',
+      NEXT_PUBLIC_UMAMI_WEBSITE_ID: 'site-1',
+    });
+    const csp = headers.get('content-security-policy') ?? '';
+
+    const scriptSrc = csp.split(';').find((part) => part.trim().startsWith('script-src'));
+    const connectSrc = csp.split(';').find((part) => part.trim().startsWith('connect-src'));
+
+    // Loading it but not allowing connect-src means a script that loads and
+    // then sends nothing, which is how the previous setup failed silently.
+    expect(scriptSrc).toContain('https://analytics.example.com');
+    expect(connectSrc).toContain('https://analytics.example.com');
+  });
+
+  it('refuses to allow a plain-http analytics origin', async () => {
+    const { headers } = await loadHeaders({
+      NODE_ENV: 'production',
+      NEXT_PUBLIC_UMAMI_SRC: 'http://109.123.244.167:3008/script.js',
+      NEXT_PUBLIC_UMAMI_WEBSITE_ID: 'site-1',
+    });
+    const csp = headers.get('content-security-policy') ?? '';
+
+    expect(csp).not.toContain('109.123.244.167');
   });
 });

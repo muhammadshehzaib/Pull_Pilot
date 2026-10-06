@@ -16,6 +16,8 @@ import type { NextConfig } from "next";
  * currently benefits from. See the comment on script-src below.
  */
 
+import { ANALYTICS_ORIGIN } from "./src/config/analytics";
+
 const backendUrl =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
@@ -38,18 +40,27 @@ const apiSources = (() => {
 
 const isDev = process.env.NODE_ENV !== "production";
 
+/**
+ * The self-hosted analytics tracker is allowed only when the deployment
+ * configures an https host for it. Both script-src (loading the tracker) and
+ * connect-src (the beacon POST it sends back) must name that origin, or the
+ * script loads and then reports nothing.
+ */
+const analyticsSrc = ANALYTICS_ORIGIN ? ` ${ANALYTICS_ORIGIN}` : "";
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   // Next.js emits the RSC flight payload as inline <script>, so 'unsafe-inline'
   // is required for hydration until a nonce-based policy is introduced.
-  // This still blocks script loading from third-party origins.
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // This still blocks script loading from third-party origins, except the
+  // configured analytics host.
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}${analyticsSrc}`,
   "style-src 'self' 'unsafe-inline'",
   // GitHub avatars are rendered from arbitrary user avatar hosts
   // (Sidebar.tsx), so img-src cannot use a tight allowlist.
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  `connect-src 'self'${apiSources ? ` ${apiSources}` : ""}`,
+  `connect-src 'self'${apiSources ? ` ${apiSources}` : ""}${analyticsSrc}`,
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
