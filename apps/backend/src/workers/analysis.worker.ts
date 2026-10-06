@@ -7,6 +7,8 @@ import { AiProviderFactory } from '../services/ai/ai-factory';
 import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { DiffFilterService } from '../services/diff-filter.service';
+import { buildReviewContext } from '../services/context-builder';
+import type { ReviewContext } from '../services/ai/context-prompt';
 import { sortBySeverity } from '../services/ai/finding-taxonomy';
 import { deduplicate } from '../services/ai/finding-dedup.service';
 import {
@@ -147,10 +149,38 @@ export const analysisWorker = new Worker(
 
       // 7. ENGAGE AI ENGINE VIA FACTORY
       console.log(`🧠 Contacting ${vault.provider} for Analysis Strategy...`);
+
+      // Context is gathered after filtering so ignored files are never read,
+      // and after assertNotSuperseded() so an abandoned job stops early.
+      let context: ReviewContext | undefined;
+      if (repoConfig.context.enabled) {
+        SocketService.emitStatus(userId, jobId, `🔎 Reading surrounding code for context`, 'FETCHING');
+        context = await buildReviewContext({
+          ghService,
+          owner,
+          repo,
+          repositoryId: dbRepo.id,
+          headSha,
+          changedPaths: includedFiles,
+          config: repoConfig.context,
+        });
+        await assertNotSuperseded();
+
+        if (context) {
+          console.log(`🔎 Context: ${context.files.length} file(s), ${context.files.reduce((n, f) => n + f.content.length, 0)} chars`);
+        } else {
+          console.log(`🔎 Context: unavailable, reviewing diff only`);
+        }
+      }
+
       await advanceReview(jobId, userId, 'ANALYZING', `🧠 AI Dispatching to ${vault.provider} Models`);
 
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
-      const rawSuggestions = await aiDriver.analyzeCode(filteredDiff, repoConfig.guidelines);
+      const rawSuggestions = await aiDriver.analyzeCode(
+        filteredDiff,
+        repoConfig.guidelines,
+        context,
+      );
 
       // The provider call is the step most likely to overrun, so this is the
       // first place it matters whether the review was abandoned while we waited.

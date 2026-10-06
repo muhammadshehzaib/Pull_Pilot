@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { type ReviewContext } from '../context-prompt';
 
 export class GeminiProvider extends BaseAiProvider {
   private aiClient: GoogleGenerativeAI;
@@ -9,7 +10,11 @@ export class GeminiProvider extends BaseAiProvider {
     this.aiClient = new GoogleGenerativeAI(apiKey);
   }
 
-  async analyzeCode(diff: string, customRules: string[] = []): Promise<AiSuggestion[]> {
+  async analyzeCode(
+    diff: string,
+    customRules: string[] = [],
+    context?: ReviewContext,
+  ): Promise<AiSuggestion[]> {
     try {
       // 1. Initialize modern ultra-performant model
       const model = this.aiClient.getGenerativeModel({ 
@@ -20,10 +25,12 @@ export class GeminiProvider extends BaseAiProvider {
       });
 
       const systemPrompt = this.getSystemPrompt(customRules);
-      
+      const contextBlock = this.renderContext(context);
+
       const prompt = `
         ${systemPrompt}
         
+        ${contextBlock}
         Here is the GIT DIFF to review:
         
         ${diff}

@@ -1,6 +1,7 @@
 import YAML from 'yaml';
 import { GitHubService } from './github.service';
 import { normalizeSeverity } from './ai/finding-taxonomy';
+import { CONTEXT_MAX_FILES, CONTEXT_MAX_HOPS, CONTEXT_MAX_TOKENS } from '../utils/constants';
 
 /**
  * Accepted values for `min_severity` in .aipr.yml, lowest to highest.
@@ -9,6 +10,24 @@ import { normalizeSeverity } from './ai/finding-taxonomy';
 export const SEVERITY_LEVELS = ['info', 'low', 'medium', 'high', 'critical'] as const;
 export type SeverityLevel = (typeof SEVERITY_LEVELS)[number];
 
+/**
+ * How much repository context a review pulls in.
+ *
+ * Every value is clamped to the platform ceiling in constants.ts. A
+ * repository may turn context off or make it smaller, but cannot make it
+ * larger than the platform allows — otherwise one config file could raise
+ * token spend for everyone reviewing that repo.
+ */
+export interface ContextConfig {
+  enabled: boolean;
+  /** Neighbour files to gather. */
+  max_files: number;
+  /** Import distance to walk out from the change. */
+  max_hops: number;
+  /** Token ceiling for the context block, not counting the diff. */
+  max_tokens: number;
+}
+
 export interface AiPrConfig {
   version: number;
   ignore: string[];
@@ -16,6 +35,7 @@ export interface AiPrConfig {
   guidelines: string[];
   language: string;
   summarize: boolean;
+  context: ContextConfig;
 }
 
 export const DEFAULT_AIPR_CONFIG: AiPrConfig = {
@@ -40,7 +60,46 @@ export const DEFAULT_AIPR_CONFIG: AiPrConfig = {
   guidelines: [],
   language: 'en',
   summarize: true,
+  context: {
+    enabled: true,
+    max_files: CONTEXT_MAX_FILES,
+    max_hops: CONTEXT_MAX_HOPS,
+    max_tokens: CONTEXT_MAX_TOKENS,
+  },
 };
+
+/**
+ * Parses the optional `context:` block from .aipr.yml.
+ *
+ * Absent keys fall back to the platform defaults, and every numeric value is
+ * clamped to its ceiling rather than trusted. A misconfiguration in a
+ * user-owned file should degrade the context, never widen it.
+ */
+function parseContextConfig(raw: unknown): ContextConfig {
+  const defaults = DEFAULT_AIPR_CONFIG.context;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...defaults };
+
+  const input = raw as Record<string, unknown>;
+  const fallback = { ...defaults };
+
+  if (typeof input.enabled === 'boolean') fallback.enabled = input.enabled;
+
+  const clamp = (value: unknown, ceiling: number): number | undefined => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+    return Math.min(ceiling, Math.max(1, Math.floor(value)));
+  };
+
+  const files = clamp(input.max_files, CONTEXT_MAX_FILES);
+  if (files !== undefined) fallback.max_files = files;
+
+  const hops = clamp(input.max_hops, CONTEXT_MAX_HOPS);
+  if (hops !== undefined) fallback.max_hops = hops;
+
+  const tokens = clamp(input.max_tokens, CONTEXT_MAX_TOKENS);
+  if (tokens !== undefined) fallback.max_tokens = tokens;
+
+  return fallback;
+}
 
 const CONFIG_CANDIDATE_PATHS = [
   '.aipr.yml',
@@ -88,6 +147,7 @@ export class ConfigService {
       const language = typeof parsed.language === 'string' ? parsed.language : DEFAULT_AIPR_CONFIG.language;
       const summarize = typeof parsed.summarize === 'boolean' ? parsed.summarize : DEFAULT_AIPR_CONFIG.summarize;
       const version = typeof parsed.version === 'number' ? parsed.version : DEFAULT_AIPR_CONFIG.version;
+      const context = parseContextConfig(parsed.context);
 
       return {
         version,
@@ -96,6 +156,7 @@ export class ConfigService {
         guidelines,
         language,
         summarize,
+        context,
       };
     } catch (err) {
       console.warn('⚠️ Failed to parse .aipr.yml YAML content, falling back to default config:', (err as Error).message);

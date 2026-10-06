@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { type ReviewContext } from '../context-prompt';
 
 export class OpenAiProvider extends BaseAiProvider {
   private aiClient: OpenAI;
@@ -9,13 +10,19 @@ export class OpenAiProvider extends BaseAiProvider {
     this.aiClient = new OpenAI({ apiKey });
   }
 
-  async analyzeCode(diff: string, customRules: string[] = []): Promise<AiSuggestion[]> {
+  async analyzeCode(
+    diff: string,
+    customRules: string[] = [],
+    context?: ReviewContext,
+  ): Promise<AiSuggestion[]> {
     try {
+      const contextBlock = this.renderContext(context);
+
       const response = await this.aiClient.chat.completions.create({
         model: 'gpt-4o', // Utilizing top-tier omni model for extreme reasoning
         messages: [
           { role: 'system', content: this.getSystemPrompt(customRules) },
-          { role: 'user', content: `Here is the code diff:\n\n${diff}` }
+          { role: 'user', content: `${contextBlock}Here is the code diff:\n\n${diff}` }
         ],
         response_format: { type: 'json_object' }, // Enforce output structure parity
       });

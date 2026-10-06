@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { type ReviewContext } from '../context-prompt';
 import { CLAUDE_MODEL } from '../../../utils/constants';
 
 export class ClaudeProvider extends BaseAiProvider {
@@ -10,16 +11,23 @@ export class ClaudeProvider extends BaseAiProvider {
     this.aiClient = new Anthropic({ apiKey });
   }
 
-  async analyzeCode(diff: string, customRules: string[] = []): Promise<AiSuggestion[]> {
+  async analyzeCode(
+    diff: string,
+    customRules: string[] = [],
+    context?: ReviewContext,
+  ): Promise<AiSuggestion[]> {
     try {
       const systemPrompt = this.getSystemPrompt(customRules);
+      const contextBlock = this.renderContext(context);
 
       const response = await this.aiClient.messages.create({
         model: CLAUDE_MODEL,
         max_tokens: 4096,
         system: systemPrompt,
         messages: [
-          { role: 'user', content: `Here is the GIT DIFF to review:\n\n${diff}` },
+          // Context precedes the diff so the model reads surrounding code
+          // first, then the change it is meant to judge.
+          { role: 'user', content: `${contextBlock}Here is the GIT DIFF to review:\n\n${diff}` },
         ],
       });
 

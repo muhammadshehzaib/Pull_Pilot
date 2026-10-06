@@ -3,9 +3,19 @@ import {
   FINDING_CATEGORIES,
   FINDING_SEVERITIES,
 } from '../finding-taxonomy';
+import { type ReviewContext, formatContextForPrompt } from '../context-prompt';
 
 export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
+
+/**
+ * Ceiling on the context block that accompanies a diff.
+ *
+ * Context competes with the diff for the prompt budget. Keeping it bounded
+ * here means a review with a huge repository can still afford room for the
+ * actual diff, which is the thing under review.
+ */
+export const MAX_CONTEXT_CHARS = 60_000;
 
 export abstract class BaseAiProvider {
   protected apiKey: string;
@@ -17,8 +27,28 @@ export abstract class BaseAiProvider {
   /**
    * Core function implemented uniquely by each service (OpenAI, Gemini, etc)
    * but returning the exactly identical standard format.
+   *
+   * `context` is optional and additive: providers must degrade to a diff-only
+   * review when it is absent or empty, so an older or failing context source
+   * never blocks a review from running.
    */
-  abstract analyzeCode(diff: string, customRules?: string[]): Promise<AiSuggestion[]>;
+  abstract analyzeCode(
+    diff: string,
+    customRules?: string[],
+    context?: ReviewContext,
+  ): Promise<AiSuggestion[]>;
+
+  /**
+   * Renders the context block appended to a user message, or an empty string.
+   *
+   * Context travels with the diff rather than in the system prompt so that
+   * every provider needs only a single-line change and none of them can
+   * accidentally send files without the rules governing how to use them —
+   * those rules are emitted at the top of this same block.
+   */
+  protected renderContext(context: ReviewContext | undefined): string {
+    return formatContextForPrompt(context, MAX_CONTEXT_CHARS);
+  }
 
   protected getSystemPrompt(customRules: string[] = []): string {
     const basePrompt = `
