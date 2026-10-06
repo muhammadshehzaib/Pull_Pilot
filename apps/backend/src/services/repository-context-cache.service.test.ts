@@ -6,6 +6,7 @@ const { mockCachedFile, mockPrisma, ENCRYPTION_KEY } = vi.hoisted(() => {
     upsert: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn(),
+    updateMany: vi.fn(),
   };
   // The worker instantiates PrismaClient on import; keep tests off a real DB.
   const mockPrisma = {
@@ -33,9 +34,12 @@ describe('RepositoryContextCache', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    cache = new RepositoryContextCache();
+    // A finite window, so the default-config cases below exercise expiry.
+    // Indefinite behaviour is covered by its own instances.
+    cache = new RepositoryContextCache(24 * 60 * 60 * 1000);
     mockCachedFile.delete.mockResolvedValue({ count: 1 });
     mockCachedFile.deleteMany.mockResolvedValue({ count: 0 });
+    mockCachedFile.updateMany.mockResolvedValue({ count: 0 });
   });
 
   describe('isContextCandidate()', () => {
@@ -199,6 +203,79 @@ describe('RepositoryContextCache', () => {
 
       const where = mockCachedFile.deleteMany.mock.calls[0][0].where;
       expect(where.expiresAt.lte.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it('adopts no-expiry rows once a finite window is configured', async () => {
+      await cache.sweepExpired();
+
+      const adoption = mockCachedFile.updateMany.mock.calls[0][0];
+      expect(adoption.where).toEqual({ expiresAt: null });
+      expect(adoption.data.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('leaves no-expiry rows alone while retention is indefinite', async () => {
+      const indefinite = new RepositoryContextCache(0);
+      await indefinite.sweepExpired();
+
+      expect(mockCachedFile.updateMany).not.toHaveBeenCalled();
+      expect(mockCachedFile.deleteMany).toHaveBeenCalledWith({
+        where: { expiresAt: { lte: expect.any(Date) } },
+      });
+    });
+  });
+
+  describe('indefinite retention', () => {
+    it('writes no expiry when the retention window is zero', async () => {
+      await new RepositoryContextCache(0).put(REPO, SHA, 'src/a.ts', 'x');
+
+      expect(mockCachedFile.upsert.mock.calls[0][0].create.expiresAt).toBeNull();
+    });
+
+    it('writes no expiry when the retention window is negative', async () => {
+      await new RepositoryContextCache(-1).put(REPO, SHA, 'src/a.ts', 'x');
+
+      expect(mockCachedFile.upsert.mock.calls[0][0].create.expiresAt).toBeNull();
+    });
+
+    it('keeps serving a row that has no expiry', async () => {
+      const plain = 'export const keep = true;';
+      const sealed = EncryptionService.encrypt(plain);
+      mockCachedFile.findUnique.mockResolvedValueOnce({
+        id: 'row-1',
+        encryptedData: sealed.encryptedData,
+        iv: sealed.iv,
+        authTag: sealed.authTag,
+        salt: sealed.salt,
+        expiresAt: null,
+      });
+
+      await expect(new RepositoryContextCache(0).get(REPO, SHA)).resolves.toBe(plain);
+      expect(mockCachedFile.delete).not.toHaveBeenCalled();
+    });
+
+    it('still serves a no-expiry row after the setting is switched back to a window', async () => {
+      // Otherwise a policy change would start dropping cached files mid-review.
+      const plain = 'export const keep = true;';
+      const sealed = EncryptionService.encrypt(plain);
+      mockCachedFile.findUnique.mockResolvedValueOnce({
+        id: 'row-1',
+        encryptedData: sealed.encryptedData,
+        iv: sealed.iv,
+        authTag: sealed.authTag,
+        salt: sealed.salt,
+        expiresAt: null,
+      });
+
+      await expect(cache.get(REPO, SHA)).resolves.toBe(plain);
+      expect(mockCachedFile.delete).not.toHaveBeenCalled();
+    });
+
+    it('treats a no-expiry row as live so it is not rewritten every review', async () => {
+      mockCachedFile.findUnique.mockResolvedValueOnce({ id: 'row-1', expiresAt: null });
+
+      await new RepositoryContextCache(0).put(REPO, SHA, 'src/a.ts', 'x');
+
+      expect(mockCachedFile.upsert).not.toHaveBeenCalled();
     });
   });
 });

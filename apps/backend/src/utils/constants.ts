@@ -165,10 +165,21 @@ export const CONTEXT_MAX_TOKENS = parseInt(process.env.CONTEXT_MAX_TOKENS || '30
 export const CONTEXT_MAX_CHARS = CONTEXT_MAX_TOKENS * 4;
 
 /**
- * Retention for cached source blobs. This is customer code, so the window is
- * short and every row carries an absolute expiry that the sweeper enforces.
+ * Retention for cached source blobs (customer code).
+ *
+ * The shipped default is indefinite: cached code is kept until its repository
+ * is disconnected. Setting a positive value opts into an absolute expiry that
+ * the hourly sweep enforces instead.
+ *
+ * A malformed value fails safe to a short window rather than to indefinite,
+ * because a typo should not silently authorise keeping code forever.
  */
-export const CONTEXT_RETENTION_HOURS = parseInt(process.env.CONTEXT_RETENTION_HOURS || '24', 10);
+const parsedRetention = parseInt(process.env.CONTEXT_RETENTION_HOURS || '0', 10);
+export const CONTEXT_RETENTION_HOURS = Number.isFinite(parsedRetention) ? parsedRetention : 24;
+
+/** True when cached code is kept until the repository is disconnected. */
+export const CONTEXT_RETAIN_INDEFINITELY = CONTEXT_RETENTION_HOURS <= 0;
+
 export const CONTEXT_SWEEP_ENABLED = process.env.CONTEXT_SWEEP_ENABLED !== 'false';
 
 /** File extensions parsed for import edges and symbol occurrences. */

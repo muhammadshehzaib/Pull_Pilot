@@ -137,7 +137,8 @@ model CachedFile {
   salt          String
   createdAt     DateTime   @default(now())
   /// Absolute expiry; enforced by the cache sweep, not by read time.
-  expiresAt     DateTime
+  /// Null means no expiry: the row lives until its repository is disconnected.
+  expiresAt     DateTime?
 
   @@unique([repositoryId, blobSha])
   @@index([expiresAt])

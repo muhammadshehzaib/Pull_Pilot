@@ -27,12 +27,18 @@ import {
  */
 export class RepositoryContextCache {
   /**
-   * How long a cached blob is considered usable. Overridable for tests.
+   * How long a cached blob is considered usable. Zero or negative means
+   * indefinite: rows are written without an expiry. Overridable for tests.
    */
   private readonly retentionMs: number;
 
   constructor(retentionMs: number = CONTEXT_RETENTION_HOURS * 60 * 60 * 1000) {
     this.retentionMs = retentionMs;
+  }
+
+  /** True when this cache writes an expiry at all. */
+  private get hasExpiry(): boolean {
+    return this.retentionMs > 0;
   }
 
   /** True when this file is worth fetching and parsing for context. */
@@ -55,7 +61,8 @@ export class RepositoryContextCache {
 
   /**
    * Returns the decrypted content for a blob, or null on a miss.
-   * An expired row is deleted rather than returned.
+   * An expired row is deleted rather than returned; a row with no expiry
+   * is returned for as long as its repository is connected.
    */
   async get(repositoryId: string, blobSha: string): Promise<string | null> {
     const row = await prisma.cachedFile.findUnique({
@@ -63,7 +70,7 @@ export class RepositoryContextCache {
     });
     if (!row) return null;
 
-    if (row.expiresAt.getTime() <= Date.now()) {
+    if (row.expiresAt !== null && row.expiresAt.getTime() <= Date.now()) {
       await prisma.cachedFile.delete({ where: { id: row.id } }).catch(() => undefined);
       return null;
     }
@@ -88,12 +95,14 @@ export class RepositoryContextCache {
     path: string,
     content: string,
   ): Promise<void> {
-    const expiresAt = new Date(Date.now() + this.retentionMs);
+    // Indefinite retention writes no expiry at all, rather than a far-future
+    // date that would misrepresent what the row means.
+    const expiresAt = this.hasExpiry ? new Date(Date.now() + this.retentionMs) : null;
 
     const existing = await prisma.cachedFile.findUnique({
       where: { repositoryId_blobSha: { repositoryId, blobSha } },
     });
-    if (existing && existing.expiresAt.getTime() > Date.now()) return;
+    if (existing && (existing.expiresAt === null || existing.expiresAt.getTime() > Date.now())) return;
 
     const sealed = EncryptionService.encrypt(content);
 
@@ -121,8 +130,24 @@ export class RepositoryContextCache {
     });
   }
 
-  /** Deletes every expired row. Returns the number removed. */
+  /**
+   * Enforces the current retention policy. Returns rows deleted.
+   *
+   * Rows with no expiry are collected by exactly two things: their repository
+   * being disconnected (ON DELETE CASCADE), or the policy below.
+   *
+   * A null expiry means "keep until disconnected" while that is the setting.
+   * Once a finite window is configured, those rows would otherwise outlive the
+   * policy that replaced it, so the sweep gives them a deadline first.
+   */
   async sweepExpired(): Promise<number> {
+    if (this.hasExpiry) {
+      await prisma.cachedFile.updateMany({
+        where: { expiresAt: null },
+        data: { expiresAt: new Date(Date.now() + this.retentionMs) },
+      });
+    }
+
     const result = await prisma.cachedFile.deleteMany({
       where: { expiresAt: { lte: new Date() } },
     });

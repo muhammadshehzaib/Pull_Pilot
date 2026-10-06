@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { BrandLogo } from '../../components/BrandLogo';
 import { BRAND_NAME, SITE_HOST } from '../../config/brand';
-import { retentionWindow } from '../../config/privacy';
+import { CODE_RETAIN_INDEFINITELY, retentionWindow } from '../../config/privacy';
 
 export const metadata = {
   // Bare page name: the root layout's title template appends the brand.
@@ -63,10 +63,20 @@ export default function PrivacyPage() {
               repositories or customers.
             </li>
             <li>
-              Cached files are deleted automatically by a scheduled sweep within{' '}
-              <strong>{retentionWindow()}</strong> of being stored. The sweep runs
-              hourly, so expired content is removed promptly rather than lingering
-              until the next review.
+              {CODE_RETAIN_INDEFINITELY ? (
+                <>
+                  Cached files are kept for as long as your repository stays
+                  connected to PullPilot, and are deleted when you disconnect or
+                  uninstall the GitHub App.
+                </>
+              ) : (
+                <>
+                  Cached files are deleted automatically by a scheduled sweep within{' '}
+                  <strong>{retentionWindow()}</strong> of being stored. The sweep runs
+                  hourly, so expired content is removed promptly rather than lingering
+                  until the next review.
+                </>
+              )}
             </li>
             <li>
               Review jobs themselves (status, findings, and metadata) are retained

@@ -1,5 +1,6 @@
 import prisma from '../config/prisma';
 import {
+  CONTEXT_RETAIN_INDEFINITELY,
   CONTEXT_RETENTION_HOURS,
   CONTEXT_SWEEP_ENABLED,
   DELETE_BATCH_SIZE,
@@ -73,9 +74,13 @@ export function startContextRetentionSweep(): void {
 
   // Hourly: the shortest window we allow is hours, not days, and these rows
   // are large encrypted payloads that should not linger past their window.
+  // With indefinite retention the sweep is still started, because it collects
+  // rows written under an earlier expiry policy after the setting changes.
   setInterval(tick, 60 * 60 * 1000).unref();
   void tick();
   console.log(
-    `🧹 Review context sweep active (hourly): cached file content is kept ${CONTEXT_RETENTION_HOURS}h.`,
+    CONTEXT_RETAIN_INDEFINITELY
+      ? '🧹 Review context sweep active (hourly): cached file content is kept until its repository is disconnected.'
+      : `🧹 Review context sweep active (hourly): cached file content is kept ${CONTEXT_RETENTION_HOURS}h.`,
   );
 }
