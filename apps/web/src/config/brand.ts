@@ -28,11 +28,16 @@ export const BRAND_AUTHOR = `${BRAND_NAME} Team`;
  * emitted as `metadataBase`, as the canonical URL, into `robots.txt`, and into
  * `sitemap.xml`, so a wrong value here tells search engines that every page
  * lives somewhere else and suppresses indexing of the real domain.
+ *
+ * Temporarily the deployment host, because `pullpilot.ai` does not serve the
+ * site yet. Publishing an origin that does not resolve would point search
+ * engines and social cards at a dead domain. When the site moves, change this
+ * one line (and SITE_HOST, which brand.test.ts keeps in step).
  */
-export const SITE_URL = 'https://pullpilot.ai';
+export const SITE_URL = 'https://reviewer.shehzaib.com';
 
 /** Bare host for display in the footer and header. */
-export const SITE_HOST = 'pullpilot.ai';
+export const SITE_HOST = 'reviewer.shehzaib.com';
 
 /** Public source repository. */
 export const GITHUB_REPO_URL =
