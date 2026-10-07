@@ -3,7 +3,7 @@ import prisma from '../config/prisma';
 import { analysisQueue } from '../config/queue';
 import { isInProgressStatus, markReviewTerminal } from '../workers/job-state';
 import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxonomy';
-import { DEFAULT_LIMIT, MAX_LIMIT } from '../utils/constants';
+import { paginationMeta, parsePagination } from '../utils/pagination';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
@@ -53,7 +53,7 @@ export class JobController {
   /**
    * Lists past analysis jobs for the authenticated user's repos.
    *
-   * Filters: ?limit=, ?repositoryId=, ?referenceId=, ?status=
+   * Filters: ?page=, ?limit=, ?repositoryId=, ?referenceId=, ?status=
    *
    * `referenceId` is what makes "every review this PR has had" answerable — it
    * is the PR number for PULL_REQUEST events and the commit SHA for PUSH events,
@@ -61,32 +61,38 @@ export class JobController {
    * and hoping the PR's reviews are still in the first 50 rows.
    *
    * Returns lightweight rows (no findings) — use the detail endpoint to fetch the
-   * full results JSON.
+   * full results JSON. `pagination` carries the count for the current filter set
+   * so the UI can render page numbers without a second endpoint.
    */
   static async list(req: Request, res: Response) {
-    const limit = Math.min(
-      Math.max(parseInt((req.query.limit as string) || `${DEFAULT_LIMIT}`, 10) || DEFAULT_LIMIT, 1),
-      MAX_LIMIT,
-    );
+    const { page, limit, skip } = parsePagination(req.query);
     const repositoryId = (req.query.repositoryId as string) || undefined;
     const referenceId = (req.query.referenceId as string) || undefined;
     const status = parseJobStatus(req.query.status as string);
 
-    const jobs = await prisma.analysisJob.findMany({
-      where: {
-        repository: { userId: req.auth!.userId },
-        ...(repositoryId ? { repositoryId } : {}),
-        ...(referenceId ? { referenceId } : {}),
-        // An unrecognised status is ignored rather than 400'd: the filter is a
-        // UI convenience and must never be able to break the list endpoint.
-        ...(status ? { status } : {}),
-      },
-      include: {
-        repository: { select: { id: true, fullName: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
+    const where = {
+      repository: { userId: req.auth!.userId },
+      ...(repositoryId ? { repositoryId } : {}),
+      ...(referenceId ? { referenceId } : {}),
+      // An unrecognised status is ignored rather than 400'd: the filter is a
+      // UI convenience and must never be able to break the list endpoint.
+      ...(status ? { status } : {}),
+    };
+
+    // The count shares `where` with the page query, so the total always
+    // describes the same filtered set the rows come from.
+    const [jobs, total] = await Promise.all([
+      prisma.analysisJob.findMany({
+        where,
+        include: {
+          repository: { select: { id: true, fullName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.analysisJob.count({ where }),
+    ]);
 
     return res.json({
       jobs: jobs.map((j) => ({
@@ -99,6 +105,7 @@ export class JobController {
         repository: j.repository,
         findingCount: extractNormalizedFindings(j.results).length,
       })),
+      pagination: paginationMeta(page, limit, total),
     });
   }
 

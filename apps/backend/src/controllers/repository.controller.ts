@@ -5,18 +5,37 @@ import { GitHubAppService } from '../services/github-app.service';
 import { RepositoryContextCache } from '../services/repository-context-cache.service';
 import { analysisQueue } from '../config/queue';
 import { BACKEND_URL } from '../utils/constants';
+import { paginationMeta, parsePagination } from '../utils/pagination';
 
 async function getGitHub(installationId?: string | number | null): Promise<GitHubService> {
   return await GitHubAppService.getInstallationService(installationId);
 }
 
 export class RepositoryController {
+  /**
+   * Lists the user's repositories, newest first, paged by ?page= / ?limit=.
+   *
+   * `activeCount` is returned alongside `pagination.total` because the UI's
+   * "Connected (N)" label counts only active repos while `pagination.total`
+   * counts every row on the page query — including disconnected ones, which
+   * are still listed so a user can reconnect them.
+   */
   static async list(req: Request, res: Response) {
-    const repos = await prisma.repository.findMany({
-      where: { userId: req.auth!.userId },
-      include: { installation: true },
-      orderBy: { createdAt: 'desc' },
-    });
+    const { page, limit, skip } = parsePagination(req.query);
+    const where = { userId: req.auth!.userId };
+
+    const [repos, total, activeCount] = await Promise.all([
+      prisma.repository.findMany({
+        where,
+        include: { installation: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.repository.count({ where }),
+      prisma.repository.count({ where: { ...where, isActive: true } }),
+    ]);
+
     // BigInt is not JSON-serializable — coerce to string
     return res.json({
       repositories: repos.map((r) => ({
@@ -29,6 +48,8 @@ export class RepositoryController {
             }
           : null,
       })),
+      pagination: paginationMeta(page, limit, total),
+      activeCount,
     });
   }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
   mockRepoFindMany,
+  mockRepoCount,
   mockRepoFindFirst,
   mockRepoCreate,
   mockRepoUpdate,
@@ -16,6 +17,7 @@ const {
   GitHubServiceCtor,
 } = vi.hoisted(() => {
   const mockRepoFindMany = vi.fn();
+  const mockRepoCount = vi.fn();
   const mockRepoFindFirst = vi.fn();
   const mockRepoCreate = vi.fn();
   const mockRepoUpdate = vi.fn();
@@ -38,6 +40,7 @@ const {
 
   return {
     mockRepoFindMany,
+    mockRepoCount,
     mockRepoFindFirst,
     mockRepoCreate,
     mockRepoUpdate,
@@ -57,6 +60,7 @@ vi.mock('../config/prisma', () => ({
   default: {
     repository: {
       findMany: mockRepoFindMany,
+      count: mockRepoCount,
       findFirst: mockRepoFindFirst,
       create: mockRepoCreate,
       update: mockRepoUpdate,
@@ -85,6 +89,9 @@ const authedReq = (overrides = {}) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Two counts run per list call (total, then active); a default keeps tests
+  // that do not assert on totals from seeing `undefined` in the metadata.
+  mockRepoCount.mockResolvedValue(0);
   process.env.GITHUB_ACCESS_TOKEN = 'ghp_bot_token';
 });
 
@@ -110,7 +117,69 @@ describe('RepositoryController.list', () => {
 
     await RepositoryController.list(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ repositories: [] });
+    expect(res.json).toHaveBeenCalledWith({
+      repositories: [],
+      pagination: { page: 1, limit: 50, total: 0, totalPages: 1 },
+      activeCount: 0,
+    });
+  });
+
+  it('defaults to page 1 with no skip', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([]);
+    const req = authedReq();
+    const res = mockRes();
+
+    await RepositoryController.list(req, res);
+
+    expect(mockRepoFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 50 }),
+    );
+  });
+
+  it('derives skip from page and limit and reports the total', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([]);
+    // Counted twice: once for the total, once scoped to active repos.
+    mockRepoCount.mockResolvedValueOnce(60).mockResolvedValueOnce(55);
+    const req = authedReq({ query: { page: '2', limit: '25' } });
+    const res = mockRes();
+
+    await RepositoryController.list(req, res);
+
+    expect(mockRepoFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 25, take: 25 }),
+    );
+    expect(res.json.mock.calls[0][0].pagination).toEqual({
+      page: 2,
+      limit: 25,
+      total: 60,
+      totalPages: 3,
+    });
+    expect(res.json.mock.calls[0][0].activeCount).toBe(55);
+  });
+
+  it('clamps a bad page to 1 instead of returning an empty page', async () => {
+    for (const bad of ['0', '-5', 'banana']) {
+      mockRepoFindMany.mockResolvedValueOnce([]);
+      const res = mockRes();
+
+      await RepositoryController.list(authedReq({ query: { page: bad } }), res);
+
+      expect(mockRepoFindMany.mock.calls.at(-1)![0], bad).toMatchObject({ skip: 0 });
+      expect(res.json.mock.calls[0][0].pagination.page, bad).toBe(1);
+    }
+  });
+
+  it('always scopes both counts to the auth user (regression guard against IDOR)', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([]);
+    const req = authedReq();
+    const res = mockRes();
+
+    await RepositoryController.list(req, res);
+
+    const [totalWhere, activeWhere] = mockRepoCount.mock.calls.map((c) => c[0].where);
+    expect(totalWhere).toEqual({ userId: 'u-1' });
+    expect(activeWhere).toEqual({ userId: 'u-1', isActive: true });
+    expect(res.json.mock.calls[0][0].activeCount).toBe(0);
   });
 });
 

@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { GitBranch, Plus, Trash2, Play, ExternalLink, History } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
+import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
-import { api } from '../../lib/api';
+import { api, type PaginationMeta } from '../../lib/api';
 
 export const ROUTES = {
   HISTORY: '/history',
@@ -27,6 +28,9 @@ export default function RepositoriesPage() {
   const { user, loading: authLoading } = useAuth();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
+  const [activeCount, setActiveCount] = useState(0);
   const [fullName, setFullName] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -35,10 +39,21 @@ export default function RepositoriesPage() {
   const [auditMode, setAuditMode] = useState<'branch' | 'pr'>('branch');
   const [branchName, setBranchName] = useState('main');
 
-  async function refresh() {
+  async function refresh(targetPage = page) {
     try {
-      const res = await api<{ repositories: Repository[] }>('/api/repositories');
+      const res = await api<{
+        repositories: Repository[];
+        pagination: PaginationMeta;
+        activeCount: number;
+      }>(`/api/repositories?page=${targetPage}&limit=50`);
       setRepos(res.repositories);
+      setPagination(res.pagination);
+      setActiveCount(res.activeCount);
+      // Disconnecting the last row of the last page leaves an empty page —
+      // step back to the final page that still has content.
+      if (res.repositories.length === 0 && res.pagination.page > res.pagination.totalPages) {
+        setPage(res.pagination.totalPages);
+      }
     } catch {
       // ignore
     } finally {
@@ -47,8 +62,14 @@ export default function RepositoriesPage() {
   }
 
   useEffect(() => {
-    if (user) refresh();
-  }, [user]);
+    if (user) refresh(page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, page]);
+
+  function goToPage(next: number) {
+    setLoadingRepos(true);
+    setPage(next);
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +91,14 @@ export default function RepositoriesPage() {
           ? `Repo connected. ${res.warning}`
           : 'Repo connected. Webhook installed on GitHub.',
       });
-      await refresh();
+      // A freshly connected repo sorts to the top of page 1, so make sure the
+      // user is looking at the page where it actually appeared.
+      if (page === 1) {
+        await refresh(1);
+      } else {
+        setLoadingRepos(true);
+        setPage(1);
+      }
     } catch (err) {
       setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to connect.' });
     } finally {
@@ -201,7 +229,7 @@ export default function RepositoriesPage() {
           {loadingRepos ? (
             <div className="skeleton" style={{ width: 120, height: 16 }} />
           ) : (
-            `Connected (${repos.filter((r) => r.isActive).length})`
+            `Connected (${activeCount})`
           )}
         </div>
 
@@ -331,6 +359,15 @@ export default function RepositoriesPage() {
             ))}
           </div>
         )}
+
+        <Pagination
+          page={page}
+          totalPages={pagination?.totalPages ?? 1}
+          total={pagination?.total}
+          noun="repositories"
+          busy={loadingRepos}
+          onChange={goToPage}
+        />
       </main>
     </div>
   );

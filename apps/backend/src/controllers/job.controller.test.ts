@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockJobFindMany, mockJobFindFirst, mockJobUpdate, mockQueueRemove, mockEmitStatus } = vi.hoisted(() => ({
+const { mockJobFindMany, mockJobCount, mockJobFindFirst, mockJobUpdate, mockQueueRemove, mockEmitStatus } = vi.hoisted(() => ({
   mockJobFindMany: vi.fn(),
+  mockJobCount: vi.fn(),
   mockJobFindFirst: vi.fn(),
   mockJobUpdate: vi.fn(),
   mockQueueRemove: vi.fn(),
@@ -12,6 +13,7 @@ vi.mock('../config/prisma', () => ({
   default: {
     analysisJob: {
       findMany: mockJobFindMany,
+      count: mockJobCount,
       findFirst: mockJobFindFirst,
       update: mockJobUpdate,
     },
@@ -37,6 +39,10 @@ const authedReq = (overrides = {}) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The list endpoint counts in parallel with the page query; every test that
+  // does not care about totals should still see a sane zero rather than
+  // `undefined` flowing into the pagination math.
+  mockJobCount.mockResolvedValue(0);
 });
 
 describe('JobController.list', () => {
@@ -242,7 +248,10 @@ describe('JobController.list', () => {
     await JobController.list(req, res);
 
     expect(mockJobFindMany.mock.calls[0][0].where).not.toHaveProperty('status');
-    expect(res.json).toHaveBeenCalledWith({ jobs: [] });
+    expect(res.json).toHaveBeenCalledWith({
+      jobs: [],
+      pagination: { page: 1, limit: 50, total: 0, totalPages: 1 },
+    });
   });
 
   it('does not add empty-string filters', async () => {
@@ -256,6 +265,85 @@ describe('JobController.list', () => {
     expect(where).not.toHaveProperty('referenceId');
     expect(where).not.toHaveProperty('repositoryId');
     expect(where).not.toHaveProperty('status');
+  });
+});
+
+describe('JobController.list — pagination', () => {
+  it('defaults to page 1 with no skip', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq();
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(mockJobFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 0, take: 50 }),
+    );
+    expect(res.json.mock.calls[0][0].pagination).toEqual({
+      page: 1,
+      limit: 50,
+      total: 0,
+      totalPages: 1,
+    });
+  });
+
+  it('derives skip from page and limit', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    mockJobCount.mockResolvedValueOnce(45);
+    const req = authedReq({ query: { page: '3', limit: '20' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    expect(mockJobFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 40, take: 20 }),
+    );
+    expect(res.json.mock.calls[0][0].pagination).toEqual({
+      page: 3,
+      limit: 20,
+      total: 45,
+      totalPages: 3,
+    });
+  });
+
+  it('clamps a bad page to 1 instead of returning an empty page', async () => {
+    for (const bad of ['0', '-5', 'banana']) {
+      mockJobFindMany.mockResolvedValueOnce([]);
+      const res = mockRes();
+
+      await JobController.list(authedReq({ query: { page: bad } }), res);
+
+      expect(mockJobFindMany.mock.calls.at(-1)![0], bad).toMatchObject({ skip: 0 });
+      expect(res.json.mock.calls[0][0].pagination.page, bad).toBe(1);
+    }
+  });
+
+  it('counts with the same where as the page query, so the total honours every filter', async () => {
+    mockJobFindMany.mockResolvedValueOnce([]);
+    const req = authedReq({ query: { repositoryId: 'r-42', status: 'FAILED' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    const pageWhere = mockJobFindMany.mock.calls[0][0].where;
+    const countWhere = mockJobCount.mock.calls[0][0].where;
+    expect(countWhere).toEqual(pageWhere);
+    expect(countWhere.repository).toEqual({ userId: 'u-1' });
+  });
+
+  it('reports the real total even when the page itself is empty', async () => {
+    // Page 12 of a 4-row list: no rows, but the count still says 4 so the UI
+    // can clamp itself back to a valid page rather than showing "0 reviews".
+    mockJobFindMany.mockResolvedValueOnce([]);
+    mockJobCount.mockResolvedValueOnce(4);
+    const req = authedReq({ query: { page: '12', limit: '50' } });
+    const res = mockRes();
+
+    await JobController.list(req, res);
+
+    const out = res.json.mock.calls[0][0];
+    expect(out.jobs).toEqual([]);
+    expect(out.pagination).toEqual({ page: 12, limit: 50, total: 4, totalPages: 1 });
   });
 });
 

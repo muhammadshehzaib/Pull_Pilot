@@ -5,6 +5,17 @@ export interface ApiError {
   error: string;
 }
 
+/**
+ * Every paged list endpoint returns this alongside its rows. Kept here rather
+ * than duplicated per page so the shape the backend guarantees has one home.
+ */
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 export async function api<T = unknown>(
   path: string,
   init?: RequestInit,

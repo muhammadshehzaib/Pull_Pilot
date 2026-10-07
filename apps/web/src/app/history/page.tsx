@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { History, GitPullRequest, GitCommit, CheckCircle2, XCircle, Loader2, ChevronRight, Copy, Check, Sparkles } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
+import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
-import { api } from '../../lib/api';
+import { api, type PaginationMeta } from '../../lib/api';
 import {
   AGENT_LABELS,
   PRIORITY_ICONS,
@@ -45,6 +46,10 @@ export default function HistoryPage() {
   const [selected, setSelected] = useState<JobDetail | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  // 1-based page into the filtered list. Backend clamps out-of-range values,
+  // but every navigation still goes through goToPage so the skeleton shows.
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   // Narrowing to a repository or a single PR. The backend filters on these, so
   // "every review this PR has had" no longer depends on the global 50-row list
   // happening to still contain it.
@@ -62,16 +67,25 @@ export default function HistoryPage() {
 
   /**
    * Does not touch loading state on its own. Loading is owned by whoever caused
-   * the fetch (the mount, or a filter click) so that setting it here would not
-   * turn the background poll into a skeleton flash every 3 seconds.
+   * the fetch (the mount, a filter click, or a page change) so that setting it
+   * here would not turn the background poll into a skeleton flash every 3 seconds.
    */
   const fetchJobs = async () => {
     try {
-      const params = new URLSearchParams({ limit: '50' });
+      const params = new URLSearchParams({ limit: '50', page: `${page}` });
       if (repoFilter) params.set('repositoryId', repoFilter);
       if (scopedReferenceId) params.set('referenceId', scopedReferenceId);
-      const res = await api<{ jobs: JobSummary[] }>(`/api/jobs?${params.toString()}`);
+      const res = await api<{ jobs: JobSummary[]; pagination: PaginationMeta }>(
+        `/api/jobs?${params.toString()}`,
+      );
       setJobs(res.jobs);
+      setPagination(res.pagination);
+      // Filters can shrink the list underneath the current page (cleared PR,
+      // retention sweep). Land on the last page that still exists rather than
+      // leaving the user staring at an empty list with nowhere to go.
+      if (res.jobs.length === 0 && res.pagination.page > res.pagination.totalPages) {
+        setPage(res.pagination.totalPages);
+      }
       setKnownRepos((prev) => {
         const merged = new Map(prev.map((r) => [r.id, r.fullName]));
         for (const job of res.jobs) merged.set(job.repository.id, job.repository.fullName);
@@ -87,18 +101,29 @@ export default function HistoryPage() {
     }
   };
 
-  /** Every filter change goes through here so the skeleton and the query agree. */
+  /**
+   * Every filter change goes through here so the skeleton and the query agree.
+   * The page also resets to 1: a filter that leaves 2 matching rows must not
+   * keep the user on page 4 of the unfiltered list.
+   */
   function applyFilter(update: () => void) {
     setLoadingList(true);
+    setPage(1);
     update();
   }
 
-  // Fetch on mount and whenever a filter changes. `loadingList` already starts
-  // true, so mounting needs no explicit setState here.
+  /** Page navigation: same skeleton ownership, but the filters stay put. */
+  function goToPage(next: number) {
+    setLoadingList(true);
+    setPage(next);
+  }
+
+  // Fetch on mount and whenever the page or a filter changes. `loadingList`
+  // already starts true, so mounting needs no explicit setState here.
   useEffect(() => {
     if (!user) return;
     fetchJobs();
-  }, [user, repoFilter, scopedReferenceId]);
+  }, [user, page, repoFilter, scopedReferenceId]);
 
   // Auto-poll while any review is in flight. This used to test for RUNNING and
   // QUEUED only, so the moment the backend reported ANALYZING the page stopped
@@ -242,7 +267,7 @@ export default function HistoryPage() {
           )}
 
           <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            {jobs.length} review{jobs.length === 1 ? '' : 's'}
+            {pagination?.total ?? jobs.length} review{(pagination?.total ?? jobs.length) === 1 ? '' : 's'}
             {scopedReferenceId ? ` on PR #${scopedReferenceId}` : ''}
           </span>
         </div>
@@ -294,6 +319,15 @@ export default function HistoryPage() {
                 ))}
               </div>
             )}
+
+            <Pagination
+              page={page}
+              totalPages={pagination?.totalPages ?? 1}
+              total={pagination?.total}
+              noun="reviews"
+              busy={loadingList}
+              onChange={goToPage}
+            />
           </div>
 
           <div>
