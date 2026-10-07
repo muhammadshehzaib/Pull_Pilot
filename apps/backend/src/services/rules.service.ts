@@ -5,7 +5,7 @@ import {
   FindingCategory,
   FindingSeverity,
 } from './ai/finding-taxonomy';
-import { DiffFilterService } from './diff-filter.service';
+import { collectAddedLines, AddedLine } from './diff-lines';
 
 export type RuleEnforcement = 'LLM' | 'DETERMINISTIC' | 'BOTH';
 export type RuleCheckStatus = 'PASS' | 'FAIL' | 'SKIPPED';
@@ -229,51 +229,6 @@ function compilePattern(pattern: string): { ok: true; regex: RegExp } | { ok: fa
   }
 }
 
-interface AddedLine {
-  filename: string;
-  lineNumber: number;
-  text: string;
-}
-
-/**
- * Extracts every added line from a unified diff with its new-file line
- * number, so a pattern match maps onto the exact line an inline comment
- * should target.
- */
-function collectAddedLines(diff: string): AddedLine[] {
-  if (!diff || diff.trim().length === 0) return [];
-
-  const out: AddedLine[] = [];
-  for (const chunk of DiffFilterService.splitDiffByFile(diff)) {
-    const filename = chunk.filename.replace(/^\.\//, '');
-    let newLine = 0;
-    let inHunk = false;
-
-    for (const line of chunk.content.split('\n')) {
-      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-      if (hunk) {
-        newLine = parseInt(hunk[1], 10);
-        inHunk = true;
-        continue;
-      }
-      if (!inHunk) continue;
-
-      if (line.startsWith('+')) {
-        out.push({ filename, lineNumber: newLine, text: line.slice(1) });
-        newLine += 1;
-      } else if (line.startsWith('-') || line.startsWith('\\')) {
-        // Deleted lines and "\ No newline at end of file" have no new-file
-        // number and do not advance the counter.
-        continue;
-      } else {
-        // Context line (or an empty trailing line from trimming the chunk).
-        newLine += 1;
-      }
-    }
-  }
-  return out;
-}
-
 function toViolation(
   rule: RuleRecord,
   line: AddedLine,
@@ -286,5 +241,8 @@ function toViolation(
     issue: `Violates repository rule "${rule.name}" — ${explanation}`,
     suggestion: `Update this line so it no longer violates the "${rule.name}" rule.`,
     priority: rule.severity,
+    // Rules are a deterministic source, like the security probes — the risk
+    // engine and UI use this to explain where a finding came from.
+    source: 'RULES',
   };
 }

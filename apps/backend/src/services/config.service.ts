@@ -28,6 +28,26 @@ export interface ContextConfig {
   max_tokens: number;
 }
 
+/**
+ * Deterministic security layer (SAST + secrets + dependency probes).
+ *
+ * Every probe runs on the filtered diff without any model judgement, so these
+ * controls mirror `context`: a repository may narrow the scope but never
+ * widen it beyond the defaults (there is nothing to clamp here, only booleans).
+ */
+export interface SecurityConfig {
+  /** Master switch for the whole security layer. */
+  enabled: boolean;
+  /** Deterministic static-analysis probe (SQLi, XSS, SSRF, command injection…). */
+  sast: boolean;
+  /** Hardcoded credential / secret-key probe. */
+  secrets: boolean;
+  /** Introduced-dependency + known-vulnerability scan. */
+  dependencies: boolean;
+  /** A critical secret exposure raises the risk verdict to BLOCK. */
+  block_on_critical_secret: boolean;
+}
+
 export interface AiPrConfig {
   version: number;
   ignore: string[];
@@ -36,6 +56,7 @@ export interface AiPrConfig {
   language: string;
   summarize: boolean;
   context: ContextConfig;
+  security: SecurityConfig;
 }
 
 export const DEFAULT_AIPR_CONFIG: AiPrConfig = {
@@ -66,7 +87,38 @@ export const DEFAULT_AIPR_CONFIG: AiPrConfig = {
     max_hops: CONTEXT_MAX_HOPS,
     max_tokens: CONTEXT_MAX_TOKENS,
   },
+  security: {
+    enabled: true,
+    sast: true,
+    secrets: true,
+    dependencies: true,
+    block_on_critical_secret: true,
+  },
 };
+
+/**
+ * Parses the optional `security:` block from .aipr.yml.
+ *
+ * Absent keys fall back to the defaults and non-boolean values are ignored,
+ * mirroring parseContextConfig: a user-owned config file can turn scanners off
+ * but cannot break the pipeline with a mistyped value.
+ */
+function parseSecurityConfig(raw: unknown): SecurityConfig {
+  const defaults = DEFAULT_AIPR_CONFIG.security;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ...defaults };
+
+  const input = raw as Record<string, unknown>;
+  const pick = (value: unknown): boolean | undefined =>
+    typeof value === 'boolean' ? value : undefined;
+
+  return {
+    enabled: pick(input.enabled) ?? defaults.enabled,
+    sast: pick(input.sast) ?? defaults.sast,
+    secrets: pick(input.secrets) ?? defaults.secrets,
+    dependencies: pick(input.dependencies) ?? defaults.dependencies,
+    block_on_critical_secret: pick(input.block_on_critical_secret) ?? defaults.block_on_critical_secret,
+  };
+}
 
 /**
  * Parses the optional `context:` block from .aipr.yml.
@@ -148,6 +200,7 @@ export class ConfigService {
       const summarize = typeof parsed.summarize === 'boolean' ? parsed.summarize : DEFAULT_AIPR_CONFIG.summarize;
       const version = typeof parsed.version === 'number' ? parsed.version : DEFAULT_AIPR_CONFIG.version;
       const context = parseContextConfig(parsed.context);
+      const security = parseSecurityConfig(parsed.security);
 
       return {
         version,
@@ -157,6 +210,7 @@ export class ConfigService {
         language,
         summarize,
         context,
+        security,
       };
     } catch (err) {
       console.warn('⚠️ Failed to parse .aipr.yml YAML content, falling back to default config:', (err as Error).message);

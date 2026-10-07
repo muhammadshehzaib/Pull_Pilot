@@ -150,9 +150,25 @@ export function deduplicate(findings: AiSuggestion[]): AiSuggestion[] {
 }
 
 /**
+ * Provenance order used when two engines report the same defect and we have to
+ * pick whose `source` label survives. Deterministic engines are more truthful
+ * about what they saw than a model paraphrase, so SEALED sources (a secret is a
+ * fact, not a guess) rank above pattern matches, which rank above the model.
+ */
+const SOURCE_RANK = { SECRETS: 5, DEPENDENCIES: 4, SAST: 3, RULES: 2, LLM: 1 } as const;
+
+function strongerSource(a?: string, b?: string): AiSuggestion['source'] {
+  const rankA = a ? (SOURCE_RANK[a as keyof typeof SOURCE_RANK] ?? 0) : 0;
+  const rankB = b ? (SOURCE_RANK[b as keyof typeof SOURCE_RANK] ?? 0) : 0;
+  if (rankA >= rankB && a) return a as AiSuggestion['source'];
+  if (rankB > rankA && b) return b as AiSuggestion['source'];
+  return undefined;
+}
+
+/**
  * Combines two reports of one problem. Keeps the earliest cited line (the line
- * the developer will jump to), the strongest severity, and the longer
- * suggestion text, which is usually the more detailed explanation.
+ * the developer will jump to), the strongest severity, the longer
+ * suggestion text, and the stronger provenance (see strongerSource).
  */
 function merge(existing: AiSuggestion, incoming: AiSuggestion): AiSuggestion {
   const line =
@@ -167,5 +183,8 @@ function merge(existing: AiSuggestion, incoming: AiSuggestion): AiSuggestion {
     issue: existing.issue.length >= incoming.issue.length ? existing.issue : incoming.issue,
     suggestion: existing.suggestion.length >= incoming.suggestion.length ? existing.suggestion : incoming.suggestion,
     priority: strongestSeverity(existing.priority, incoming.priority),
+    // A deterministic report of the same defect stays deterministically sourced
+    // even if the model mentioned it first.
+    source: strongerSource(existing.source, incoming.source),
   };
 }

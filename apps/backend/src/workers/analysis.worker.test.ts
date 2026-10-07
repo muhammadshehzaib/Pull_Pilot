@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * handler that the source code passes in, and then invoke it directly with
  * fake job payloads.
  */
-const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockRuleFindMany, mockRuleCheckCreateMany, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
+const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockRuleFindMany, mockRuleCheckCreateMany, mockSecurityCheckCreateMany, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
   const capturedHandler: { fn?: (job: any) => Promise<any> } = {};
 
   const WorkerMock = vi.fn(function (this: any, _name: string, handler: any) {
@@ -21,6 +21,8 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoF
   // DB-stored engineering rules: fetched before analysis, results written after.
   const mockRuleFindMany = vi.fn();
   const mockRuleCheckCreateMany = vi.fn();
+  // Deterministic security probes: one PASS/FAIL row per probe per job.
+  const mockSecurityCheckCreateMany = vi.fn();
   const mockDecrypt = vi.fn();
   const mockFetchDiff = vi.fn();
   const mockCreateReviewComment = vi.fn();
@@ -43,6 +45,7 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoF
     mockRepoFindUnique,
     mockRuleFindMany,
     mockRuleCheckCreateMany,
+    mockSecurityCheckCreateMany,
     mockDecrypt,
     mockFetchDiff,
     mockCreateReviewComment,

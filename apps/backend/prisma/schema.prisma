@@ -206,6 +206,47 @@ enum RuleCheckStatus {
   SKIPPED
 }
 
+/// Which deterministic security engine produced a check or finding.
+enum SecurityProbe {
+  SAST
+  SECRETS
+  DEPENDENCIES
+}
+
+/// Outcome of one security probe during one analysis job: PASS (scanned clean)
+/// or FAIL (at least one finding). SKIPPED is reserved for a probe that could
+/// not run against the diff (e.g. no dependency manifests present).
+enum SecurityCheckStatus {
+  PASS
+  FAIL
+  SKIPPED
+}
+
+/// One outcome row per security probe per analysis job, mirroring rule_checks
+/// so the deterministic security layer has a durable audit trail independent
+/// of the findings JSON blob.
+///
+/// A review normally writes at most three of these (SAST, SECRETS,
+/// DEPENDENCIES). `ruleName` is a human label and `ruleKey` an opaque key for
+/// the unique index; the finding details themselves live in
+/// `analysis_jobs.results.suggestions`.
+model SecurityCheck {
+  id            String              @id @default(uuid())
+  analysisJobId String
+  analysisJob   AnalysisJob         @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+  probe         SecurityProbe
+  ruleKey       String
+  ruleName      String
+  status        SecurityCheckStatus
+  findingCount  Int                 @default(0)
+  createdAt     DateTime            @default(now())
+
+  @@unique([analysisJobId, probe, ruleKey])
+  @@index([probe])
+  @@index([analysisJobId])
+  @@map("security_checks")
+}
+
 /// A single file's content, encrypted, keyed by its Git blob SHA so identical
 /// content is stored once and never refetched. Used to assemble review context
 /// beyond the diff.
@@ -260,17 +301,18 @@ enum JobStatus {
 }
 
 model AnalysisJob {
-  id           String     @id @default(uuid())
-  repositoryId String
-  repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
-  eventType    EventType
-  referenceId  String     // PR number or Commit SHA
-  status       JobStatus  @default(QUEUED)
-  results      Json?
-  commitSha    String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  ruleChecks   RuleCheck[]
+  id              String          @id @default(uuid())
+  repositoryId    String
+  repository      Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  eventType       EventType
+  referenceId     String          // PR number or Commit SHA
+  status          JobStatus       @default(QUEUED)
+  results         Json?
+  commitSha       String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  ruleChecks      RuleCheck[]
+  securityChecks  SecurityCheck[]
 
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])

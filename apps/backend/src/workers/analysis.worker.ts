@@ -7,6 +7,8 @@ import { AiProviderFactory } from '../services/ai/ai-factory';
 import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { RulesService } from '../services/rules.service';
+import { runSecurityProbes, countByProbe } from '../services/security/run-probes';
+import { assessRisk } from '../services/security/risk-engine';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { buildReviewContext } from '../services/context-builder';
 import type { ReviewContext } from '../services/ai/context-prompt';
@@ -212,6 +214,27 @@ export const analysisWorker = new Worker(
       // the combined list as "ADDITIONAL USER RULES TO ENFORCE".
       const promptGuidelines = RulesService.mergeGuidelines(repoConfig.guidelines, dbRules);
 
+      // 6c. DETERMINISTIC SECURITY PROBES. SAST + hardcoded-secrets +
+      //     known-vulnerable-dependencies, all run on the filtered diff before
+      //     the model is called. Findings bypass min_severity exactly like rule
+      //     violations: a deterministic scanner must not be silently optional
+      //     behind a repo-wide threshold. Each probe writes a PASS/FAIL row.
+      const securityScan = runSecurityProbes(repoConfig.security, filteredDiff);
+      const probeTallies = countByProbe(securityScan.findings);
+      if (securityScan.checks.length > 0) {
+        const failed = securityScan.checks.filter((c) => c.status === 'FAIL').length;
+        console.log(
+          `🛡️ Security probes: ${securityScan.checks.length} checked, ${failed} failed, ${securityScan.findings.length} finding(s) — ` +
+            `SAST ${probeTallies.SAST} · secrets ${probeTallies.SECRETS} · dependencies ${probeTallies.DEPENDENCIES}.`,
+        );
+        SocketService.emitStatus(
+          userId,
+          jobId,
+          `🛡️ Security probes: ${securityScan.findings.length} finding(s) — SAST ${probeTallies.SAST} · secrets ${probeTallies.SECRETS} · dependencies ${probeTallies.DEPENDENCIES}`,
+          'ANALYZING',
+        );
+      }
+
       // 7. ENGAGE AI ENGINE VIA FACTORY
       console.log(`🧠 Contacting ${vault.provider} for Analysis Strategy...`);
 
@@ -256,22 +279,36 @@ export const analysisWorker = new Worker(
 
       // 8. FILTER SUGGESTIONS BY MIN_SEVERITY, DEDUPE, SORT MOST SEVERE FIRST
       //
-      // Deterministic rule violations join the model's findings here. They are
-      // deliberately NOT passed through the min_severity filter: the user
-      // configured each of these rules explicitly, so the rule's own severity
-      // decides — dropping it behind a repo-wide threshold would make a
-      // DETERMINISTIC rule silently optional.
-      const suggestions = sortBySeverity(
+      // Deterministic rule violations AND security findings join the model's
+      // findings here. Both are deliberately NOT passed through the min_severity
+      // filter: the user configured rules explicitly and the security layer is a
+      // hard control, so each engine's own severity decides — burying either
+      // behind a repo-wide threshold would make a DETERMINISTIC control silently
+      // optional.
+      const mergedFindings = sortBySeverity(
         deduplicate([
           ...rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
           ...ruleEvaluation.violations,
+          ...securityScan.findings,
         ]),
       );
 
+      // The risk engine turns the merged list into one number and verdict, and
+      // annotates findings whose deterministic detection lines up with a model
+      // (or rule) finding on the same lines — corroboration that makes a
+      // borderline report much more trustworthy.
+      const { findings: suggestions, report: risk } = assessRisk(mergedFindings);
+
       console.log(
-        `🎯 AI Analysis Finished! Found ${rawSuggestions.length} model finding(s) + ${ruleEvaluation.violations.length} rule violation(s); ${suggestions.length} total after dedupe (${repoConfig.min_severity} threshold applies to model findings only).`,
+        `🎯 AI Analysis Finished! Found ${rawSuggestions.length} model finding(s) + ${ruleEvaluation.violations.length} rule violation(s) + ${securityScan.findings.length} security finding(s); ${suggestions.length} total after dedupe (${repoConfig.min_severity} threshold applies to model findings only).`,
       );
       await advanceReview(jobId, userId, 'GENERATING', `🎯 Scan Complete: ${suggestions.length} items flagged`);
+      SocketService.emitStatus(
+        userId,
+        jobId,
+        `🛡️ Risk engine: ${risk.score}/100 — ${risk.verdict}${risk.blockingCount > 0 ? ` (${risk.blockingCount} blocking)` : ''}`,
+        'GENERATING',
+      );
 
       // One record per rule per job: the durable pass/fail trail a model
       // finding could never provide. skipDuplicates keeps a retried job from
@@ -291,6 +328,25 @@ export const analysisWorker = new Worker(
         );
       }
 
+      // Same durable trail for the security probes: at most one row per probe
+      // (SAST / SECRETS / DEPENDENCIES), so the job detail page can show a
+      // per-probe PASS/FAIL independent of the findings blob.
+      if (securityScan.checks.length > 0) {
+        await guard(
+          prisma.securityCheck.createMany({
+            data: securityScan.checks.map((check) => ({
+              analysisJobId: jobId,
+              probe: check.probe,
+              ruleKey: check.ruleKey,
+              ruleName: check.ruleName,
+              status: check.status,
+              findingCount: check.findingCount,
+            })),
+            skipDuplicates: true,
+          }),
+        );
+      }
+
       // Persist the findings now, but not as COMPLETED: comments still have to
       // be delivered, and a crash during delivery must not read as a finished
       // review. The final COMPLETED write happens after posting succeeds.
@@ -303,6 +359,8 @@ export const analysisWorker = new Worker(
             includedFiles,
             config: repoConfig,
             ruleChecks: ruleEvaluation.checks,
+            securityChecks: securityScan.checks,
+            risk,
           } as any,
         },
       });
@@ -400,6 +458,17 @@ export const analysisWorker = new Worker(
                   } model-enforced only`,
                 ]
               : []),
+            ...(securityScan.checks.length > 0
+              ? [
+                  `- **Security Scans**: SAST ${probeTallies.SAST} · SECRETS ${probeTallies.SECRETS} · DEPENDENCIES ${probeTallies.DEPENDENCIES} — ${
+                    securityScan.checks.filter((c) => c.status === 'FAIL').length
+                  } probe(s) flagged findings`,
+                ]
+              : []),
+            `- **Security Risk**: ${risk.score}/100 — ${risk.verdict}${risk.blockingCount > 0 ? ` (${risk.blockingCount} blocking)` : ''}`,
+            ...(risk.verdict === 'BLOCK'
+              ? [`> 🚫 **This review is blocked**: ${risk.reasons.join('; ')}.`]
+              : []),
             `- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}`,
             '',
             '*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*',
@@ -430,6 +499,8 @@ export const analysisWorker = new Worker(
             includedFiles,
             config: repoConfig,
             ruleChecks: ruleEvaluation.checks,
+            securityChecks: securityScan.checks,
+            risk,
             commentFailures,
             summaryPosted,
           } as any,

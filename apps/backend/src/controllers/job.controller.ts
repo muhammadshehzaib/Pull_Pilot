@@ -121,6 +121,8 @@ export class JobController {
         // the rule they describe (ruleId goes null, ruleName is snapshotted),
         // so this is the durable enforcement history either way.
         ruleChecks: { orderBy: { createdAt: 'asc' } },
+        // Per-probe pass/fail records for the deterministic security layer.
+        securityChecks: { orderBy: { createdAt: 'asc' } },
       },
     });
 
@@ -138,6 +140,10 @@ export class JobController {
         metadata: {
           ignoredFiles: Array.isArray(rawObj.ignoredFiles) ? (rawObj.ignoredFiles as string[]) : [],
           includedFiles: Array.isArray(rawObj.includedFiles) ? (rawObj.includedFiles as string[]) : [],
+          // Risk engine output (score / verdict / reasons), rehydrated from the
+          // results blob so the history page can render the risk card without
+          // re-parsing the whole findings array.
+          risk: rawObj.risk,
           error: typeof rawObj.error === 'string' ? rawObj.error : undefined,
         },
       },

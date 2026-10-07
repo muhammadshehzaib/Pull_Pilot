@@ -24,6 +24,14 @@ export const FINDING_CATEGORIES = [
 ] as const;
 export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
 
+/**
+ * Where a finding came from. Optional provenance meta on `AiSuggestion`:
+ * model findings and anything re-hydrated from stored JSON may omit it, while
+ * the deterministic engines (repository rules, security probes) always stamp
+ * theirs so the risk engine and the UI can explain, not guess, the source.
+ */
+export type FindingSource = 'LLM' | 'SAST' | 'SECRETS' | 'DEPENDENCIES' | 'RULES';
+
 export interface AiSuggestion {
   filePath: string;
   lineNumber: number;
@@ -31,6 +39,10 @@ export interface AiSuggestion {
   issue: string;
   suggestion: string;
   priority: FindingSeverity;
+  /** Which engine produced this finding. Optional for backward compatibility. */
+  source?: FindingSource;
+  /** Filled in by the risk engine after a deterministic finding lines up with a model finding. */
+  corroborated?: boolean;
 }
 
 /**
