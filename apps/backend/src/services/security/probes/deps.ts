@@ -6,7 +6,7 @@ import {
   MAX_FINDINGS_PER_RULE,
   checkForProbe,
 } from '../probe-types';
-import { advisoriesFor, isVulnerable, parseVersion } from '../advisory-registry';
+import { advisoriesFor, isVulnerable, minSelectableVersion } from '../advisory-registry';
 
 /**
  * Dependency probe.
@@ -47,7 +47,7 @@ function parsePackageJson(lines: string[]): ManifestDependency[] {
       section = null;
       continue;
     }
-    const depMatch = /^"(@?[^"\s]+)"\s*:\s*"(\.{2}|\^|~|>=|=|<|>|v|latest|\d)[^"]*"/.exec(line);
+    const depMatch = /^"(@?[^"\s]+)"\s*:\s*"((?:\.{2}|~|\^|>=|=|<|>|v|latest|\d)[^"]*)",?\s*$/.exec(line);
     if (depMatch && section) {
       deps.push({ name: depMatch[1], spec: depMatch[2], dev: section === 'devDependencies' });
     }
@@ -210,8 +210,8 @@ export function scanDependencies(diff: string): SecurityProbeResult {
       for (const dep of deps) {
         const prior = removedByName.get(dep.name.toLowerCase());
         if (!prior) continue;
-        const before = parseVersion(prior.spec);
-        const after = parseVersion(dep.spec);
+        const before = minSelectableVersion(prior.spec);
+        const after = minSelectableVersion(dep.spec);
         if (before && after && after.major > before.major) {
           const anchor = addedLines.find((l) => l.text.includes(dep.name));
           findings.push({
