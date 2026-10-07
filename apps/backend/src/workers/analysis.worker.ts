@@ -50,6 +50,36 @@ export const analysisWorker = new Worker(
     let superseded = false;
 
     /**
+     * Cancels any in-flight provider request once the attempt is abandoned. A
+     * Node-side abort makes the SDK close the socket instead of waiting for its
+     * own timeout to expire.
+     */
+    const abort = new AbortController();
+
+    /**
+     * Awaits `p` but rejects as soon as the attempt is abandoned, so the worker
+     * slot is released even when the underlying operation ignores the abort
+     * signal — otherwise one hung request would occupy one of the five slots
+     * forever and starve every other review.
+     */
+    const guard = <T>(p: Promise<T>): Promise<T> => {
+      if (abort.signal.aborted) {
+        return Promise.reject(new UnrecoverableError('Review was abandoned before this call ran.'));
+      }
+      const aborted = new Promise<never>((_, reject) => {
+        abort.signal.addEventListener(
+          'abort',
+          () => reject(new UnrecoverableError('Review was cancelled or timed out mid-flight; abandoning.')),
+          { once: true },
+        );
+      });
+      // If `p` wins the race, the abort promise can still reject later; make sure
+      // that never surfaces as an unhandled rejection.
+      aborted.catch(() => {});
+      return Promise.race([p, aborted]);
+    };
+
+    /**
      * Abandons this attempt if the review was cancelled or timed out.
      *
      * Checks the in-process flag first so the overwhelmingly common case costs
@@ -67,6 +97,7 @@ export const analysisWorker = new Worker(
 
     const deadline = setTimeout(() => {
       superseded = true;
+      abort.abort();
       console.error(
         `⏱️  REVIEW TIMED OUT after ${REVIEW_TIMEOUT_MS}ms: ${jobId} (${fullName} ${eventType} ${referenceId}). Marking TIMEOUT and abandoning this attempt.`,
       );
@@ -121,11 +152,11 @@ export const analysisWorker = new Worker(
       // 5. FETCH REPO CONFIGURATION (.aipr.yml)
       const { baseSha, headSha } = payloadSnapshot;
       SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'FETCHING');
-      const repoConfig = await ConfigService.fetchRepoConfig(ghService, owner, repo, headSha);
+      const repoConfig = await guard(ConfigService.fetchRepoConfig(ghService, owner, repo, headSha));
 
       // 6. FETCH & FILTER RAW DIFF STREAM
       SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'FETCHING');
-      const rawDiff = await ghService.fetchDiff(owner, repo, baseSha, headSha);
+      const rawDiff = await guard(ghService.fetchDiff(owner, repo, baseSha, headSha));
 
       await assertNotSuperseded();
 
@@ -155,7 +186,7 @@ export const analysisWorker = new Worker(
       let context: ReviewContext | undefined;
       if (repoConfig.context.enabled) {
         SocketService.emitStatus(userId, jobId, `🔎 Reading surrounding code for context`, 'FETCHING');
-        context = await buildReviewContext({
+        context = await guard(buildReviewContext({
           ghService,
           owner,
           repo,
@@ -163,7 +194,7 @@ export const analysisWorker = new Worker(
           headSha,
           changedPaths: includedFiles,
           config: repoConfig.context,
-        });
+        }));
         await assertNotSuperseded();
 
         if (context) {
@@ -176,10 +207,13 @@ export const analysisWorker = new Worker(
       await advanceReview(jobId, userId, 'ANALYZING', `🧠 AI Dispatching to ${vault.provider} Models`);
 
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
-      const rawSuggestions = await aiDriver.analyzeCode(
-        filteredDiff,
-        repoConfig.guidelines,
-        context,
+      const rawSuggestions = await guard(
+        aiDriver.analyzeCode(
+          filteredDiff,
+          repoConfig.guidelines,
+          context,
+          { signal: abort.signal },
+        ),
       );
 
       // The provider call is the step most likely to overrun, so this is the
@@ -232,7 +266,11 @@ export const analysisWorker = new Worker(
           await advanceReview(jobId, userId, 'POSTING', `📬 Injecting Inline Comments onto GitHub PR`);
 
           for (const suggestion of suggestions) {
-            const result = await ghService.createReviewComment(
+            // The deadline can fire between comments; re-check cheaply so an
+            // abandoned review stops touching the PR partway through delivery.
+            if (superseded) await assertNotSuperseded();
+
+            const result = await guard(ghService.createReviewComment(
               owner,
               repo,
               prNum,
@@ -240,7 +278,7 @@ export const analysisWorker = new Worker(
               suggestion.filePath,
               suggestion.lineNumber,
               renderInlineComment(suggestion)
-            );
+            ));
 
             if (result && result.ok === false) {
               commentFailures.push(
@@ -295,7 +333,7 @@ export const analysisWorker = new Worker(
             findingsSection,
           ].join('\n');
 
-          const summaryResult = await ghService.createIssueComment(owner, repo, prNum, summaryMarkdown);
+          const summaryResult = await guard(ghService.createIssueComment(owner, repo, prNum, summaryMarkdown));
           summaryPosted = !summaryResult || summaryResult.ok !== false;
         }
       }

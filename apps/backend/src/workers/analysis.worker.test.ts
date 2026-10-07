@@ -89,6 +89,7 @@ vi.mock('../config/socket', () => ({
 }));
 
 import './analysis.worker';
+import { REVIEW_TIMEOUT_MS } from '../utils/constants';
 
 function makeJobPayload(overrides: Record<string, any> = {}) {
   return {
@@ -488,5 +489,40 @@ describe('analysis worker — cancellation and timeout', () => {
 
     const statuses = mockJobUpdate.mock.calls.map((c: any[]) => c[0]?.data?.status);
     expect(statuses).not.toContain('SKIPPED');
+  });
+
+  it('passes an abort signal to the provider so a stale model call can be cancelled', async () => {
+    reviewWithFindings();
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    const options = mockAnalyzeCode.mock.calls[0][3];
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('releases the worker slot when the model call hangs past the deadline', async () => {
+    // Regression: the timeout used to only rewrite the job status. A provider
+    // request that never settled kept the await pending forever, so the worker
+    // slot was never freed and eventually every slot was consumed.
+    vi.useFakeTimers();
+    try {
+      mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+      mockFetchDiff.mockResolvedValueOnce('diff --git a/foo b/foo\n+ x');
+      mockAnalyzeCode.mockReturnValueOnce(new Promise<never>(() => {}));
+
+      const run = capturedHandler.fn!(makeJobPayload());
+      // Attach the rejection handler before advancing: the deadline fires while
+      // the timers flush, and an unhandled rejection would otherwise be reported.
+      const assertion = expect(run).rejects.toThrow();
+      await vi.advanceTimersByTimeAsync(REVIEW_TIMEOUT_MS + 1);
+
+      await assertion;
+
+      const statuses = mockJobUpdate.mock.calls.map((c: any[]) => c[0]?.data?.status);
+      expect(statuses).toContain('TIMEOUT');
+      expect(mockCreateReviewComment).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -144,8 +144,17 @@ export class GitHubService {
    * Head commit SHA of the default branch — used by the repo poller to detect
    * pushes on webhook-less repos.
    */
-  async getLatestCommitSha(owner: string, repo: string): Promise<string | undefined> {
-    const { data } = await this.octokit.repos.listCommits({ owner, repo, per_page: 1 });
+  async getLatestCommitSha(
+    owner: string,
+    repo: string,
+    branch?: string,
+  ): Promise<string | undefined> {
+    const { data } = await this.octokit.repos.listCommits({
+      owner,
+      repo,
+      ...(branch ? { sha: branch } : {}),
+      per_page: 1,
+    });
     return data[0]?.sha;
   }
 

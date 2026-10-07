@@ -3,6 +3,7 @@ import { analysisQueue } from '../config/queue';
 import prisma from '../config/prisma';
 import { QuotaService } from '../services/quota.service';
 import { GitHubAppService } from '../services/github-app.service';
+import { RepositoryContextCache } from '../services/repository-context-cache.service';
 
 export class WebhookController {
   static async handleGitHubEvent(req: Request, res: Response) {
@@ -271,6 +272,19 @@ export class WebhookController {
       });
       console.log(`🎉 New GitHub App installation registered: ${accountLogin} (ID: ${installation.id})`);
     } else if (action === 'deleted' && prisma.installation?.deleteMany) {
+      // The installation -> repository relation is onDelete: SetNull, so deleting
+      // the installation neither removes repositories nor their cached code.
+      // Clear the cached context first, while the link still exists.
+      if (prisma.repository?.findMany) {
+        const repos = await prisma.repository.findMany({
+          where: { installation: { githubInstallationId } },
+          select: { id: true },
+        });
+        const cache = new RepositoryContextCache();
+        for (const repo of repos) {
+          await cache.clearRepository(repo.id);
+        }
+      }
       await prisma.installation.deleteMany({
         where: { githubInstallationId },
       });
@@ -309,6 +323,7 @@ export class WebhookController {
               isPrivate: Boolean(repo.private),
               isActive: true,
               installationId: dbInstallation.id,
+              defaultBranch: repo.default_branch ?? null,
             },
             create: {
               id: `repo-github-${repo.id}`,
@@ -318,13 +333,24 @@ export class WebhookController {
               fullName: repo.full_name,
               isPrivate: Boolean(repo.private),
               isActive: true,
+              defaultBranch: repo.default_branch ?? null,
             },
           });
         }
       }
     } else if (action === 'removed' && Array.isArray(payload.repositories_removed)) {
+      const cache = new RepositoryContextCache();
       for (const repo of payload.repositories_removed) {
         if (prisma.repository?.updateMany) {
+          // Removing a repository deletes the code we copied from it. Retention
+          // is indefinite, so deactivation alone would keep those rows forever.
+          const affected = await prisma.repository.findMany({
+            where: { githubRepoId: BigInt(repo.id) },
+            select: { id: true },
+          });
+          for (const row of affected) {
+            await cache.clearRepository(row.id);
+          }
           await prisma.repository.updateMany({
             where: { githubRepoId: BigInt(repo.id) },
             data: { isActive: false },

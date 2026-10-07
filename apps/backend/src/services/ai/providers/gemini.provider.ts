@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 
 export class GeminiProvider extends BaseAiProvider {
@@ -14,6 +14,7 @@ export class GeminiProvider extends BaseAiProvider {
     diff: string,
     customRules: string[] = [],
     context?: ReviewContext,
+    options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]> {
     try {
       // 1. Initialize modern ultra-performant model
@@ -36,7 +37,7 @@ export class GeminiProvider extends BaseAiProvider {
         ${diff}
       `;
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent(prompt, { signal: options?.signal });
       const responseText = result.response.text();
 
       const rawData = JSON.parse(responseText);

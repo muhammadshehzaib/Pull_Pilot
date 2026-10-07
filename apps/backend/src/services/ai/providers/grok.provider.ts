@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 import { GROK_BASE_URL, GROK_MODEL } from '../../../utils/constants';
 
@@ -16,6 +16,7 @@ export class GrokProvider extends BaseAiProvider {
     diff: string,
     customRules: string[] = [],
     context?: ReviewContext,
+    options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]> {
     try {
       const contextBlock = this.renderContext(context);
@@ -27,7 +28,7 @@ export class GrokProvider extends BaseAiProvider {
           { role: 'user', content: `${contextBlock}Here is the code diff:\n\n${diff}` },
         ],
         response_format: { type: 'json_object' },
-      });
+      }, { signal: options?.signal });
 
       const content = response.choices[0].message.content || '{}';
       const rawData = JSON.parse(content);

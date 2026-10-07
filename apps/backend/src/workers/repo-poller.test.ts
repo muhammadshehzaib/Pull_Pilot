@@ -65,6 +65,15 @@ describe('repo poller — default branch', () => {
     });
   });
 
+  it('polls the stored default branch when one is known', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([repoRow({ defaultBranch: 'develop' })]);
+    const gh = fakeGitHub({ headSha: 'sha-A' });
+
+    await pollRepositoriesOnce(gh);
+
+    expect(gh.getLatestCommitSha).toHaveBeenCalledWith('octo', 'cat', 'develop');
+  });
+
   it('queues a PUSH review for the range since the last seen head', async () => {
     mockRepoFindMany.mockResolvedValueOnce([repoRow({ lastScannedSha: 'sha-A' })]);
 

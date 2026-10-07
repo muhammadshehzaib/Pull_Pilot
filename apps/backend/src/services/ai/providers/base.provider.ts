@@ -9,6 +9,17 @@ export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
 
 /**
+ * Per-request options shared by every provider.
+ *
+ * `signal` lets the worker cancel an in-flight model call when a review is
+ * cancelled or exceeds its time budget. Without it a hung request would keep
+ * its worker slot occupied until the SDK's own socket timeout.
+ */
+export interface AnalyzeOptions {
+  signal?: AbortSignal;
+}
+
+/**
  * Ceiling on the context block that accompanies a diff.
  *
  * Context competes with the diff for the prompt budget. Keeping it bounded
@@ -36,6 +47,7 @@ export abstract class BaseAiProvider {
     diff: string,
     customRules?: string[],
     context?: ReviewContext,
+    options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]>;
 
   /**

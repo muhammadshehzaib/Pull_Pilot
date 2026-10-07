@@ -11,6 +11,7 @@ type PolledRepo = {
   isPrivate: boolean;
   installationId: string | null;
   installation: { githubInstallationId: bigint } | null;
+  defaultBranch: string | null;
   lastScannedSha: string | null;
   user: { id: string; username: string };
 };
@@ -47,7 +48,11 @@ export async function pollRepositoriesOnce(gh?: GitHubService) {
         ));
 
       // 1. Default branch: review anything pushed since the last seen head.
-      const head = await github.getLatestCommitSha(owner, name);
+      const head = await github.getLatestCommitSha(
+        owner,
+        name,
+        repo.defaultBranch ?? undefined,
+      );
       if (head && head !== repo.lastScannedSha) {
         if (repo.lastScannedSha) {
           await queueReview(repo, 'PUSH', head, {

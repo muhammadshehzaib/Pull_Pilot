@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { GitHubService } from '../services/github.service';
 import { GitHubAppService } from '../services/github-app.service';
+import { RepositoryContextCache } from '../services/repository-context-cache.service';
 import { analysisQueue } from '../config/queue';
 import { BACKEND_URL } from '../utils/constants';
 
@@ -72,6 +73,9 @@ export class RepositoryController {
       if (typeof ghRepo.private === 'boolean') {
         updateData.isPrivate = ghRepo.private;
       }
+      if (ghRepo.default_branch) {
+        updateData.defaultBranch = ghRepo.default_branch;
+      }
 
       const createData: any = {
         userId: req.auth!.userId,
@@ -82,6 +86,9 @@ export class RepositoryController {
       };
       if (typeof ghRepo.private === 'boolean') {
         createData.isPrivate = ghRepo.private;
+      }
+      if (ghRepo.default_branch) {
+        createData.defaultBranch = ghRepo.default_branch;
       }
 
       const dbRepo = existing
@@ -131,6 +138,11 @@ export class RepositoryController {
       data: { isActive: false, webhookId: null },
     });
 
+    // Disconnecting a repository is the promise to delete the code we copied
+    // from it. Deactivating alone leaves every cached file in the database
+    // forever under indefinite retention, so drop the cached context here.
+    await new RepositoryContextCache().clearRepository(repo.id);
+
     return res.json({ status: 'OK' });
   }
 
@@ -145,7 +157,9 @@ export class RepositoryController {
     if (!repo) return res.status(404).json({ error: 'Repository not found or inactive' });
 
     const [owner, name] = repo.fullName.split('/');
-    if (!pullNumber && !(headSha && baseSha) && !branch) {
+    // A bare audit request (no PR, no explicit SHAs, no branch) falls back to
+    // the repository's stored default branch rather than being rejected.
+    if (!pullNumber && !(headSha && baseSha) && !branch && !repo.defaultBranch) {
       return res.status(400).json({
         error: 'Either pullNumber, (headSha and baseSha), or branch must be provided',
       });
@@ -170,8 +184,13 @@ export class RepositoryController {
         resolvedHead = headSha;
         resolvedBase = baseSha;
       } else {
-        // Audit branch (default branch such as main or master, or user specified branch)
-        const commitInfo = await gh.getLatestCommitWithParent(owner, name, branch);
+        // Audit branch: the user-specified branch, else the stored default
+        // branch, else let GitHub resolve it (main/master fallback).
+        const commitInfo = await gh.getLatestCommitWithParent(
+          owner,
+          name,
+          branch || repo.defaultBranch || undefined,
+        );
         eventType = 'PUSH';
         referenceId = commitInfo.headSha;
         resolvedHead = commitInfo.headSha;

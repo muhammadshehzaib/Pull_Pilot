@@ -154,7 +154,11 @@ export class RepositoryContextCache {
     return result.count;
   }
 
-  /** Test seam. Clears all cached content for a repository. */
+  /**
+   * Deletes all cached content for a repository. Called on every disconnect
+   * path (dashboard deactivation, repository removed from the installation,
+   * and app uninstall) since indefinite retention means nothing else expires.
+   */
   async clearRepository(repositoryId: string): Promise<void> {
     await prisma.cachedFile.deleteMany({ where: { repositoryId } });
   }

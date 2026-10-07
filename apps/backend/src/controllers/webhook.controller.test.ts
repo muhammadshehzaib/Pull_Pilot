@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
   mockRepoFindFirst,
+  mockRepoFindMany,
   mockRepoCreate,
   mockRepoUpdate,
   mockRepoUpdateMany,
@@ -11,8 +12,10 @@ const {
   mockInstallationUpsert,
   mockInstallationDeleteMany,
   mockInstallationFindUnique,
+  mockCachedFileDeleteMany,
 } = vi.hoisted(() => ({
   mockRepoFindFirst: vi.fn(),
+  mockRepoFindMany: vi.fn(),
   mockRepoCreate: vi.fn(),
   mockRepoUpdate: vi.fn(),
   mockRepoUpdateMany: vi.fn(),
@@ -22,12 +25,14 @@ const {
   mockInstallationUpsert: vi.fn(),
   mockInstallationDeleteMany: vi.fn(),
   mockInstallationFindUnique: vi.fn(),
+  mockCachedFileDeleteMany: vi.fn(),
 }));
 
 vi.mock('../config/prisma', () => ({
   default: {
     repository: {
       findFirst: mockRepoFindFirst,
+      findMany: mockRepoFindMany,
       create: mockRepoCreate,
       update: mockRepoUpdate,
       updateMany: mockRepoUpdateMany,
@@ -40,6 +45,7 @@ vi.mock('../config/prisma', () => ({
     },
     analysisJob: { create: mockJobCreate },
     usageLedger: { upsert: vi.fn() },
+    cachedFile: { deleteMany: mockCachedFileDeleteMany },
   },
 }));
 
@@ -52,6 +58,7 @@ import { mockReq, mockRes } from '../test-utils/express-mocks';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRepoFindMany.mockResolvedValue([]);
 });
 
 describe('WebhookController.handleGitHubEvent — ping', () => {
@@ -114,6 +121,90 @@ describe('WebhookController.handleGitHubEvent — installation', () => {
     expect(mockInstallationDeleteMany).toHaveBeenCalledWith({
       where: { githubInstallationId: BigInt(55555) },
     });
+  });
+
+  it('clears cached code for the installation repositories before deleting it', async () => {
+    // The installation -> repository relation is onDelete: SetNull, so deleting
+    // the installation leaves repositories (and their copied code) behind.
+    // The cache must be cleared first, while the link still exists.
+    mockRepoFindMany.mockResolvedValueOnce([{ id: 'r1' }, { id: 'r2' }]);
+
+    const req = mockReq({
+      headers: { 'x-github-event': 'installation' },
+      body: { action: 'deleted', installation: { id: 55555, account: { login: 'my-org' } } },
+    });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(mockRepoFindMany).toHaveBeenCalledWith({
+      where: { installation: { githubInstallationId: BigInt(55555) } },
+      select: { id: true },
+    });
+    expect(mockCachedFileDeleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'r1' } });
+    expect(mockCachedFileDeleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'r2' } });
+    expect(mockInstallationDeleteMany).toHaveBeenCalledWith({
+      where: { githubInstallationId: BigInt(55555) },
+    });
+  });
+
+  it('still deletes the installation when it has no repositories', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([]);
+
+    const req = mockReq({
+      headers: { 'x-github-event': 'installation' },
+      body: { action: 'deleted', installation: { id: 55555, account: { login: 'my-org' } } },
+    });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(mockCachedFileDeleteMany).not.toHaveBeenCalled();
+    expect(mockInstallationDeleteMany).toHaveBeenCalled();
+  });
+});
+
+describe('WebhookController.handleGitHubEvent — installation_repositories', () => {
+  const installationReposBody = (action: string, repos: unknown[]) => ({
+    action,
+    installation: { id: 55555 },
+    [`repositories_${action}`]: repos,
+  });
+
+  it('clears cached code and deactivates a repository removed from the installation', async () => {
+    mockInstallationFindUnique.mockResolvedValueOnce({ id: 'inst-1', userId: 'u-1' });
+    mockRepoFindMany.mockResolvedValueOnce([{ id: 'r1' }]);
+
+    const req = mockReq({
+      headers: { 'x-github-event': 'installation_repositories' },
+      body: installationReposBody('removed', [{ id: 123, full_name: 'o/r' }]),
+    });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(mockCachedFileDeleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'r1' } });
+    expect(mockRepoUpdateMany).toHaveBeenCalledWith({
+      where: { githubRepoId: BigInt(123) },
+      data: { isActive: false },
+    });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('does not clear anything when repositories are added', async () => {
+    mockInstallationFindUnique.mockResolvedValueOnce({ id: 'inst-1', userId: 'u-1' });
+    mockRepoUpsert.mockResolvedValueOnce({});
+
+    const req = mockReq({
+      headers: { 'x-github-event': 'installation_repositories' },
+      body: installationReposBody('added', [{ id: 777, full_name: 'o/new', private: false }]),
+    });
+    const res = mockRes();
+
+    await WebhookController.handleGitHubEvent(req, res);
+
+    expect(mockCachedFileDeleteMany).not.toHaveBeenCalled();
+    expect(mockRepoUpsert).toHaveBeenCalled();
   });
 });
 

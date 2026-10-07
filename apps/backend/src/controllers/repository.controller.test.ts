@@ -7,10 +7,12 @@ const {
   mockRepoUpdate,
   mockJobCreate,
   mockQueueAdd,
+  mockCachedFileDeleteMany,
   mockGetRepo,
   mockCreateWebhook,
   mockDeleteWebhook,
   mockGetPullRequest,
+  mockGetLatestCommitWithParent,
   GitHubServiceCtor,
 } = vi.hoisted(() => {
   const mockRepoFindMany = vi.fn();
@@ -19,16 +21,19 @@ const {
   const mockRepoUpdate = vi.fn();
   const mockJobCreate = vi.fn();
   const mockQueueAdd = vi.fn();
+  const mockCachedFileDeleteMany = vi.fn();
   const mockGetRepo = vi.fn();
   const mockCreateWebhook = vi.fn();
   const mockDeleteWebhook = vi.fn();
   const mockGetPullRequest = vi.fn();
+  const mockGetLatestCommitWithParent = vi.fn();
 
   const GitHubServiceCtor = vi.fn(function (this: any) {
     this.getRepo = mockGetRepo;
     this.createWebhook = mockCreateWebhook;
     this.deleteWebhook = mockDeleteWebhook;
     this.getPullRequest = mockGetPullRequest;
+    this.getLatestCommitWithParent = mockGetLatestCommitWithParent;
   });
 
   return {
@@ -38,10 +43,12 @@ const {
     mockRepoUpdate,
     mockJobCreate,
     mockQueueAdd,
+    mockCachedFileDeleteMany,
     mockGetRepo,
     mockCreateWebhook,
     mockDeleteWebhook,
     mockGetPullRequest,
+    mockGetLatestCommitWithParent,
     GitHubServiceCtor,
   };
 });
@@ -55,6 +62,7 @@ vi.mock('../config/prisma', () => ({
       update: mockRepoUpdate,
     },
     analysisJob: { create: mockJobCreate },
+    cachedFile: { deleteMany: mockCachedFileDeleteMany },
   },
 }));
 
@@ -129,6 +137,27 @@ describe('RepositoryController.register — happy path', () => {
     expect(res.status).toHaveBeenCalledWith(201);
     const out = res.json.mock.calls[0][0];
     expect(out.repository.githubRepoId).toBe('99');
+  });
+
+  it('persists the repository default branch from GitHub', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(null);
+    mockGetRepo.mockResolvedValueOnce({ id: 99, default_branch: 'develop' });
+    mockCreateWebhook.mockResolvedValueOnce('hook-1');
+    mockRepoCreate.mockResolvedValueOnce({
+      id: 'r-new',
+      fullName: 'octo/cat',
+      githubRepoId: BigInt(99),
+      defaultBranch: 'develop',
+    });
+
+    const req = authedReq({ body: { fullName: 'octo/cat' } });
+    const res = mockRes();
+
+    await RepositoryController.register(req, res);
+
+    expect(mockRepoCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({ defaultBranch: 'develop' }),
+    });
   });
 
   it('still connects the repo (webhookId null + warning) when GitHub rejects a non-public webhook URL', async () => {
@@ -274,6 +303,20 @@ describe('RepositoryController.deactivate', () => {
     expect(res.json).toHaveBeenCalledWith({ status: 'OK' });
   });
 
+  it('deletes the cached code so disconnect actually removes the copied source', async () => {
+    // Retention is indefinite, so deactivation alone would keep the copied
+    // files forever. Disconnect must drop them.
+    mockRepoFindFirst.mockResolvedValueOnce({ id: 'r1', fullName: 'o/r', webhookId: null });
+    mockRepoUpdate.mockResolvedValueOnce({});
+
+    const req = authedReq({ params: { id: 'r1' } });
+    const res = mockRes();
+
+    await RepositoryController.deactivate(req, res);
+
+    expect(mockCachedFileDeleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'r1' } });
+  });
+
   it('still deactivates in DB when GitHub webhook delete fails (best-effort)', async () => {
     mockRepoFindFirst.mockResolvedValueOnce({
       id: 'r1',
@@ -332,6 +375,33 @@ describe('RepositoryController.triggerAnalysis', () => {
     );
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job-1', status: 'QUEUED' });
+  });
+
+  it('audits the stored default branch for a bare audit request', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce({
+      id: 'r1',
+      fullName: 'o/r',
+      isActive: true,
+      defaultBranch: 'main',
+    });
+    mockGetLatestCommitWithParent.mockResolvedValueOnce({
+      headSha: 'h',
+      baseSha: 'b',
+      branch: 'main',
+    });
+    mockJobCreate.mockResolvedValueOnce({ id: 'job-branch' });
+
+    const req = authedReq({ params: { id: 'r1' }, body: {} });
+    const res = mockRes();
+
+    await RepositoryController.triggerAnalysis(req, res);
+
+    expect(mockGetLatestCommitWithParent).toHaveBeenCalledWith('o', 'r', 'main');
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      'manual-PUSH-h',
+      expect.objectContaining({ payloadSnapshot: { headSha: 'h', baseSha: 'b' } }),
+    );
+    expect(res.status).toHaveBeenCalledWith(202);
   });
 
   it('accepts an explicit { headSha, baseSha } pair as a PUSH job', async () => {

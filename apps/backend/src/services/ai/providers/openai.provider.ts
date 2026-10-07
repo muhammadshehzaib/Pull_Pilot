@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 
 export class OpenAiProvider extends BaseAiProvider {
@@ -14,6 +14,7 @@ export class OpenAiProvider extends BaseAiProvider {
     diff: string,
     customRules: string[] = [],
     context?: ReviewContext,
+    options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]> {
     try {
       const contextBlock = this.renderContext(context);
@@ -25,7 +26,7 @@ export class OpenAiProvider extends BaseAiProvider {
           { role: 'user', content: `${contextBlock}Here is the code diff:\n\n${diff}` }
         ],
         response_format: { type: 'json_object' }, // Enforce output structure parity
-      });
+      }, { signal: options?.signal });
 
       const content = response.choices[0].message.content || '{}';
       

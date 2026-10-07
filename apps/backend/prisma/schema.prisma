@@ -106,6 +106,7 @@ model Repository {
   isPrivate      Boolean       @default(false)
   webhookId      String?
   isActive       Boolean       @default(true)
+  defaultBranch  String?       // e.g. "main" or "master"; used for push/branch audits
   lastScannedSha String?       // default-branch head last seen by the repo poller (webhook-less repos)
   createdAt      DateTime      @default(now())
   analysisJobs   AnalysisJob[]
@@ -118,9 +119,12 @@ model Repository {
 /// content is stored once and never refetched. Used to assemble review context
 /// beyond the diff.
 ///
-/// This holds customer source code, so rows are deliberately ephemeral: a
-/// sweeper deletes everything past `expiresAt`. Keeping it content-addressed
-/// also means a rebase or an unrelated commit does not create a new row.
+/// This holds customer source code, so rows are deleted the moment their
+/// repository is disconnected (removed from the installation, uninstalled, or
+/// deactivated from the dashboard). A sweeper additionally deletes anything
+/// past `expiresAt` when a finite retention window is configured. Keeping it
+/// content-addressed also means a rebase or an unrelated commit does not
+/// create a new row.
 model CachedFile {
   id            String     @id @default(uuid())
   repositoryId  String

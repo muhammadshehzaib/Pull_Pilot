@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 import { CLAUDE_MODEL } from '../../../utils/constants';
 
@@ -15,6 +15,7 @@ export class ClaudeProvider extends BaseAiProvider {
     diff: string,
     customRules: string[] = [],
     context?: ReviewContext,
+    options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]> {
     try {
       const systemPrompt = this.getSystemPrompt(customRules);
@@ -29,7 +30,7 @@ export class ClaudeProvider extends BaseAiProvider {
           // first, then the change it is meant to judge.
           { role: 'user', content: `${contextBlock}Here is the GIT DIFF to review:\n\n${diff}` },
         ],
-      });
+      }, { signal: options?.signal });
 
       const textBlock = response.content.find((b) => b.type === 'text');
       const raw = textBlock && 'text' in textBlock ? textBlock.text : '';
