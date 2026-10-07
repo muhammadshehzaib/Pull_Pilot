@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, Key, GitBranch, LogOut, History } from 'lucide-react';
+import { Activity, Key, GitBranch, LogOut, History, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
 import { AuthUser } from '../lib/useAuth';
 import { BrandLogo } from './BrandLogo';
@@ -22,6 +22,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', Icon: Activity },
   { href: '/repositories', label: 'Repositories', Icon: GitBranch },
+  { href: '/rules', label: 'Engineering Rules', Icon: ShieldCheck },
   { href: '/history', label: 'History', Icon: History },
   { href: '/vault', label: 'API Key Vault', Icon: Key },
 ];

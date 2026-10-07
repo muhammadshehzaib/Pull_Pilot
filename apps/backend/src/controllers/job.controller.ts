@@ -115,7 +115,13 @@ export class JobController {
         id: String(req.params.id),
         repository: { userId: req.auth!.userId },
       },
-      include: { repository: { select: { id: true, fullName: true } } },
+      include: {
+        repository: { select: { id: true, fullName: true } },
+        // Per-rule pass/fail records for this job, oldest first. Rows outlive
+        // the rule they describe (ruleId goes null, ruleName is snapshotted),
+        // so this is the durable enforcement history either way.
+        ruleChecks: { orderBy: { createdAt: 'asc' } },
+      },
     });
 
     if (!job) return res.status(404).json({ error: 'Job not found' });

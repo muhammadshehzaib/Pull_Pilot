@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { GitBranch, Plus, Trash2, Play, ExternalLink, History } from 'lucide-react';
+import { GitBranch, Plus, Trash2, Play, ExternalLink, History, ShieldCheck } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
@@ -274,6 +274,13 @@ export default function RepositoriesPage() {
                     </a>
                     {r.isActive && (
                       <>
+                        <Link
+                          href={`/rules?repo=${r.id}`}
+                          className="btn-secondary"
+                          title="Engineering Rules"
+                        >
+                          <ShieldCheck size={14} /> Rules
+                        </Link>
                         <Link
                           href={ROUTES.HISTORY}
                           className="btn-secondary"

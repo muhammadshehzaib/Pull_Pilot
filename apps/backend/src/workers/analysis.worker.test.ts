@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * handler that the source code passes in, and then invoke it directly with
  * fake job payloads.
  */
-const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
+const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockRuleFindMany, mockRuleCheckCreateMany, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
   const capturedHandler: { fn?: (job: any) => Promise<any> } = {};
 
   const WorkerMock = vi.fn(function (this: any, _name: string, handler: any) {
@@ -18,6 +18,9 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoF
   // Read by advanceReview() to decide whether a transition moves the job forward.
   const mockJobFindUnique = vi.fn();
   const mockRepoFindUnique = vi.fn();
+  // DB-stored engineering rules: fetched before analysis, results written after.
+  const mockRuleFindMany = vi.fn();
+  const mockRuleCheckCreateMany = vi.fn();
   const mockDecrypt = vi.fn();
   const mockFetchDiff = vi.fn();
   const mockCreateReviewComment = vi.fn();
@@ -38,6 +41,8 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoF
     mockJobUpdate,
     mockJobFindUnique,
     mockRepoFindUnique,
+    mockRuleFindMany,
+    mockRuleCheckCreateMany,
     mockDecrypt,
     mockFetchDiff,
     mockCreateReviewComment,
@@ -69,6 +74,8 @@ vi.mock('../config/prisma', () => ({
   default: {
     analysisJob: { update: mockJobUpdate, findUnique: mockJobFindUnique },
     repository: { findUnique: mockRepoFindUnique },
+    repositoryRule: { findMany: mockRuleFindMany },
+    ruleCheck: { createMany: mockRuleCheckCreateMany },
   },
 }));
 
@@ -125,6 +132,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockDecrypt.mockReturnValue('sk-decrypted');
   mockGetProvider.mockReturnValue({ analyzeCode: mockAnalyzeCode });
+  // Default: no DB-stored rules, so reviews behave exactly as before they
+  // existed unless a test opts in.
+  mockRuleFindMany.mockResolvedValue([]);
+  mockRuleCheckCreateMany.mockResolvedValue({ count: 0 });
   // Default: the job has not entered the pipeline, so every advanceReview()
   // transition is a forward move and gets persisted.
   mockJobFindUnique.mockResolvedValue({ status: 'QUEUED' });
@@ -524,5 +535,136 @@ describe('analysis worker — cancellation and timeout', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('analysis worker — repository rules', () => {
+  const deterministicRule = {
+    id: 'rule-1',
+    name: 'No eval',
+    description: 'eval() is forbidden anywhere in application code',
+    guideline: null,
+    pattern: 'eval\\(',
+    severity: 'HIGH',
+    category: 'SECURITY',
+    enforcement: 'DETERMINISTIC',
+    enabled: true,
+  };
+
+  const llmRule = {
+    id: 'rule-2',
+    name: 'Changelog entries',
+    description: null,
+    guideline: 'Every user-facing change must add a CHANGELOG entry.',
+    pattern: null,
+    severity: 'LOW',
+    category: 'MAINTAINABILITY',
+    enforcement: 'LLM',
+    enabled: true,
+  };
+
+  // A real unified diff: the added line sits at new-file line 2.
+  const diffWithEval =
+    'diff --git a/src/app.ts b/src/app.ts\n' +
+    '--- a/src/app.ts\n' +
+    '+++ b/src/app.ts\n' +
+    '@@ -1,3 +1,4 @@\n' +
+    ' const a = 1;\n' +
+    '+eval(userInput);\n' +
+    ' console.log(a);';
+
+  it('posts a deterministic rule violation as an inline comment even when the model reports nothing', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockRuleFindMany.mockResolvedValueOnce([deterministicRule]);
+    mockFetchDiff.mockResolvedValueOnce(diffWithEval);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+
+    expect(result).toEqual({ status: 'success', findingCount: 1 });
+    expect(mockCreateReviewComment).toHaveBeenCalledOnce();
+    const [owner, repo, prNum, sha, path, line] = mockCreateReviewComment.mock.calls[0];
+    expect([owner, repo, prNum, sha]).toEqual(['octo', 'cat', 42, 'head-sha']);
+    expect(path).toBe('src/app.ts');
+    expect(line).toBe(2);
+  });
+
+  it('records a per-rule FAIL with the violation count and stores it on the job', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockRuleFindMany.mockResolvedValueOnce([deterministicRule, llmRule]);
+    mockFetchDiff.mockResolvedValueOnce(diffWithEval);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    expect(mockRuleCheckCreateMany).toHaveBeenCalledTimes(1);
+    const payload = mockRuleCheckCreateMany.mock.calls[0][0];
+    expect(payload.skipDuplicates).toBe(true);
+    expect(payload.data).toEqual([
+      { analysisJobId: 'job-1', ruleId: 'rule-1', ruleName: 'No eval', status: 'FAIL', violationCount: 1 },
+      // LLM-only rules cannot be judged deterministically — recorded as
+      // SKIPPED rather than invented as PASS or FAIL.
+      { analysisJobId: 'job-1', ruleId: 'rule-2', ruleName: 'Changelog entries', status: 'SKIPPED', violationCount: 0 },
+    ]);
+
+    const finalResults = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+    expect(finalResults.ruleChecks).toHaveLength(2);
+    expect(finalResults.ruleChecks[0]).toMatchObject({ status: 'FAIL', violationCount: 1 });
+  });
+
+  it('records PASS when a deterministic rule matches nothing in the diff', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockRuleFindMany.mockResolvedValueOnce([deterministicRule]);
+    mockFetchDiff.mockResolvedValueOnce('diff body that is long enough');
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    const payload = mockRuleCheckCreateMany.mock.calls[0][0];
+    expect(payload.data).toEqual([
+      { analysisJobId: 'job-1', ruleId: 'rule-1', ruleName: 'No eval', status: 'PASS', violationCount: 0 },
+    ]);
+    // Nothing matched, so no comment is placed for this rule.
+    expect(mockCreateReviewComment).not.toHaveBeenCalled();
+  });
+
+  it('merges DB rule guidelines into the prompt alongside .aipr.yml guidelines', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockRuleFindMany.mockResolvedValueOnce([deterministicRule, llmRule]);
+    mockFetchDiff.mockResolvedValueOnce(diffWithEval);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    const guidelines = mockAnalyzeCode.mock.calls[0][1];
+    // The deterministic rule's pattern is regex soup, not prompt wording —
+    // only the LLM-enforced rule reaches the model.
+    expect(guidelines).toEqual(['[Changelog entries] Every user-facing change must add a CHANGELOG entry.']);
+  });
+
+  it('does not filter deterministic violations by min_severity', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    // The model's finding sits below the default threshold; the rule's INFO
+    // violation must still survive, because the user asked for that rule
+    // explicitly.
+    mockRuleFindMany.mockResolvedValueOnce([{ ...deterministicRule, severity: 'INFO' }]);
+    mockFetchDiff.mockResolvedValueOnce(diffWithEval);
+    mockAnalyzeCode.mockResolvedValueOnce([
+      { filePath: 'src/app.ts', lineNumber: 1, agentType: 'STYLE', issue: 'i', suggestion: 's', priority: 'INFO' },
+    ]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+
+    expect(result.findingCount).toBe(1);
+    expect(mockCreateReviewComment).toHaveBeenCalledOnce();
+    expect(mockCreateReviewComment.mock.calls[0][4]).toBe('src/app.ts');
+    expect(mockCreateReviewComment.mock.calls[0][5]).toBe(2);
   });
 });

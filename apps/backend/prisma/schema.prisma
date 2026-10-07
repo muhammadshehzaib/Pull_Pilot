@@ -111,8 +111,99 @@ model Repository {
   createdAt      DateTime      @default(now())
   analysisJobs   AnalysisJob[]
   cachedFiles    CachedFile[]
+  rules          RepositoryRule[]
 
   @@map("repositories")
+}
+
+/// Severity levels a stored rule can report, mirroring the AI finding
+/// taxonomy (finding-taxonomy.ts) so a rule's severity and a model finding's
+/// severity rank identically.
+enum FindingSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+/// Finding categories a stored rule can file violations under, mirroring
+/// finding-taxonomy.ts.
+enum FindingCategory {
+  SECURITY
+  BUG
+  CORRECTNESS
+  PERFORMANCE
+  ARCHITECTURE
+  MAINTAINABILITY
+  STYLE
+  TESTING
+}
+
+/// How a repository rule is enforced.
+///
+/// LLM            — wording handed to the model as an additional user rule.
+/// DETERMINISTIC  — regular expression checked against every added line in
+///                   the diff; no model judgement involved.
+/// BOTH           — injected into the prompt and checked deterministically.
+enum RuleEnforcement {
+  LLM
+  DETERMINISTIC
+  BOTH
+}
+
+/// An engineering rule configured per repository from the dashboard, kept in
+/// the database alongside (and merged with) .aipr.yml guidelines so a team can
+/// manage rules without committing a config file.
+model RepositoryRule {
+  id           String          @id @default(uuid())
+  repositoryId String
+  repository   Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  name         String
+  description  String?
+  /// Rule statement injected into the model prompt. Required for LLM/BOTH.
+  guideline    String?
+  /// JavaScript regular expression matched against added diff lines.
+  /// Required for DETERMINISTIC/BOTH; validated at write time.
+  pattern      String?
+  severity     FindingSeverity @default(MEDIUM)
+  category     FindingCategory @default(MAINTAINABILITY)
+  enforcement  RuleEnforcement @default(LLM)
+  enabled      Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  checks       RuleCheck[]
+
+  @@index([repositoryId])
+  @@map("repository_rules")
+}
+
+/// Outcome of one rule during one analysis job: PASS (no violating added
+/// lines), FAIL (at least one), or SKIPPED (LLM-only rule — pass/fail is the
+/// model's judgement, not a deterministic result).
+///
+/// `ruleName` is snapshotted so the record still reads sensibly after the
+/// rule itself is deleted (the FK then goes null).
+model RuleCheck {
+  id             String          @id @default(uuid())
+  analysisJobId  String
+  analysisJob    AnalysisJob     @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+  ruleId         String?
+  rule           RepositoryRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  ruleName       String
+  status         RuleCheckStatus
+  violationCount Int             @default(0)
+  createdAt      DateTime        @default(now())
+
+  @@unique([analysisJobId, ruleId])
+  @@index([ruleId])
+  @@map("rule_checks")
+}
+
+enum RuleCheckStatus {
+  PASS
+  FAIL
+  SKIPPED
 }
 
 /// A single file's content, encrypted, keyed by its Git blob SHA so identical
@@ -179,6 +270,7 @@ model AnalysisJob {
   commitSha    String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  ruleChecks   RuleCheck[]
 
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])

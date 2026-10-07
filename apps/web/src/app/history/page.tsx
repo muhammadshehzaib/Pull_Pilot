@@ -22,6 +22,12 @@ import {
   type EventType,
   type JobStatus,
 } from '../../lib/review';
+import {
+  CHECK_STATUS_COLORS,
+  CHECK_STATUS_LABELS,
+  summarizeChecks,
+  type RuleCheck,
+} from '../../lib/rules';
 
 export interface JobSummary {
   id: string;
@@ -38,6 +44,8 @@ interface JobDetail extends JobSummary {
   results: AiSuggestion[] | null;
   commentFailures?: CommentFailure[];
   summaryPosted?: boolean;
+  /** Per-rule PASS/FAIL/SKIPPED records written by the deterministic engine. */
+  ruleChecks?: RuleCheck[];
 }
 
 export default function HistoryPage() {
@@ -460,6 +468,57 @@ function JobDetailView({ job }: { job: JobDetail }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {job.ruleChecks && job.ruleChecks.length > 0 && (
+        <div className="glass-card" style={{ padding: '0.9rem 1rem' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '0.75rem',
+              flexWrap: 'wrap',
+              marginBottom: '0.6rem',
+            }}
+          >
+            <strong style={{ fontSize: '0.88rem' }}>📏 Repository rules</strong>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              {summarizeChecks(job.ruleChecks)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+            {job.ruleChecks.map((check) => (
+              <div
+                key={check.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem',
+                  fontSize: '0.82rem',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span
+                  style={{
+                    color: CHECK_STATUS_COLORS[check.status],
+                    fontWeight: 600,
+                    minWidth: 104,
+                  }}
+                >
+                  {check.status === 'PASS' ? '✓' : check.status === 'FAIL' ? '✗' : '•'}{' '}
+                  {CHECK_STATUS_LABELS[check.status]}
+                </span>
+                <span style={{ fontWeight: 500 }}>{check.ruleName}</span>
+                {check.status === 'FAIL' && (
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {check.violationCount} violating {check.violationCount === 1 ? 'line' : 'lines'}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

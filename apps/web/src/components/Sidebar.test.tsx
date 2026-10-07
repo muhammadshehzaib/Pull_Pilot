@@ -33,6 +33,7 @@ vi.mock('lucide-react', () => {
     GitBranch: stub('GitBranch'),
     LogOut: stub('LogOut'),
     History: stub('History'),
+    ShieldCheck: stub('ShieldCheck'),
   };
 });
 
@@ -56,11 +57,12 @@ describe('<Sidebar />', () => {
   });
 
   describe('rendering', () => {
-    it('renders all four nav links', () => {
+    it('renders all five nav links', () => {
       render(<Sidebar user={user} />);
 
       expect(screen.getByText('Dashboard')).toBeInTheDocument();
       expect(screen.getByText('Repositories')).toBeInTheDocument();
+      expect(screen.getByText('Engineering Rules')).toBeInTheDocument();
       expect(screen.getByText('History')).toBeInTheDocument();
       expect(screen.getByText('API Key Vault')).toBeInTheDocument();
     });

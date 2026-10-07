@@ -6,6 +6,7 @@ import { GitHubAppService } from '../services/github-app.service';
 import { AiProviderFactory } from '../services/ai/ai-factory';
 import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
+import { RulesService } from '../services/rules.service';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { buildReviewContext } from '../services/context-builder';
 import type { ReviewContext } from '../services/ai/context-prompt';
@@ -154,6 +155,17 @@ export const analysisWorker = new Worker(
       SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'FETCHING');
       const repoConfig = await guard(ConfigService.fetchRepoConfig(ghService, owner, repo, headSha));
 
+      // 5b. LOAD DB-STORED ENGINEERING RULES (dashboard-managed). These merge
+      //     with the .aipr.yml guidelines below: one combined prompt block for
+      //     the model, plus a deterministic pass that runs regardless of what
+      //     the model chooses to report.
+      const dbRules = await guard(
+        prisma.repositoryRule.findMany({
+          where: { repositoryId, enabled: true },
+          orderBy: { createdAt: 'asc' },
+        }),
+      );
+
       // 6. FETCH & FILTER RAW DIFF STREAM
       SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'FETCHING');
       const rawDiff = await guard(ghService.fetchDiff(owner, repo, baseSha, headSha));
@@ -177,6 +189,28 @@ export const analysisWorker = new Worker(
         SocketService.emitStatus(userId, jobId, `💨 All changed files matched ignore rules. No audit required.`, 'COMPLETED');
         return await prisma.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
       }
+
+      // 6b. DETERMINISTIC RULE ENGINE. Runs on the filtered diff — ignored
+      //     files are never scanned — before the model is called, so rule
+      //     violations exist even if the provider later fails or simply fails
+      //     to notice them. LLM-only rules yield SKIPPED check records.
+      const ruleEvaluation = RulesService.evaluateRules(dbRules, filteredDiff);
+      if (ruleEvaluation.checks.length > 0) {
+        const failed = ruleEvaluation.checks.filter((c) => c.status === 'FAIL').length;
+        console.log(
+          `📏 Repository rules: ${ruleEvaluation.checks.length} checked, ${failed} failed, ${ruleEvaluation.violations.length} violation(s).`,
+        );
+        SocketService.emitStatus(
+          userId,
+          jobId,
+          `📏 ${ruleEvaluation.checks.length} repository rule(s) checked — ${failed} failed`,
+          'ANALYZING',
+        );
+      }
+
+      // .aipr.yml guidelines first, then dashboard rules; the provider injects
+      // the combined list as "ADDITIONAL USER RULES TO ENFORCE".
+      const promptGuidelines = RulesService.mergeGuidelines(repoConfig.guidelines, dbRules);
 
       // 7. ENGAGE AI ENGINE VIA FACTORY
       console.log(`🧠 Contacting ${vault.provider} for Analysis Strategy...`);
@@ -210,7 +244,7 @@ export const analysisWorker = new Worker(
       const rawSuggestions = await guard(
         aiDriver.analyzeCode(
           filteredDiff,
-          repoConfig.guidelines,
+          promptGuidelines,
           context,
           { signal: abort.signal },
         ),
@@ -221,14 +255,41 @@ export const analysisWorker = new Worker(
       await assertNotSuperseded();
 
       // 8. FILTER SUGGESTIONS BY MIN_SEVERITY, DEDUPE, SORT MOST SEVERE FIRST
+      //
+      // Deterministic rule violations join the model's findings here. They are
+      // deliberately NOT passed through the min_severity filter: the user
+      // configured each of these rules explicitly, so the rule's own severity
+      // decides — dropping it behind a repo-wide threshold would make a
+      // DETERMINISTIC rule silently optional.
       const suggestions = sortBySeverity(
-        deduplicate(
-          rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
-        ),
+        deduplicate([
+          ...rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
+          ...ruleEvaluation.violations,
+        ]),
       );
 
-      console.log(`🎯 AI Analysis Finished! Found ${rawSuggestions.length} total, ${suggestions.length} meeting ${repoConfig.min_severity} severity threshold.`);
+      console.log(
+        `🎯 AI Analysis Finished! Found ${rawSuggestions.length} model finding(s) + ${ruleEvaluation.violations.length} rule violation(s); ${suggestions.length} total after dedupe (${repoConfig.min_severity} threshold applies to model findings only).`,
+      );
       await advanceReview(jobId, userId, 'GENERATING', `🎯 Scan Complete: ${suggestions.length} items flagged`);
+
+      // One record per rule per job: the durable pass/fail trail a model
+      // finding could never provide. skipDuplicates keeps a retried job from
+      // double-writing rows against the (job, rule) unique index.
+      if (ruleEvaluation.checks.length > 0) {
+        await guard(
+          prisma.ruleCheck.createMany({
+            data: ruleEvaluation.checks.map((check) => ({
+              analysisJobId: jobId,
+              ruleId: check.ruleId,
+              ruleName: check.ruleName,
+              status: check.status,
+              violationCount: check.violationCount,
+            })),
+            skipDuplicates: true,
+          }),
+        );
+      }
 
       // Persist the findings now, but not as COMPLETED: comments still have to
       // be delivered, and a crash during delivery must not read as a finished
@@ -241,6 +302,7 @@ export const analysisWorker = new Worker(
             ignoredFiles,
             includedFiles,
             config: repoConfig,
+            ruleChecks: ruleEvaluation.checks,
           } as any,
         },
       });
@@ -327,6 +389,17 @@ export const analysisWorker = new Worker(
               ? `- **Breakdown**: ${severityTally(suggestions)}`
               : '- **Breakdown**: no findings',
             `- **Files Reviewed**: ${includedFiles.length} files (${ignoredFiles.length} ignored via \`.aipr.yml\`)`,
+            ...(ruleEvaluation.checks.length > 0
+              ? [
+                  `- **Repository Rules**: ${ruleEvaluation.checks.length} checked — ${
+                    ruleEvaluation.checks.filter((c) => c.status === 'FAIL').length
+                  } failed, ${
+                    ruleEvaluation.checks.filter((c) => c.status === 'PASS').length
+                  } passed, ${
+                    ruleEvaluation.checks.filter((c) => c.status === 'SKIPPED').length
+                  } model-enforced only`,
+                ]
+              : []),
             `- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}`,
             '',
             '*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*',
@@ -356,6 +429,7 @@ export const analysisWorker = new Worker(
             ignoredFiles,
             includedFiles,
             config: repoConfig,
+            ruleChecks: ruleEvaluation.checks,
             commentFailures,
             summaryPosted,
           } as any,
