@@ -172,7 +172,7 @@ export function Footer() {
             <h4 className="footer-col-title">Product</h4>
             <ul className="footer-links-list">
               <li><a href="#demo">AI PR Reviewer</a></li>
-              <li><a href="#why-pullpilot">AST Security Scanner</a></li>
+              <li><a href="#why-pullpilot">Codebase Context Review</a></li>
               <li><a href="#why-pullpilot">Performance Auditor</a></li>
               <li><a href="#demo">Inline Diff Patches</a></li>
               <li><Link href="/pricing">Pricing Plans</Link></li>
@@ -208,7 +208,7 @@ export function Footer() {
             <h4 className="footer-col-title">Free Tools</h4>
             <ul className="footer-links-list">
               <li><a href="#why-pullpilot">.aipr.yml Generator</a></li>
-              <li><a href="#demo">Git Diff AST Viewer</a></li>
+              <li><a href="#demo">Diff Context Viewer</a></li>
               <li><a href="#demo">Security Rule Tester</a></li>
               <li><a href="#pricing">Token Cost Estimator</a></li>
               <li><a href="#demo">All Free Tools</a></li>

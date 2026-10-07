@@ -42,7 +42,7 @@ export const metadata: Metadata = {
     "automated code review",
     "GitHub PR review bot",
     "GitLab AI code review",
-    "AST security scanner",
+    "dependency graph code review",
     "pull request automation",
     "AI code auditor",
     "Claude 5 code review",

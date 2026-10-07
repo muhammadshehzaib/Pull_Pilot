@@ -31,12 +31,14 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 ## Features
 
 - **Auto-review on every PR / push** — registers a webhook on your repo, queues a job, and posts inline review comments back to GitHub
+- **Full codebase context (not diff-only)** — builds a dependency graph from your repository's imports, walks it from the changed files to find related code (callers, callees, tests), and feeds that surrounding context to the AI so findings reference real integration points, not just the diff hunk
+- **Repository rules via `.aipr.yml`** — define engineering guidelines ("Never log secrets", "All public functions need explicit return types") and severity thresholds; the reviewer enforces them on every PR and quotes the broken rule in the finding
 - **Multi-provider AI** — pick OpenAI, Gemini, Claude, or Grok per user; switch any time
 - **Encrypted key vault** — your AI API key is stored AES-256-GCM encrypted; the plaintext only exists in memory during a job
 - **GitHub OAuth login** — sign in with GitHub, no passwords
 - **Per-user repo management** — connect/disconnect repos; we manage the webhook lifecycle for you
 - **Manual review trigger** — fire off a review for any PR on demand from the dashboard
-- **Live dashboard** — Socket.IO streams every step (`fetching diff → AI dispatching → posting comments`) in real time
+- **Live dashboard** — Socket.IO streams every step (`fetching diff → building context → AI dispatching → posting comments`) in real time
 - **GitHub App Integration (Pull Pilot)** — 1-click installation across individual repositories or entire organizations with automated PR & push webhooks
 - **Background processing** — BullMQ + Redis with retries, exponential backoff, and bounded concurrency
 
@@ -60,10 +62,21 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
                                     ▼
                            ┌──────────────────┐
                            │ Analysis Worker  │──────► GitHub (fetch diff,
-                           │ (AI provider     │        post review comments)
-                           │  factory)        │──────► AI Provider
-                           └──────────────────┘        (OpenAI/Gemini/Claude/Grok)
+                           │                  │        repo tree, post review)
+                           │ ├ context engine │──────► AI Provider
+                           │ │ (import graph, │        (OpenAI/Gemini/Claude/Grok)
+                           │ │  related files)│
+                           └──────────────────┘
 ```
+
+### How a review runs
+
+1. GitHub webhook (or manual trigger) enqueues a job
+2. Worker fetches the PR diff and filters it through your `ignore` globs
+3. **Context engine**: fetches the repo file tree, extracts imports from changed files, walks the dependency graph (bidirectional BFS) to find related files — callers, callees, tests — and retrieves their content (cache-first, bounded by configurable file/token budgets)
+4. Diff + related context + your `.aipr.yml` guidelines are sent to the configured AI provider
+5. Findings are deduped, severity-filtered, and posted as inline PR comments + a summary comment
+6. Results are persisted and streamed to the dashboard over Socket.IO
 
 ### Stack
 
@@ -124,6 +137,8 @@ Fill in `apps/backend/.env`:
 | `GITHUB_WEBHOOK_SECRET` | yes | Shared secret for HMAC verification of inbound webhooks |
 | `BACKEND_URL` / `FRONTEND_URL` | yes | `http://localhost:4000` / `http://localhost:3000` |
 | `CLAUDE_MODEL`, `GROK_MODEL`, `GROK_BASE_URL` | no | Override defaults |
+| `CONTEXT_MAX_HOPS` / `CONTEXT_MAX_FILES` / `CONTEXT_MAX_TOKENS` | no | Platform ceilings for the context engine (defaults: `2` / `25` / `30000`) |
+| `CONTEXT_RETENTION_HOURS` | no | How long cached repo files are kept; `0` = keep until disconnect (default) |
 
 When creating the GitHub OAuth App, set the **Authorization callback URL** to:
 
@@ -204,6 +219,15 @@ All endpoints under `/api`. Auth-protected routes require either the `auth_token
 |---|---|---|
 | POST | `/webhooks/github` | GitHub sends `pull_request` + `push` events here. HMAC-verified. |
 
+### Billing
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/billing/plans` | Available plans |
+| GET | `/billing/usage` | Current usage 🔒 |
+| POST | `/billing/checkout` | Start a Polar checkout session 🔒 |
+| POST | `/billing/webhook` | Polar billing webhook (HMAC-verified) |
+
 ---
 
 ## Project Structure
@@ -212,23 +236,30 @@ All endpoints under `/api`. Auth-protected routes require either the `auth_token
 ai-pr-reviewer/
 ├── apps/
 │   ├── backend/                    # Express API + BullMQ worker
-│   │   ├── prisma/schema.prisma    # User, Vault, Repository, AnalysisJob
+│   │   ├── prisma/schema.prisma    # User, Vault, Subscription, Installation,
+│   │   │                           # Repository, CachedFile, AnalysisJob, UsageLedger
 │   │   └── src/
 │   │       ├── config/             # prisma, redis, queue, socket
-│   │       ├── controllers/        # auth, vault, repository, webhook
+│   │       ├── controllers/        # auth, vault, repository, webhook, billing
 │   │       ├── middlewares/        # auth (JWT), github-verify (HMAC)
 │   │       ├── routes/             # express routers
 │   │       ├── services/
-│   │       │   ├── ai/
-│   │       │   │   ├── ai-factory.ts
-│   │       │   │   └── providers/  # gemini, openai, claude, grok
+│   │       │   ├── ai/             # ai-factory, providers (gemini, openai,
+│   │       │   │                   # claude, grok), finding taxonomy/dedupe,
+│   │       │   │                   # context-prompt
 │   │       │   ├── auth.service.ts
+│   │       │   ├── config.service.ts          # .aipr.yml parsing
+│   │       │   ├── context-builder.ts         # context orchestration
+│   │       │   ├── import-graph.service.ts    # import extraction + resolution
+│   │       │   ├── context-retrieval.service.ts # related-file discovery (BFS)
+│   │       │   ├── repository-context-cache.service.ts # encrypted file cache
+│   │       │   ├── diff-filter.service.ts     # ignore globs
 │   │       │   ├── encryption.service.ts
 │   │       │   └── github.service.ts
-│   │       ├── workers/analysis.worker.ts
+│   │       ├── workers/            # analysis, repo-poller, retention sweeps
 │   │       └── index.ts
 │   └── web/                        # Next.js dashboard
-│       └── src/app/dashboard/page.tsx
+│       └── src/app/                # dashboard, repositories, history, vault, ...
 ├── docker-compose.yml              # Postgres + Redis
 └── package.json                    # npm workspaces root
 ```
@@ -239,8 +270,35 @@ ai-pr-reviewer/
 
 - **User** — GitHub identity (`githubId`, `username`, `email`, `avatarUrl`)
 - **Vault** — encrypted AI API key + provider preference (one per user)
+- **Subscription** — Polar subscription state + usage quota
+- **Installation** — GitHub App installation (org or user)
 - **Repository** — connected GitHub repo (`fullName`, `webhookId`, `isActive`)
+- **CachedFile** — encrypted source-file cache used by the context engine, keyed by git blob SHA
 - **AnalysisJob** — one row per review (PR or commit). Tracks `status` (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED`) and stores AI findings in a JSON column
+- **UsageLedger** — per-job usage records for billing
+
+---
+
+## Repository Configuration (`.aipr.yml`)
+
+Place at the repo root (or `.github/.aipr.yml`):
+
+```yaml
+min_severity: medium          # findings below this are dropped
+ignore:
+  - "dist/**"
+  - "package-lock.json"
+guidelines:                   # enforced as user rules on every review
+  - "Never log secrets or PII"
+  - "All public functions must have explicit return types"
+context:                      # codebase context engine
+  enabled: true
+  max_hops: 2                 # dependency-graph walk depth
+  max_files: 25
+  max_tokens: 30000
+```
+
+See [docs/aipr-config.md](docs/aipr-config.md) for the full reference.
 
 ---
 

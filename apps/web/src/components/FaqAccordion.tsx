@@ -14,7 +14,7 @@ interface Faq {
 const FAQS: Faq[] = [
   {
     q: `How does ${BRAND_NAME} review pull requests?`,
-    a: `When you open or update a PR, GitHub sends a secure webhook to ${BRAND_NAME}. Our backend analyzes the AST and changed diff lines, evaluates your .aipr.yml rules, and posts actionable inline comments with one-click patches directly on the modified lines in GitHub.`,
+    a: `When you open or update a PR, GitHub sends a secure webhook to ${BRAND_NAME}. Our backend fetches the diff, builds a dependency graph of your repository to pull in related files (callers, imports, tests), evaluates your .aipr.yml rules, and posts actionable inline comments with one-click patches directly on the modified lines in GitHub.`,
   },
   {
     q: 'Is my proprietary code stored or used to train AI models?',

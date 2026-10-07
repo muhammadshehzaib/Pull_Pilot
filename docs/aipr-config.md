@@ -24,6 +24,13 @@ guidelines:
   - "All public functions must have explicit return types"
   - "Database access must go through the repository layer"
 
+# Codebase context engine: how much related code to fetch around the diff.
+context:
+  enabled: true
+  max_hops: 2
+  max_files: 25
+  max_tokens: 30000
+
 language: en
 summarize: true
 ```
@@ -57,6 +64,25 @@ Every finding is tagged with one of these:
 | `ARCHITECTURE` | Coupling, layering, unclear boundaries |
 | `MAINTAINABILITY` | Dead code, duplication, naming, missing types |
 | `TESTING` | Missing or weak coverage for the changed behaviour |
+
+## `context`
+
+Controls the **codebase context engine** — instead of reviewing the diff in
+isolation, the reviewer builds an import/dependency graph from the repository
+tree, walks it outward from the changed files, and sends the related files
+(callers, callees, tests) to the model alongside the diff.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | Set `false` to fall back to diff-only reviews. |
+| `max_hops` | `2` | Graph-walk depth from each changed file. |
+| `max_files` | `25` | Maximum related files included in the prompt. |
+| `max_tokens` | `30000` | Token ceiling for the context block (excluding the diff). |
+
+Values are **clamped to platform ceilings** (`CONTEXT_MAX_HOPS/FILES/TOKENS`
+env vars) — a repository may reduce its budget or disable context, but cannot
+raise it above what the deployment allows. Malformed values fall back to
+defaults.
 
 ## Notes
 

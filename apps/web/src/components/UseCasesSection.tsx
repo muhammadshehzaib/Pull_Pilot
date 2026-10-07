@@ -45,7 +45,7 @@ const USE_CASES: UseCase[] = [
     bullets: [
       'Unlimited free review quota on all public repositories on GitHub',
       'Consistent, objective guidance for new contributors on project code standards',
-      'Automated check run statuses that pass or fail based on your .aipr.yml severity rules',
+      'Findings filtered by the severity threshold in your .aipr.yml config',
     ],
   },
   {
@@ -60,7 +60,7 @@ const USE_CASES: UseCase[] = [
       { value: 'Zero', label: 'Code Training Guarantee' },
     ],
     bullets: [
-      'Deep semantic AST inspection for timing attacks, memory leaks, and SSRF vulnerabilities',
+      'Full-codebase context analysis for timing attacks, memory leaks, and SSRF vulnerabilities',
       'API keys securely encrypted with AES-256-GCM and stored only in volatile RAM',
       'SOC-2 friendly posture with zero AI model training on customer code',
     ],

@@ -184,7 +184,7 @@ export function BentoFeatures() {
               Multi-Model AI Engine
             </h3>
             <p style={{ color: '#64748b', fontSize: '0.92rem', lineHeight: 1.6 }}>
-              Click any model above to switch. Choose Claude 5 Sonnet for deep security AST analysis, ChatGPT 5.6 for complex refactoring, or Gemini 3.0 Pro for lightning execution.
+              Click any model above to switch. Choose Claude 5 Sonnet for deep security analysis, ChatGPT 5.6 for complex refactoring, or Gemini 3.0 Pro for lightning execution.
             </p>
           </div>
         </div>

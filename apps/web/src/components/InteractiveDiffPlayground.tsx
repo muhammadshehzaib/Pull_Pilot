@@ -257,7 +257,7 @@ export function InteractiveDiffPlayground() {
             <div style={{ padding: '3.5rem 2rem', textAlign: 'center', color: '#94a3b8' }}>
               <RefreshCw size={24} className="spin" style={{ margin: '0 auto 1rem', color: '#3b82f6' }} />
               <p className="mono" style={{ fontSize: '0.86rem', color: '#cbd5e1' }}>
-                PullPilot AST engine parsing tokens &amp; semantic security tree...
+                PullPilot analyzing diff &amp; related code context...
               </p>
             </div>
           ) : (
