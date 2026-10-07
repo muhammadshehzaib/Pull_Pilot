@@ -51,7 +51,7 @@ const SAST_RULES: SastRule[] = [
     key: 'sast-sql-concat',
     name: 'SQL injection via string concatenation',
     filePattern: ALL,
-    pattern: /["'`](?:SELECT|INSERT|UPDATE|DELETE|MERGE)|(?:SELECT|INSERT|UPDATE|DELETE|MERGE)[^"'`\n]{2,}["'`]\s*\+/i,
+    pattern: /(?:SELECT|INSERT|UPDATE|DELETE|MERGE|WITH)[^"'`\n]*["'`]\s*\+|["'`]\s*\+\s*["'`]?\s*(?:SELECT|INSERT|UPDATE|DELETE|MERGE|WITH)/i,
     severity: 'CRITICAL',
     description: 'A string containing SQL is assembled by concatenating runtime values. Anything the user controls becomes part of the statement.',
     remediation: 'Build the statement with bound parameters instead of splicing values into a SQL string.',
@@ -71,7 +71,7 @@ const SAST_RULES: SastRule[] = [
     key: 'sast-cmd-exec-template',
     name: 'Command execution with interpolated input',
     filePattern: JS,
-    pattern: /\.(?:exec|execSync|execFile|spawn|system)\s*\(\s*`[^`]*\$\{/i,
+    pattern: /\b(?:exec|execSync|execFile|spawn|system)\s*\(\s*`[^`]*\$\{/i,
     severity: 'CRITICAL',
     description: 'A shell command is built from a template literal with interpolated values. User-controlled text becomes shell syntax.',
     remediation: 'Pass arguments as a separate array (`spawn(cmd, [args])`) and avoid `shell: true`. Never build shell strings from input.',
@@ -80,7 +80,7 @@ const SAST_RULES: SastRule[] = [
     key: 'sast-cmd-exec-concat',
     name: 'Command execution via string concatenation',
     filePattern: JS,
-    pattern: /\.(?:exec|execSync|execFile|spawn|system)\s*\(\s*["'`][^"'`\n]{2,}["'`]\s*\+/i,
+    pattern: /\b(?:exec|execSync|execFile|spawn|system)\s*\(\s*["'`][^"'`\n]{2,}["'`]\s*\+/i,
     severity: 'CRITICAL',
     description: 'A command string is concatenated with runtime values — command injection if any value is user-influenced.',
     remediation: 'Use `execFile`/`spawn` with an argument array and no shell so arguments are never reinterpreted.',
@@ -120,10 +120,7 @@ const SAST_RULES: SastRule[] = [
     filePattern: JS,
     pattern: /\.innerHTML\s*=\s*(.*)/i,
     severity: 'HIGH',
-    validate: (text, match) => {
-      const rhs = String(match?.[1] ?? text).trim();
-      return rhs.length > 0 && !/^["'`][^"'`]*["'`]$/.test(rhs);
-    },
+    validate: (text, match) => isDynamicHtmlRhs(match, text),
     description: 'innerHTML is assigned a runtime expression rather than a constant string. If the value contains HTML output from user data, it is DOM XSS.',
     remediation: 'Use textContent, createElement + setting text props, or run the HTML through a sanitizer before assignment.',
   },
@@ -133,10 +130,7 @@ const SAST_RULES: SastRule[] = [
     filePattern: JS,
     pattern: /\.insertAdjacentHTML\s*\([^)]*,\s*(.*)/i,
     severity: 'HIGH',
-    validate: (text, match) => {
-      const rhs = String(match?.[1] ?? '').trim();
-      return rhs.length > 0 && !/^["'`][^"'`]*["'`]$/.test(rhs);
-    },
+    validate: (text, match) => isDynamicHtmlRhs(match, text),
     description: 'insertAdjacentHTML receives a runtime-built HTML string, an XSS sink when it includes user data.',
     remediation: 'Insert text nodes, or sanitise the HTML (e.g. DOMPurify) before calling insertAdjacentHTML.',
   },
@@ -146,10 +140,7 @@ const SAST_RULES: SastRule[] = [
     filePattern: JS,
     pattern: /document\.write\s*\(\s*(.*)/i,
     severity: 'HIGH',
-    validate: (text, match) => {
-      const rhs = String(match?.[1] ?? '').trim();
-      return rhs.length > 0 && !/^["'`][^"'`]*["'`]$/.test(rhs);
-    },
+    validate: (text, match) => isDynamicHtmlRhs(match, text),
     description: 'document.write is fed a dynamic value. User-controlled HTML here executes as mark-up in the caller\'s origin.',
     remediation: 'Render content through DOM APIs (textContent / createElement) or a server-escaped template.',
   },
@@ -288,6 +279,20 @@ const SAST_RULES: SastRule[] = [
 function describeMatch(match: RegExpExecArray): string {
   const snippet = (match[0] ?? '').replace(/\s+/g, ' ').trim();
   return snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet;
+}
+
+/** A literal-string RHS (constant markup) is the only safe innerHTML-like use. */
+function isDynamicHtmlRhs(match: RegExpExecArray | null, fallback: string): boolean {
+  const rhs = String(match?.[1] ?? fallback)
+    // Drop a trailing statement terminator / closing paren: the template
+    // captures "..." ; or "...") as part of the RHS.
+    .replace(/[;)\s]*$/, '')
+    .trim();
+  if (rhs.length === 0) return false;
+  // Constant literal of any quote flavour — and template literals without
+  // interpolation — are not eligible dynamic sinks.
+  const literal = /^(["'`])[^"'`]*\1$/.test(rhs) || /^`[^`${]*`$/.test(rhs);
+  return !literal;
 }
 
 /**

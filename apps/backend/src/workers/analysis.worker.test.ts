@@ -79,6 +79,7 @@ vi.mock('../config/prisma', () => ({
     repository: { findUnique: mockRepoFindUnique },
     repositoryRule: { findMany: mockRuleFindMany },
     ruleCheck: { createMany: mockRuleCheckCreateMany },
+    securityCheck: { createMany: mockSecurityCheckCreateMany },
   },
 }));
 
@@ -139,6 +140,7 @@ beforeEach(() => {
   // existed unless a test opts in.
   mockRuleFindMany.mockResolvedValue([]);
   mockRuleCheckCreateMany.mockResolvedValue({ count: 0 });
+  mockSecurityCheckCreateMany.mockResolvedValue({ count: 0 });
   // Default: the job has not entered the pipeline, so every advanceReview()
   // transition is a forward move and gets persisted.
   mockJobFindUnique.mockResolvedValue({ status: 'QUEUED' });
@@ -669,5 +671,126 @@ describe('analysis worker — repository rules', () => {
     expect(mockCreateReviewComment).toHaveBeenCalledOnce();
     expect(mockCreateReviewComment.mock.calls[0][4]).toBe('src/app.ts');
     expect(mockCreateReviewComment.mock.calls[0][5]).toBe(2);
+  });
+});
+
+describe('analysis worker — security probes', () => {
+  // The added line sits at new-file line 2 with "SELECT ... " + concatenation:
+  // an unambiguous SQL-injection pattern the SAST probe must catch.
+  const diffWithSqlConcat =
+    'diff --git a/src/db.ts b/src/db.ts\n' +
+    '--- a/src/db.ts\n' +
+    '+++ b/src/db.ts\n' +
+    '@@ -1,3 +1,4 @@\n' +
+    ' const a = 1;\n' +
+    '+db.query("SELECT * FROM users WHERE id = " + req.params.id);\n' +
+    ' console.log(a);';
+
+  // An hardcoded OpenAI key on the added line. Deliberately obvious so the
+  // secrets probe must flag it and the redaction rule must mask it.
+  const diffWithSecret =
+    'diff --git a/src/config.ts b/src/config.ts\n' +
+    '--- a/src/config.ts\n' +
+    '+++ b/src/config.ts\n' +
+    '@@ -1,3 +1,4 @@\n' +
+    ' const a = 1;\n' +
+    '+const OPENAI_KEY = "sk-abcdefghijklmnopqrstuvwxyz123456";\n' +
+    ' console.log(a);';
+
+  it('posts a deterministic SAST finding inline even when the model reports nothing', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diffWithSqlConcat);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+
+    expect(result.findingCount).toBe(1);
+    expect(mockCreateReviewComment).toHaveBeenCalledOnce();
+    const [owner, repo, prNum, sha, path, line] = mockCreateReviewComment.mock.calls[0];
+    expect([owner, repo, prNum, sha]).toEqual(['octo', 'cat', 42, 'head-sha']);
+    expect(path).toBe('src/db.ts');
+    expect(line).toBe(2);
+  });
+
+  it('writes one PASS/FAIL security check per probe and stores the risk report', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diffWithSqlConcat);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    const payload = mockSecurityCheckCreateMany.mock.calls[0][0];
+    expect(payload.skipDuplicates).toBe(true);
+    expect(payload.data).toHaveLength(3);
+    const sast = payload.data.find((c: any) => c.probe === 'SAST');
+    const secrets = payload.data.find((c: any) => c.probe === 'SECRETS');
+    const deps = payload.data.find((c: any) => c.probe === 'DEPENDENCIES');
+    expect(sast).toMatchObject({ analysisJobId: 'job-1', status: 'FAIL', findingCount: 1 });
+    expect(secrets).toMatchObject({ status: 'PASS', findingCount: 0 });
+    expect(deps).toMatchObject({ status: 'PASS', findingCount: 0 });
+
+    const finalResults = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+
+    // A CRITICAL SAST finding is blocking on its own.
+    expect(finalResults.risk).toMatchObject({
+      score: 30,
+      verdict: 'BLOCK',
+      blockingCount: 1,
+      securityFindingCount: 1,
+    });
+    expect(finalResults.securityChecks).toHaveLength(3);
+
+    // The socket must announce both the probe tally and the verdict.
+    const messages = mockEmitStatus.mock.calls.map((c) => String(c[2]));
+    expect(messages.some((m) => m.includes('Security probes'))).toBe(true);
+    expect(messages.some((m) => m.includes('Risk engine'))).toBe(true);
+  });
+
+  it('redacts hardcoded secrets in the posted finding and blocks the review', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diffWithSecret);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+
+    expect(mockCreateReviewComment).toHaveBeenCalledOnce();
+    const [, , , , , , comment] = mockCreateReviewComment.mock.calls[0];
+    expect(comment).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+    expect(comment).toContain('redacted');
+    expect(comment).toContain('••••');
+
+    const finalResults = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+    expect(finalResults.risk.verdict).toBe('BLOCK');
+    expect(finalResults.risk.reasons.some((r: string) => r.includes('credential'))).toBe(true);
+    expect(result.findingCount).toBe(1);
+  });
+
+  it('does not filter deterministic security findings by min_severity', async () => {
+    // The model reports nothing. The SAST CRITICAL finding must still be
+    // posted and scored (CRITICAL weight = 30) even though it is deterministic —
+    // deterministic controls are never optional behind a repo-wide threshold.
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diffWithSqlConcat);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValueOnce({ ok: true });
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+    expect(result.findingCount).toBe(1);
+    expect(mockCreateReviewComment).toHaveBeenCalledOnce();
+
+    const finalResults = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+    expect(finalResults.risk.score).toBe(30); // CRITICAL weight confirms severity survived
   });
 });

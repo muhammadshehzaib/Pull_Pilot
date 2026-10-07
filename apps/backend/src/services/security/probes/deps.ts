@@ -1,4 +1,5 @@
-import { collectChangedLines } from '../../diff-lines';
+import { DiffFilterService } from '../../diff-filter.service';
+import { collectChangedLines, AddedLine, RemovedLine } from '../../diff-lines';
 import {
   SecurityProbeResult,
   SecuritySuggestion,
@@ -10,12 +11,17 @@ import { advisoriesFor, isVulnerable, parseVersion } from '../advisory-registry'
 /**
  * Dependency probe.
  *
- * Parses *added* manifest lines from the filtered diff — package.json
- * (tracking dependency sections), requirements*.txt, go.mod, Gemfile — then
- * checks every introduced package against the advisory registry. Also notes
- * newly introduced runtime dependencies (INFO) and detects removed-for-+
- * major-bump changes (LOW) as education. Lockfiles are excluded by the
- * default `ignore:` and are not parsed here.
+ * Parses manifest lines from the *filtered diff* — package.json (tracking
+ * dependency sections), requirements*.txt, go.mod, Gemfile — then checks every
+ * introduced package against the advisory registry. Also notes newly
+ * introduced runtime dependencies (INFO) and detects removed-for-+
+ * major-bump changes (LOW) as education. Lockfiles are excluded by the default
+ * `ignore:` and are not parsed here.
+ *
+ * Section headers inside package.json ("dependencies": {) are usually diff
+ * *context*, not added lines, so the section stack is parsed from the whole
+ * file chunk. Findings are only ever anchored to entries that were actually
+ * *added* — a removed dependency never fires.
  */
 
 interface ManifestDependency {
@@ -35,6 +41,12 @@ function parsePackageJson(lines: string[]): ManifestDependency[] {
       section = sectionMatch[1] as NonNullable<typeof section>;
       continue;
     }
+    if (/^\}/.test(line)) {
+      // Leave the section once its object closes; nesting depth is tracked
+      // loosely since the manifest format is regular.
+      section = null;
+      continue;
+    }
     const depMatch = /^"(@?[^"\s]+)"\s*:\s*"(\.{2}|\^|~|>=|=|<|>|v|latest|\d)[^"]*"/.exec(line);
     if (depMatch && section) {
       deps.push({ name: depMatch[1], spec: depMatch[2], dev: section === 'devDependencies' });
@@ -46,13 +58,14 @@ function parsePackageJson(lines: string[]): ManifestDependency[] {
 function parseRequirements(lines: string[]): ManifestDependency[] {
   const deps: ManifestDependency[] = [];
   for (const raw of lines) {
-    if (raw.trimStart().startsWith('#')) continue;
-    // package==1.2.3, package>=1.0, package~=1.2, package (bare, no spec)
-    const m = /^([A-Za-z0-9_.-]+)\s*(==|>=|<=|~=|!=|>|<)?\s*([0-9][\w.+-]*)?/.exec(raw);
+    const line = raw.trim();
+    if (line.startsWith('#')) continue;
+    // package==1.2.3, package>=1.0, package~=1.2, or a bare `package`.
+    const m = /^([A-Za-z0-9_.-]+)\s*(==|>=|<=|~=|!=|>|<)?\s*([0-9][\w.+-]*)?/.exec(line);
     if (!m || !m[1]) continue;
-    const name = m[1].toLowerCase();
-    if (name.includes('.') && !m[2] && !m[3]) continue; // candidates without a spec look like filenames
-    deps.push({ name, spec: m[2] ? `${m[2]}${m[3] ?? ''}` : m[3] ?? '*', dev: false });
+    const name = m[1];
+    if (!m[2] && line !== name) continue; // "from flask import x" is not a requirement
+    deps.push({ name: name.toLowerCase(), spec: m[2] ? `${m[2]}${m[3] ?? ''}` : m[3] ?? '*', dev: false });
   }
   return deps;
 }
@@ -96,9 +109,13 @@ const MANIFEST_PARSERS: { file: RegExp; parse: (lines: string[]) => ManifestDepe
 
 function parseDependenciesForFile(filename: string, textLines: string[]): ManifestDependency[] {
   for (const p of MANIFEST_PARSERS) {
-    if (p.file.test(filename)) return p.parse(textLines.map((l) => l.trim()));
+    if (p.file.test(filename)) return p.parse(textLines);
   }
   return [];
+}
+
+function isManifestFile(filename: string): boolean {
+  return MANIFEST_PARSERS.some((p) => p.file.test(filename));
 }
 
 /**
@@ -106,21 +123,8 @@ function parseDependenciesForFile(filename: string, textLines: string[]): Manife
  * newly introduced runtime dependencies.
  */
 export function scanDependencies(diff: string): SecurityProbeResult {
-  const { added, removed } = collectChangedLines(diff);
   const findings: SecuritySuggestion[] = [];
   const counts = new Map<string, number>();
-
-  const byFile = new Map<string, { added: typeof added; removed: typeof removed }>();
-  for (const a of added) {
-    if (!byFile.has(a.filename)) byFile.set(a.filename, { added: [], removed: [] });
-    byFile.get(a.filename)!.added.push(a);
-  }
-  // Removed lines for major-bump detection: the diff parser numbers them with
-  // the old-file position, which is fine for matching package names.
-  for (const r of removed) {
-    if (!byFile.has(r.filename)) byFile.set(r.filename, { added: [], removed: [] });
-    byFile.get(r.filename)!.removed.push(r);
-  }
 
   const recordCount = (key: string): boolean => {
     const n = counts.get(key) ?? 0;
@@ -129,22 +133,48 @@ export function scanDependencies(diff: string): SecurityProbeResult {
     return true;
   };
 
-  for (const [filename, { added: addedLines, removed: removedLines }] of byFile) {
-    const fileRemovedTexts = removedLines.map((r) => r.text);
-    const addedTexts = addedLines.map((a) => a.text);
-    const deps = parseDependenciesForFile(filename, addedTexts);
+  const { added: allAdded, removed: allRemoved } = collectChangedLines(diff);
+
+  const addedByFile = new Map<string, AddedLine[]>();
+  const removedByFile = new Map<string, RemovedLine[]>();
+  for (const l of allAdded) {
+    if (!addedByFile.has(l.filename)) addedByFile.set(l.filename, []);
+    addedByFile.get(l.filename)!.push(l);
+  }
+  for (const l of allRemoved) {
+    if (!removedByFile.has(l.filename)) removedByFile.set(l.filename, []);
+    removedByFile.get(l.filename)!.push(l);
+  }
+
+  for (const chunk of DiffFilterService.splitDiffByFile(diff)) {
+    const filename = chunk.filename.replace(/^\.\//, '');
+    if (!isManifestFile(filename)) continue;
+    const addedLines = addedByFile.get(filename) ?? [];
+    const removedLines = removedByFile.get(filename) ?? [];
+    if (addedLines.length === 0 && removedLines.length === 0) continue;
+
+    // Parse the whole chunk (context + added + removed) so section headers that
+    // are diff context still drive the parser; entries are filtered back down
+    // to added lines below, so removals can never be reported.
+    const allTexts = chunk.content
+      .split('\n')
+      .map((t) => t.replace(/^[+-]/, '').trim())
+      .filter((t) => t.length > 0 && !/^(diff --git|---|\+\+\+|@@|\\\\)/.test(t));
+
+    const deps = parseDependenciesForFile(filename, allTexts as string[]);
 
     for (const dep of deps) {
+      const anchor = addedLines.find(
+        (l) => l.text.includes(`"${dep.name}"`) || l.text.includes(dep.name),
+      );
+      if (!anchor) continue;
+
       const advisories = advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a));
       if (advisories.length > 0 && recordCount('deps-vulnerable')) {
         const first = advisories[0];
-        const anchor = addedLines.find((l) => {
-          const t = l.text;
-          return t.includes(`"${dep.name}"`) || t.includes(dep.name) || t.includes(`/${dep.name}/`);
-        });
         findings.push({
           filePath: filename,
-          lineNumber: anchor?.lineNumber ?? addedLines[0]?.lineNumber ?? 1,
+          lineNumber: anchor.lineNumber,
           agentType: 'SECURITY',
           source: 'DEPENDENCIES',
           ruleKey: 'deps-vulnerable',
@@ -155,12 +185,7 @@ export function scanDependencies(diff: string): SecurityProbeResult {
         continue;
       }
 
-      // Newly introduced package line: INFO-level education when no advisory.
-      if (recordCount('deps-introduced') && /^[A-Za-z@]/.test(dep.name) && dep.name !== '(stdin)') {
-        // Only comment on genuinely new packages — package.json "added" lines
-        // are the package's own lines being touched, not the dep being added.
-        const anchor = addedLines.find((l) => l.text.includes(`"${dep.name}"`) || l.text.includes(dep.name));
-        if (!anchor) continue;
+      if (recordCount('deps-introduced')) {
         findings.push({
           filePath: filename,
           lineNumber: anchor.lineNumber,
@@ -176,9 +201,11 @@ export function scanDependencies(diff: string): SecurityProbeResult {
       }
     }
 
-    // Removed -> added major bump: education note (LOW).
     if (recordCount('deps-major-bump')) {
-      const removedDeps = parseDependenciesForFile(filename, fileRemovedTexts);
+      const removedDeps = parseDependenciesForFile(
+        filename,
+        removedLines.map((r) => r.text.trim()),
+      );
       const removedByName = new Map(removedDeps.map((d) => [d.name.toLowerCase(), d]));
       for (const dep of deps) {
         const prior = removedByName.get(dep.name.toLowerCase());

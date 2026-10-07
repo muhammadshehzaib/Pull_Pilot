@@ -88,6 +88,12 @@ export function minSelectableVersion(spec: string): ParsedVersion | null {
     return parseVersion(s.slice(1)); // treat `>x` min as x (best effort)
   }
   const clean = s.replace(/^[\^~]/, '').replace(/\.x$/i, '');
+  // A bare major ("1", "1.x", "2") resolves into any patch of that major.
+  if (!clean.includes('.')) {
+    const major = Number(clean);
+    if (!Number.isInteger(major) || major < 0) return null;
+    return { major, minor: 0, patch: 0 };
+  }
   const parsed = parseVersion(clean);
   if (!parsed) return null;
   return parsed;

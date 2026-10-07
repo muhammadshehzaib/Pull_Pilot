@@ -148,3 +148,49 @@ describe('ConfigService context block', () => {
     expect(config.context.enabled).toBe(false);
   });
 });
+
+describe('ConfigService security block', () => {
+  it('enables the security layer with platform defaults when the block is omitted', () => {
+    expect(ConfigService.parseConfigYaml('version: 1').security).toEqual(
+      DEFAULT_AIPR_CONFIG.security,
+    );
+  });
+
+  it('accepts a repository disabling individual probes', () => {
+    const config = ConfigService.parseConfigYaml(
+      'security:\n  sast: false\n  dependencies: false',
+    );
+    expect(config.security.sast).toBe(false);
+    expect(config.security.dependencies).toBe(false);
+    expect(config.security.secrets).toBe(true);
+    expect(config.security.enabled).toBe(true);
+  });
+
+  it('accepts a repository turning the whole security layer off', () => {
+    const config = ConfigService.parseConfigYaml('security:\n  enabled: false');
+    expect(config.security.enabled).toBe(false);
+  });
+
+  it('accepts block_on_critical_secret being disabled', () => {
+    const config = ConfigService.parseConfigYaml(
+      'security:\n  block_on_critical_secret: false',
+    );
+    expect(config.security.block_on_critical_secret).toBe(false);
+  });
+
+  it('ignores non-boolean values rather than trusting them', () => {
+    const config = ConfigService.parseConfigYaml(
+      'security:\n  sast: "yes"\n  enabled: 1',
+    );
+    expect(config.security.sast).toBe(DEFAULT_AIPR_CONFIG.security.sast);
+    expect(config.security.enabled).toBe(DEFAULT_AIPR_CONFIG.security.enabled);
+  });
+
+  it('falls back to defaults when the security block is malformed', () => {
+    const asArray = ConfigService.parseConfigYaml('security:\n  - a\n  - b');
+    expect(asArray.security).toEqual(DEFAULT_AIPR_CONFIG.security);
+
+    const asScalar = ConfigService.parseConfigYaml('security: "on"');
+    expect(asScalar.security).toEqual(DEFAULT_AIPR_CONFIG.security);
+  });
+});
