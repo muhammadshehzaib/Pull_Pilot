@@ -28,86 +28,107 @@ interface ManifestDependency {
   name: string;
   spec: string;
   dev: boolean;
+  /** True when this entry's own diff line was added (as opposed to removed). */
+  added: boolean;
 }
 
-function parsePackageJson(lines: string[]): ManifestDependency[] {
+interface ParsedLine {
+  text: string;
+  added: boolean;
+}
+
+/** Splits a per-file chunk into cleaned content lines with their origin. */
+function collectChunkLines(content: string): ParsedLine[] {
+  const lines: ParsedLine[] = [];
+  for (const raw of content.split('\n')) {
+    if (/^diff --git/.test(raw)) continue;
+    if (/^(---|\+\+\+) /.test(raw)) continue;
+    if (/^@@ /.test(raw) || raw.startsWith('\\')) continue;
+    let added = false;
+    let text = raw;
+    if (text.startsWith('+')) { added = true; text = text.slice(1); }
+    else if (text.startsWith('-')) { text = text.slice(1); }
+    text = text.trim();
+    if (text.length === 0) continue;
+    lines.push({ text, added });
+  }
+  return lines;
+}
+
+function parsePackageJson(lines: ParsedLine[]): ManifestDependency[] {
   const deps: ManifestDependency[] = [];
   let section: 'dependencies' | 'devDependencies' | 'peerDependencies' | 'optionalDependencies' | null = null;
 
-  for (const raw of lines) {
-    const line = raw.trim();
-    const sectionMatch = /^"((?:dev|peer|optional)?dependencies)"\s*:\s*\{/.exec(line);
+  for (const { text, added } of lines) {
+    const sectionMatch = /^"((?:dev|peer|optional)?dependencies)"\s*:\s*\{/.exec(text);
     if (sectionMatch) {
       section = sectionMatch[1] as NonNullable<typeof section>;
       continue;
     }
-    if (/^\}/.test(line)) {
+    if (/^\}/.test(text)) {
       // Leave the section once its object closes; nesting depth is tracked
       // loosely since the manifest format is regular.
       section = null;
       continue;
     }
-    const depMatch = /^"(@?[^"\s]+)"\s*:\s*"((?:\.{2}|~|\^|>=|=|<|>|v|latest|\d)[^"]*)",?\s*$/.exec(line);
+    const depMatch = /^"(@?[^"\s]+)"\s*:\s*"((?:\.{2}|~|\^|>=|=|<|>|v|latest|\d)[^"]*)",?\s*$/.exec(text);
     if (depMatch && section) {
-      deps.push({ name: depMatch[1], spec: depMatch[2], dev: section === 'devDependencies' });
+      deps.push({ name: depMatch[1], spec: depMatch[2], dev: section === 'devDependencies', added });
     }
   }
   return deps;
 }
 
-function parseRequirements(lines: string[]): ManifestDependency[] {
+function parseRequirements(lines: ParsedLine[]): ManifestDependency[] {
   const deps: ManifestDependency[] = [];
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line.startsWith('#')) continue;
+  for (const { text, added } of lines) {
+    if (text.startsWith('#')) continue;
     // package==1.2.3, package>=1.0, package~=1.2, or a bare `package`.
-    const m = /^([A-Za-z0-9_.-]+)\s*(==|>=|<=|~=|!=|>|<)?\s*([0-9][\w.+-]*)?/.exec(line);
+    const m = /^([A-Za-z0-9_.-]+)\s*(==|>=|<=|~=|!=|>|<)?\s*([0-9][\w.+-]*)?/.exec(text);
     if (!m || !m[1]) continue;
     const name = m[1];
-    if (!m[2] && line !== name) continue; // "from flask import x" is not a requirement
-    deps.push({ name: name.toLowerCase(), spec: m[2] ? `${m[2]}${m[3] ?? ''}` : m[3] ?? '*', dev: false });
+    if (!m[2] && text !== name) continue; // "from flask import x" is not a requirement
+    deps.push({ name: name.toLowerCase(), spec: m[2] ? `${m[2]}${m[3] ?? ''}` : m[3] ?? '*', dev: false, added });
   }
   return deps;
 }
 
-function parseGoMod(lines: string[]): ManifestDependency[] {
+function parseGoMod(lines: ParsedLine[]): ManifestDependency[] {
   const deps: ManifestDependency[] = [];
   let inRequire = false;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line === 'require (') { inRequire = true; continue; }
-    if (line === ')') { inRequire = false; continue; }
-    const m = /^require\s+([^\s]+)\s+(v\S+)/.exec(line);
-    if (m) { deps.push({ name: m[1], spec: m[2], dev: false }); continue; }
+  for (const { text, added } of lines) {
+    if (text === 'require (') { inRequire = true; continue; }
+    if (text === ')') { inRequire = false; continue; }
+    const m = /^require\s+([^\s]+)\s+(v\S+)/.exec(text);
+    if (m) { deps.push({ name: m[1], spec: m[2], dev: false, added }); continue; }
     if (inRequire) {
-      const m2 = /^([^\s]+)\s+(v\S+)/.exec(line);
-      if (m2) deps.push({ name: m2[1], spec: m2[2], dev: false });
+      const m2 = /^([^\s]+)\s+(v\S+)/.exec(text);
+      if (m2) deps.push({ name: m2[1], spec: m2[2], dev: false, added });
     }
   }
   return deps;
 }
 
-function parseGemfile(lines: string[]): ManifestDependency[] {
+function parseGemfile(lines: ParsedLine[]): ManifestDependency[] {
   const deps: ManifestDependency[] = [];
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line.startsWith('#')) continue;
-    const m = /^gem\s+["']([^"']+)["']\s*(?:,\s*(["'][^"']+["']))?/.exec(line);
+  for (const { text, added } of lines) {
+    if (text.startsWith('#')) continue;
+    const m = /^gem\s+["']([^"']+)["']\s*(?:,\s*(["'][^"']+["']))?/.exec(text);
     if (!m) continue;
     const spec = m[2] ? m[2].replace(/["']/g, '') : '*';
-    deps.push({ name: m[1].toLowerCase(), spec, dev: /github|path\s*:|group\s*:\s*:?dev/i.test(line) });
+    deps.push({ name: m[1].toLowerCase(), spec, dev: /github|path\s*:|group\s*:\s*:?dev/i.test(text), added });
   }
   return deps;
 }
 
-const MANIFEST_PARSERS: { file: RegExp; parse: (lines: string[]) => ManifestDependency[] }[] = [
+const MANIFEST_PARSERS: { file: RegExp; parse: (lines: ParsedLine[]) => ManifestDependency[] }[] = [
   { file: /(?:^|\/)package\.json$/, parse: parsePackageJson },
   { file: /requirements[^.]*\.txt$|requirements\.in$/, parse: parseRequirements },
   { file: /(?:^|\/)go\.mod$/, parse: parseGoMod },
   { file: /(?:^|\/)Gemfile$/, parse: parseGemfile },
 ];
 
-function parseDependenciesForFile(filename: string, textLines: string[]): ManifestDependency[] {
+function parseDependenciesForFile(filename: string, textLines: ParsedLine[]): ManifestDependency[] {
   for (const p of MANIFEST_PARSERS) {
     if (p.file.test(filename)) return p.parse(textLines);
   }
@@ -153,20 +174,18 @@ export function scanDependencies(diff: string): SecurityProbeResult {
     const removedLines = removedByFile.get(filename) ?? [];
     if (addedLines.length === 0 && removedLines.length === 0) continue;
 
-    // Parse the whole chunk (context + added + removed) so section headers that
-    // are diff context still drive the parser; entries are filtered back down
-    // to added lines below, so removals can never be reported.
-    const allTexts = chunk.content
-      .split('\n')
-      .map((t) => t.replace(/^[+-]/, '').trim())
-      .filter((t) => t.length > 0 && !/^(diff --git|---|\+\+\+|@@|\\\\)/.test(t));
+    const parsed = collectChunkLines(chunk.content);
+    const deps = parseDependenciesForFile(filename, parsed);
+    if (deps.length === 0) continue;
 
-    const deps = parseDependenciesForFile(filename, allTexts as string[]);
+    const addedDeps = deps.filter((d) => d.added);
+    const removedByName = new Map<string, string>();
+    for (const d of deps) {
+      if (!d.added) removedByName.set(d.name.toLowerCase(), d.spec);
+    }
 
-    for (const dep of deps) {
-      const anchor = addedLines.find(
-        (l) => l.text.includes(`"${dep.name}"`) || l.text.includes(dep.name),
-      );
+    for (const dep of addedDeps) {
+      const anchor = addedLines.find((l) => l.text.toLowerCase().includes(dep.name.toLowerCase()));
       if (!anchor) continue;
 
       const advisories = advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a));
@@ -202,25 +221,20 @@ export function scanDependencies(diff: string): SecurityProbeResult {
     }
 
     if (recordCount('deps-major-bump')) {
-      const removedDeps = parseDependenciesForFile(
-        filename,
-        removedLines.map((r) => r.text.trim()),
-      );
-      const removedByName = new Map(removedDeps.map((d) => [d.name.toLowerCase(), d]));
-      for (const dep of deps) {
+      for (const dep of addedDeps) {
         const prior = removedByName.get(dep.name.toLowerCase());
         if (!prior) continue;
-        const before = minSelectableVersion(prior.spec);
+        const before = minSelectableVersion(prior);
         const after = minSelectableVersion(dep.spec);
         if (before && after && after.major > before.major) {
-          const anchor = addedLines.find((l) => l.text.includes(dep.name));
+          const anchor = addedLines.find((l) => l.text.toLowerCase().includes(dep.name.toLowerCase()));
           findings.push({
             filePath: filename,
             lineNumber: anchor?.lineNumber ?? 1,
             agentType: 'SECURITY',
             source: 'DEPENDENCIES',
             ruleKey: 'deps-major-bump',
-            issue: `Major version bump for "${dep.name}": ${prior.spec} -> ${dep.spec}.`,
+            issue: `Major version bump for "${dep.name}": ${prior} -> ${dep.spec}.`,
             suggestion: 'Review breaking changes in the new major before merging.',
             priority: 'LOW',
           });

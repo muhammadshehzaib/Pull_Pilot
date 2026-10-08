@@ -201,6 +201,7 @@ describe('RulesService.evaluateRules', () => {
         filePath: 'src/app.ts',
         lineNumber: 2,
         agentType: 'SECURITY',
+        source: 'RULES',
         issue: 'Violates repository rule "No eval" — eval() is forbidden',
         suggestion: 'Update this line so it no longer violates the "No eval" rule.',
         priority: 'HIGH',

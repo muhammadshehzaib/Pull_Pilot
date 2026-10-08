@@ -15,6 +15,8 @@ import {
   isBlocking,
   isInProgress,
   isTerminalFailure,
+  sourceColor,
+  sourceLabel,
   statusLabel,
   tallyBySeverity,
   type AiSuggestion,
@@ -28,6 +30,19 @@ import {
   summarizeChecks,
   type RuleCheck,
 } from '../../lib/rules';
+import {
+  PROBE_COLORS,
+  PROBE_LABELS,
+  SECURITY_CHECK_STATUS_COLORS,
+  SECURITY_CHECK_STATUS_LABELS,
+  VERDICT_COLORS,
+  isBlockingVerdict,
+  probeTally,
+  riskTone,
+  verdictLabel,
+  type RiskReport,
+  type SecurityCheck,
+} from '../../lib/security';
 
 export interface JobSummary {
   id: string;
@@ -46,6 +61,10 @@ interface JobDetail extends JobSummary {
   summaryPosted?: boolean;
   /** Per-rule PASS/FAIL/SKIPPED records written by the deterministic engine. */
   ruleChecks?: RuleCheck[];
+  /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
+  securityChecks?: SecurityCheck[];
+  /** Risk engine output, rehydrated from the results blob by the controller. */
+  metadata?: { risk?: RiskReport };
 }
 
 export default function HistoryPage() {
@@ -522,6 +541,10 @@ function JobDetailView({ job }: { job: JobDetail }) {
         </div>
       )}
 
+      {(job.metadata?.risk || (job.securityChecks && job.securityChecks.length > 0)) && (
+        <SecurityCard risk={job.metadata?.risk} checks={job.securityChecks} />
+      )}
+
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
           {job.status === 'COMPLETED' ? (
@@ -558,6 +581,34 @@ function JobDetailView({ job }: { job: JobDetail }) {
                 <span aria-hidden="true">{PRIORITY_ICONS[s.priority]}</span>{' '}
                 {PRIORITY_LABELS[s.priority]}
               </span>
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  padding: '2px 8px',
+                  borderRadius: 999,
+                  border: '1px solid',
+                  borderColor: sourceColor(s.source),
+                  color: sourceColor(s.source),
+                  fontWeight: 500,
+                }}
+                title={
+                  s.source === 'RULES'
+                    ? 'Found by a deterministic repository rule — no model judgement involved'
+                    : s.source
+                      ? `Found by the ${sourceLabel(s.source)} security probe`
+                      : 'Found by the AI reviewer'
+                }
+              >
+                {sourceLabel(s.source)}
+              </span>
+              {s.corroborated && (
+                <span
+                  style={{ fontSize: '0.72rem', color: '#d97706', fontWeight: 500 }}
+                  title="A deterministic security probe flagged this same line — most reviewers treat it as higher confidence"
+                >
+                  ✓ corroborated
+                </span>
+              )}
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
                 {AGENT_LABELS[s.agentType] ?? s.agentType}
               </span>
@@ -665,6 +716,103 @@ function HistoryRowSkeleton() {
           <div className="skeleton skeleton-line-md" />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Deterministic security layer summary: risk score + verdict from the risk
+ * engine, per-probe finding tallies, and the durable PASS/FAIL rows the worker
+ * wrote for SAST / secrets / dependencies.
+ */
+function SecurityCard({ risk, checks }: { risk?: RiskReport; checks?: SecurityCheck[] }) {
+  const score = typeof risk?.score === 'number' && Number.isFinite(risk.score) ? risk.score : 0;
+  const tone = riskTone(score);
+  const toneColor = tone === 'block' ? 'var(--danger)' : tone === 'review' ? 'var(--warning)' : 'var(--success)';
+  const blocking = risk ? isBlockingVerdict(risk.verdict) : false;
+
+  return (
+    <div
+      className="glass-card"
+      style={{
+        padding: '0.9rem 1rem',
+        borderLeft: blocking ? '3px solid var(--danger)' : '3px solid transparent',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+          marginBottom: '0.6rem',
+        }}
+      >
+        <strong style={{ fontSize: '0.88rem' }}>🛡️ Security risk</strong>
+        {risk && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <span style={{ color: toneColor, fontWeight: 700, fontSize: '1.05rem' }}>{score}/100</span>
+            <span
+              style={{
+                color: VERDICT_COLORS[risk.verdict] ?? 'var(--text-secondary)',
+                fontWeight: 600,
+                fontSize: '0.82rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {verdictLabel(risk.verdict)}
+            </span>
+          </span>
+        )}
+      </div>
+
+      {risk && risk.reasons && risk.reasons.length > 0 && (
+        <ul style={{ margin: '0 0 0.6rem', paddingLeft: '1.1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          {risk.reasons.map((reason, i) => (
+            <li key={i}>{reason}</li>
+          ))}
+        </ul>
+      )}
+
+      {risk && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '0.6rem', fontSize: '0.8rem' }}>
+          {probeTally(risk).map(({ probe, count }) => (
+            <span key={probe} style={{ color: PROBE_COLORS[probe], fontWeight: 500 }}>
+              {PROBE_LABELS[probe]}: {count}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {checks && checks.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+          {checks.map((check) => (
+            <div
+              key={check.id}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.82rem', flexWrap: 'wrap' }}
+            >
+              <span style={{ color: SECURITY_CHECK_STATUS_COLORS[check.status], fontWeight: 600, minWidth: 96 }}>
+                {check.status === 'PASS' ? '✓' : check.status === 'FAIL' ? '✗' : '•'}{' '}
+                {SECURITY_CHECK_STATUS_LABELS[check.status]}
+              </span>
+              <span style={{ fontWeight: 500 }}>{check.ruleName}</span>
+              {check.status === 'FAIL' && (
+                <span style={{ color: 'var(--text-secondary)' }}>
+                  {check.findingCount} finding{check.findingCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {blocking && (
+        <div style={{ marginTop: '0.6rem', fontSize: '0.82rem', color: 'var(--danger)', fontWeight: 500 }}>
+          🚫 This review was stopped by its own findings — the flagged security issues block a merge.
+        </div>
+      )}
     </div>
   );
 }

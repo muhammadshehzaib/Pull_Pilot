@@ -31,6 +31,15 @@ context:
   max_files: 25
   max_tokens: 30000
 
+# Deterministic security layer: pattern scans + advisory lookups that run
+# before the model and combine into a risk score that can block a review.
+security:
+  enabled: true
+  sast: true
+  secrets: true
+  dependencies: true
+  block_on_critical_secret: true
+
 language: en
 summarize: true
 ```
@@ -83,6 +92,34 @@ Values are **clamped to platform ceilings** (`CONTEXT_MAX_HOPS/FILES/TOKENS`
 env vars) — a repository may reduce its budget or disable context, but cannot
 raise it above what the deployment allows. Malformed values fall back to
 defaults.
+
+## `security`
+
+The deterministic security layer. Three probes run against the **filtered
+diff** before the model is ever called — no LLM judgement involved — and a risk
+engine combines their findings with the model's into a single score and verdict.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | Master switch for the whole security layer. `false` skips every probe. |
+| `sast` | `true` | Static analysis patterns — SQL injection, `exec`/`spawn` misuse, XSS sinks, SSRF, auth bypass, open redirects. |
+| `secrets` | `true` | Credential scan — API keys, tokens, JWT signatures, connection strings; reported redacted. |
+| `dependencies` | `true` | Advisory lookup for new/changed dependency ranges across `package.json`, `requirements*.txt`, `go.mod`, and `Gemfile`. |
+| `block_on_critical_secret` | `true` | When a hardcoded credential is found, the review verdict is `BLOCK`. |
+
+The risk engine scores every finding (info `0`, low `2`, medium `6`, high `15`,
+critical `30`, capped at `100`) and picks a verdict:
+
+| Verdict | Condition |
+|---|---|
+| `BLOCK` | Any critical security finding, any hardcoded credential, or `score >= 75` |
+| `REVIEW` | `score >= 25` or any high-severity finding |
+| `SAFE` | Everything below that |
+
+A `BLOCK` verdict still posts the review (findings and summary) but marks the
+PR merge-blocked in the dashboard. Deterministic findings always bypass
+`min_severity` — the security layer is not quietly optional behind a repo-wide
+threshold.
 
 ## Notes
 

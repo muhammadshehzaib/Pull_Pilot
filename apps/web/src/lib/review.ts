@@ -38,6 +38,14 @@ export type AgentType =
   | 'STYLE'
   | 'TESTING';
 
+/**
+ * Which engine produced a finding. Mirrors the backend `FindingSource`:
+ * the model, the repository-rule engine, or one of the deterministic security
+ * probes. `corroborated` is true when the risk engine found a deterministic
+ * probe in the same file within its corroboration window.
+ */
+export type FindingSource = 'LLM' | 'RULES' | 'SAST' | 'SECRETS' | 'DEPENDENCIES';
+
 export interface AiSuggestion {
   filePath: string;
   lineNumber: number;
@@ -45,6 +53,8 @@ export interface AiSuggestion {
   issue: string;
   suggestion: string;
   priority: Priority;
+  source?: FindingSource;
+  corroborated?: boolean;
 }
 
 /**
@@ -193,6 +203,41 @@ export const AGENT_LABELS: Record<AgentType, string> = {
   STYLE: 'Style',
   TESTING: 'Testing',
 };
+
+export const SOURCE_LABELS: Record<FindingSource, string> = {
+  LLM: 'Model',
+  RULES: 'Rule',
+  SAST: 'SAST',
+  SECRETS: 'Secrets',
+  DEPENDENCIES: 'Deps',
+};
+
+/**
+ * Badge colour per provenance. Secrets findings are the only ones that are
+ * red without double-checking: a hardcoded credential is a fact, not a model
+ * judgement call.
+ */
+export const SOURCE_COLORS: Record<FindingSource, string> = {
+  LLM: 'var(--text-secondary)',
+  RULES: 'var(--accent)',
+  SAST: 'var(--accent)',
+  SECRETS: '#dc2626',
+  DEPENDENCIES: '#d97706',
+};
+
+/**
+ * Short badge label for a finding's provenance. Takes `string` because the API
+ * can carry a source this build has never heard of; an unknown source gets the
+ * model label rather than a crash.
+ */
+export function sourceLabel(source: string | undefined): string {
+  if (!source) return SOURCE_LABELS.LLM;
+  return SOURCE_LABELS[source as FindingSource] ?? SOURCE_LABELS.LLM;
+}
+
+export function sourceColor(source: string | undefined): string {
+  return SOURCE_COLORS[source as FindingSource] ?? SOURCE_COLORS.LLM;
+}
 
 /**
  * Severities that should block a merge. Mirrors the backend `min_severity`
