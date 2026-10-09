@@ -17,6 +17,8 @@ export interface SecurityScanOutcome {
 export interface SecurityProbeOptions {
   /** Live advisory database used by the dependency probe; omit to stay offline. */
   osv?: OsvClient;
+  /** Unfiltered GitHub diff for scanning lockfiles omitted from the AI review diff. */
+  dependencyDiff?: string;
   /** When present, Semgrep runs as an extra SAST pass over the supplied files. */
   semgrep?: SemgrepOptions;
 }
@@ -45,7 +47,12 @@ export async function runSecurityProbes(
     results.push(await runSast(diff, options.semgrep));
   }
   if (security.secrets) results.push(scanSecrets(diff));
-  if (security.dependencies) results.push(await scanDependencies(diff, { osv: options.osv }));
+  if (security.dependencies) {
+    results.push(await scanDependencies(diff, {
+      osv: options.osv,
+      lockfileDiff: options.dependencyDiff,
+    }));
+  }
 
   const findings = results.flatMap((r) => r.findings);
   const checks = results.flatMap((r) => r.checks);

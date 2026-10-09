@@ -48,6 +48,22 @@ function gemDiff(line: string): string {
   );
 }
 
+function npmLockDiff(packagePath: string, version: string): string {
+  return [
+    'diff --git a/package-lock.json b/package-lock.json',
+    '--- a/package-lock.json',
+    '+++ b/package-lock.json',
+    '@@ -1,4 +1,6 @@',
+    ' {',
+    '   "packages": {',
+    `+    "${packagePath}": {`,
+    `+      "version": "${version}",`,
+    '     }',
+    '   }',
+    ' }',
+  ].join('\n');
+}
+
 /** A client backed by a fake transport; records the request bodies it saw. */
 function osvClientReturning(
   vulnsByQuery: (query: { name: string; version: string; ecosystem: string }) => unknown[],
@@ -134,6 +150,38 @@ describe('dependencies probe — introduced and bumped dependencies', () => {
       await scanDependencies(npmDiff(['"superagent": "^6.2.0",'], ['"superagent": "^6.1.0",']))
     ).findings;
     expect(findings.some((f) => f.ruleKey === 'deps-major-bump')).toBe(false);
+  });
+});
+
+describe('dependencies probe — npm lockfiles', () => {
+  it('checks newly resolved transitive packages against OSV', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    const result = await scanDependencies('', {
+      lockfileDiff: npmLockDiff('node_modules/transitive-vuln', '1.2.3'),
+      osv: osvClientReturning(
+        () => [{ id: 'GHSA-TEST-0001', summary: 'Test advisory', database_specific: { severity: 'HIGH' } }],
+        seen,
+      ),
+    });
+
+    expect(seen).toContainEqual({ name: 'transitive-vuln', version: '1.2.3', ecosystem: 'npm' });
+    expect(result.findings).toEqual([
+      expect.objectContaining({
+        filePath: 'package-lock.json',
+        lineNumber: 4,
+        ruleKey: 'deps-vulnerable',
+        priority: 'HIGH',
+      }),
+    ]);
+  });
+
+  it('extracts the innermost scoped package from nested npm lock paths', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: npmLockDiff('node_modules/parent/node_modules/@scope/transitive', '2.3.4'),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: '@scope/transitive', version: '2.3.4', ecosystem: 'npm' });
   });
 });
 

@@ -106,9 +106,9 @@ dependencies to **OSV.dev**, and SAST to **Semgrep** (opt-in).
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Master switch for the whole security layer. `false` skips every probe. |
-| `sast` | `true` | Static analysis patterns — SQL injection, `exec`/`spawn` misuse, XSS sinks, SSRF, auth bypass, open redirects. |
+| `sast` | `true` | Static analysis patterns — SQL injection, command execution, XSS sinks, SSRF, unsafe file paths, insecure auth patterns, disabled TLS verification, weak hashes, unsafe Python pickle loading, and open redirects. |
 | `secrets` | `true` | Credential scan — API keys, tokens, JWT signatures, connection strings; reported redacted. |
-| `dependencies` | `true` | Advisory lookup for new/changed dependency ranges across `package.json`, `requirements*.txt`, `go.mod`, and `Gemfile`. |
+| `dependencies` | `true` | Advisory lookup for new/changed dependency ranges across `package.json`, `requirements*.txt`, `go.mod`, and `Gemfile`, plus newly resolved npm packages in `package-lock.json` (including transitive dependencies). |
 | `osv` | `true` | Query the live OSV.dev advisory database for dependencies. When off — or unreachable — the probe falls back to a small bundled offline registry. |
 | `semgrep` | `false` | Run the external **Semgrep** scanner as an extra SAST pass. Requires the `semgrep` binary; when it is absent the pass is skipped and the built-in rules still run. |
 | `block_on_critical_secret` | `true` | When a hardcoded credential is found, the review verdict is `BLOCK`. |
@@ -122,6 +122,15 @@ host (`pip install semgrep`); when present it scans the changed files' full
 contents and its findings are folded into the SAST probe. The tunables
 (`OSV_API_URL`, `OSV_QUERY_TIMEOUT_MS`, `OSV_MAX_BATCH`, `SEMGREP_BIN`,
 `SEMGREP_RULES`, `SEMGREP_TIMEOUT_MS`) live in the backend environment.
+
+The npm dependency probe also reads added exact versions from `package-lock.json`
+changes, including nested `node_modules` entries, so newly resolved transitive
+packages are checked rather than only direct manifest declarations. Lockfiles
+remain excluded from the AI prompt by default; the dependency security probe
+still inspects their changed package/version entries even when the review's
+`ignore` patterns exclude them from the model diff. This lockfile support is
+currently specific to npm `package-lock.json` v2/v3; other ecosystems are checked
+through the manifests listed above.
 
 The risk engine scores every finding (info `0`, low `2`, medium `6`, high `15`,
 critical `30`, capped at `100`) and picks a verdict:

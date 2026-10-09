@@ -52,6 +52,12 @@ interface ParsedLine {
 export interface DependencyScanOptions {
   /** When present, packages are looked up against the live OSV database. */
   osv?: OsvClient;
+  /**
+   * Optional unfiltered diff used only for package-lock parsing. Lockfiles are
+   * excluded from AI review by default, but their exact resolved versions are
+   * important for transitive dependency vulnerability checks.
+   */
+  lockfileDiff?: string;
 }
 
 /** Splits a per-file chunk into cleaned content lines with their origin. */
@@ -224,6 +230,12 @@ export async function scanDependencies(
     }
   }
 
+  // Lockfiles are deliberately excluded from the AI prompt by default, so
+  // scan their added exact package versions separately. This catches
+  // transitive packages and avoids sending large lockfile diffs to the model.
+  const lockfileCandidates = parseNpmLockfileDiff(options.lockfileDiff ?? diff);
+  candidates.push(...lockfileCandidates);
+
   // ── OSV lookup ────────────────────────────────────────────────────────────
   // Only packages whose constraint pins a queryable version are sent. A `*` or
   // `latest` spec offers nothing concrete to ask about; those fall back to the
@@ -353,10 +365,104 @@ export async function scanDependencies(
     }
   }
 
+  for (const { filename, dep, anchor, ecosystem } of lockfileCandidates) {
+    const version = osvVersionFor(dep.spec);
+    if (!version) continue;
+    const key = `${ecosystem}\u0000${dep.name}\u0000${version}`.toLowerCase();
+    const osvAnswerable = osvActive && queriedRefs.has(key);
+    const vulns = osvAnswerable
+      ? [...(osvByRef.get(key) ?? [])].sort(
+          (a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0),
+        )
+      : advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a)).map((a) => ({
+          id: 'bundled-registry',
+          summary: a.description,
+          severity: a.severity,
+          aliases: [],
+        }));
+
+    for (const vuln of vulns) {
+      if (!recordCount('deps-vulnerable')) break;
+      findings.push({
+        filePath: filename,
+        lineNumber: anchor.lineNumber,
+        agentType: 'SECURITY',
+        source: 'DEPENDENCIES',
+        ruleKey: 'deps-vulnerable',
+        issue: `Resolved dependency "${dep.name}@${dep.spec}" has a known vulnerability (${vuln.id}: ${vuln.summary})`,
+        suggestion: `Update the dependency tree so "${dep.name}" resolves to a release that fixes ${vuln.id}.`,
+        priority: vuln.severity,
+      });
+    }
+  }
+
   return {
     findings,
     checks: [checkForProbe('DEPENDENCIES', 'dependencies', 'Vulnerable dependency scan', findings.length)],
   };
+}
+
+/**
+ * Extracts newly added exact npm package versions from package-lock v2/v3
+ * unified diffs. The package key may be context (for a version-only update),
+ * so track it across each hunk rather than requiring the key itself to be new.
+ */
+function parseNpmLockfileDiff(diff: string): DependencyCandidate[] {
+  const candidates: DependencyCandidate[] = [];
+  for (const chunk of DiffFilterService.splitDiffByFile(diff)) {
+    if (!/(?:^|\/)package-lock\.json$/i.test(chunk.filename)) continue;
+
+    let inPackages = false;
+    let packageName: string | null = null;
+    let newLine = 0;
+    let inHunk = false;
+
+    for (const raw of chunk.content.split('\n')) {
+      const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+      if (hunk) {
+        newLine = Number(hunk[1]);
+        inHunk = true;
+        continue;
+      }
+      if (!inHunk || raw.startsWith('\\')) continue;
+
+      const prefix = raw[0];
+      if (prefix !== '+' && prefix !== '-' && prefix !== ' ') continue;
+      const text = raw.slice(1);
+
+      if (/^\s*"packages"\s*:\s*\{/.test(text)) inPackages = true;
+      const packageKey = /^\s*"(node_modules\/.+)"\s*:\s*\{/.exec(text);
+      if (inPackages && packageKey) packageName = npmNameFromLockPath(packageKey[1]);
+
+      const version = /^\s*"version"\s*:\s*"(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)"/.exec(text);
+      if (inPackages && prefix === '+' && packageName && version) {
+        candidates.push({
+          filename: chunk.filename.replace(/^\.\//, ''),
+          ecosystem: 'npm',
+          dep: { name: packageName, spec: version[1], dev: false, added: true },
+          anchor: { filename: chunk.filename.replace(/^\.\//, ''), lineNumber: newLine, text },
+        });
+      }
+
+      if (prefix !== '-') newLine += 1;
+    }
+  }
+  return candidates;
+}
+
+function npmNameFromLockPath(lockPath: string): string | null {
+  const segments = lockPath.split('/');
+  let marker = -1;
+  for (let i = 0; i < segments.length; i += 1) {
+    if (segments[i] === 'node_modules') marker = i;
+  }
+  if (marker < 0 || marker + 1 >= segments.length) return null;
+  const first = segments[marker + 1];
+  if (first.startsWith('@')) {
+    const packageSegment = segments[marker + 2];
+    return packageSegment ? `${first}/${packageSegment}` : null;
+  }
+  return first;
 }
 
 /** The concrete version to ask OSV about, or null when the spec is a wildcard. */

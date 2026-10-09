@@ -235,6 +235,7 @@ export const analysisWorker = new Worker(
       const securityScan = await guard(
         runSecurityProbes(repoConfig.security, filteredDiff, {
           osv: repoConfig.security.osv ? new OsvClient() : undefined,
+          dependencyDiff: rawDiff,
           semgrep: semgrepFiles && semgrepFiles.size > 0 ? { files: semgrepFiles } : undefined,
         }),
       );
