@@ -315,7 +315,9 @@ export const analysisWorker = new Worker(
       // annotates findings whose deterministic detection lines up with a model
       // (or rule) finding on the same lines — corroboration that makes a
       // borderline report much more trustworthy.
-      const { findings: suggestions, report: risk } = assessRisk(mergedFindings);
+      const { findings: suggestions, report: risk } = assessRisk(mergedFindings, {
+        blockOnCriticalSecret: repoConfig.security.block_on_critical_secret,
+      });
 
       console.log(
         `🎯 AI Analysis Finished! Found ${rawSuggestions.length} model finding(s) + ${ruleEvaluation.violations.length} rule violation(s) + ${securityScan.findings.length} security finding(s); ${suggestions.length} total after dedupe (${repoConfig.min_severity} threshold applies to model findings only).`,

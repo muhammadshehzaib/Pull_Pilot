@@ -8,8 +8,9 @@ import { SecurityProbe } from './probe-types';
  *
  * Weights: CRITICAL 30 · HIGH 15 · MEDIUM 6 · LOW 2 · INFO 0, summed and
  * capped at 100. A finding is "blocking" when the whole review should be
- * stopped: any CRITICAL security finding, any SECRETS finding (credentials
- * are facts, not judgement calls), or a total score of 75+.
+ * stopped: any CRITICAL deterministic security finding, a secret finding when
+ * the repository's block_on_critical_secret policy is enabled, or a total
+ * score of 75+.
  */
 
 export type RiskVerdict = 'BLOCK' | 'REVIEW' | 'SAFE';
@@ -23,6 +24,11 @@ export interface RiskReport {
   categories: string[];
   byProbe: Record<SecurityProbe, number>;
   reasons: string[];
+}
+
+export interface RiskOptions {
+  /** Whether a deterministic critical secret finding should force BLOCK. */
+  blockOnCriticalSecret?: boolean;
 }
 
 export const SEVERITY_WEIGHTS = { CRITICAL: 30, HIGH: 15, MEDIUM: 6, LOW: 2, INFO: 0 } as const;
@@ -40,7 +46,10 @@ const PROBE_SOURCES: AiSuggestion['source'][] = ['SAST', 'SECRETS', 'DEPENDENCIE
  * The input list should already be deduplicated; otherwise the same defect
  * reported twice would count twice toward the score.
  */
-export function assessRisk(findings: AiSuggestion[]): { report: RiskReport; findings: AiSuggestion[] } {
+export function assessRisk(
+  findings: AiSuggestion[],
+  options: RiskOptions = {},
+): { report: RiskReport; findings: AiSuggestion[] } {
   const annotated = findings.map((f) => ({ ...f }));
 
   const probeFindings = annotated.filter((f) => f.source && PROBE_SOURCES.includes(f.source));
@@ -70,8 +79,11 @@ export function assessRisk(findings: AiSuggestion[]): { report: RiskReport; find
   for (const f of annotated) score += SEVERITY_WEIGHTS[f.priority] ?? 0;
   score = Math.min(score, 100);
 
-  const hasCriticalSecurity = securityFindings.some((f) => f.priority === 'CRITICAL');
-  const hasSecret = securityFindings.some((f) => f.source === 'SECRETS');
+  const blockOnCriticalSecret = options.blockOnCriticalSecret ?? true;
+  const hasCriticalSecurity = securityFindings.some(
+    (f) => f.priority === 'CRITICAL' && (f.source !== 'SECRETS' || blockOnCriticalSecret),
+  );
+  const hasSecret = blockOnCriticalSecret && securityFindings.some((f) => f.source === 'SECRETS');
   const hasHigh = findings.some((f) => f.priority === 'HIGH');
 
   const reasons: string[] = [];
@@ -96,7 +108,13 @@ export function assessRisk(findings: AiSuggestion[]): { report: RiskReport; find
   const report: RiskReport = {
     score,
     verdict,
-    blockingCount: hasCriticalSecurity || hasSecret ? securityFindings.length : score >= 75 ? securityFindings.length : 0,
+    blockingCount: score >= 75
+      ? securityFindings.length
+      : securityFindings.filter((f) =>
+          f.source === 'SECRETS'
+            ? blockOnCriticalSecret
+            : f.priority === 'CRITICAL',
+        ).length,
     securityFindingCount: securityFindings.length,
     corroboratedCount,
     categories,

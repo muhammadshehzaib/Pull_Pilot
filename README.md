@@ -36,10 +36,15 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 - **Multi-provider AI** — pick OpenAI, Gemini, Claude, or Grok per user; switch any time
 - **Encrypted key vault** — your AI API key is stored AES-256-GCM encrypted; the plaintext only exists in memory during a job
 - **GitHub OAuth login** — sign in with GitHub, no passwords
-- **Per-user repo management** — connect/disconnect repos; we manage the webhook lifecycle for you
+- **CSRF-protected GitHub OAuth** — validates a one-time OAuth `state` value before establishing a session
+- **User-linked GitHub App installations** — installation claims are tied to the authenticated GitHub user and verified against GitHub's signed installation webhook before repositories are linked
+- **Per-user repo management** — repositories are scoped to their owner and GitHub repository ID; webhook routing refuses ambiguous ownership instead of crossing tenants
 - **Manual review trigger** — fire off a review for any PR on demand from the dashboard
 - **Live dashboard** — Socket.IO streams every step (`fetching diff → building context → AI dispatching → posting comments`) in real time
 - **GitHub App Integration (Pull Pilot)** — 1-click installation across individual repositories or entire organizations with automated PR & push webhooks
+- **Review lifecycle and retries** — persisted progress states, cancellation and timeout handling, and a distinct retrying state for transient failures
+- **Webhook idempotency** — review identity includes the repository, event/reference, and commit SHA so duplicate deliveries do not enqueue duplicate reviews
+- **Quota reservations** — review paths reserve usage atomically when accepted, including manual, webhook, and polling-triggered reviews
 - **Background processing** — BullMQ + Redis with retries, exponential backoff, and bounded concurrency
 
 ---
@@ -77,6 +82,20 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 4. Diff + related context + your `.aipr.yml` guidelines are sent to the configured AI provider
 5. Findings are deduped, severity-filtered, and posted as inline PR comments + a summary comment
 6. Results are persisted and streamed to the dashboard over Socket.IO
+
+### Review lifecycle
+
+Each accepted review is persisted through the worker lifecycle:
+
+```text
+QUEUED → FETCHING → ANALYZING → GENERATING → POSTING → COMPLETED
+                         │             │           │
+                         └──── transient failure ──→ RETRYING → FETCHING
+```
+
+`FAILED` is used when attempts are exhausted. `CANCELLED` and `TIMEOUT` represent reviews stopped by a user or by the configured review timeout; `SKIPPED` is used when a review cannot or should not proceed (for example, a quota or eligibility check). Retries keep the job non-terminal while another attempt is scheduled.
+
+Webhook-triggered reviews are deduplicated by repository, event type, reference, and commit SHA. Usage is reserved atomically when a review is accepted, rather than charged again when the worker completes it. Installation ownership is established through the authenticated GitHub App setup flow and checked against the signed installation webhook before repository access is linked.
 
 ### Stack
 
@@ -192,7 +211,9 @@ All endpoints under `/api`. Auth-protected routes require either the `auth_token
 | Method | Path | Description |
 |---|---|---|
 | GET | `/auth/github` | Start GitHub OAuth |
-| GET | `/auth/github/callback` | OAuth callback (sets cookie, redirects to dashboard) |
+| GET | `/auth/github/callback` | Validates OAuth `state`, sets the session cookie, and redirects to the dashboard |
+| GET | `/auth/github-app/install` | Start or continue the authenticated GitHub App installation flow |
+| GET | `/auth/github-app/callback` | Validate and complete the GitHub App installation claim |
 | GET | `/auth/me` | Current user 🔒 |
 | POST | `/auth/logout` | Clear auth cookie |
 
@@ -270,12 +291,13 @@ ai-pr-reviewer/
 
 - **User** — GitHub identity (`githubId`, `username`, `email`, `avatarUrl`)
 - **Vault** — encrypted AI API key + provider preference (one per user)
-- **Subscription** — Polar subscription state + usage quota
-- **Installation** — GitHub App installation (org or user)
-- **Repository** — connected GitHub repo (`fullName`, `webhookId`, `isActive`)
+- **Subscription** — Polar subscription state and plan information
+- **Installation** — GitHub App installation linked to its owning user, with the GitHub account that initiated installation recorded for verification
+- **InstallationClaim** — short-lived, one-time OAuth-style claim used to bind GitHub App setup to the signed-in user
+- **Repository** — GitHub repo scoped by stable GitHub repository ID and installation/owner (`fullName`, `webhookId`, `isActive`)
 - **CachedFile** — encrypted source-file cache used by the context engine, keyed by git blob SHA
-- **AnalysisJob** — one row per review (PR or commit). Tracks `status` (`QUEUED` / `RUNNING` / `COMPLETED` / `FAILED`) and stores AI findings in a JSON column
-- **UsageLedger** — per-job usage records for billing
+- **AnalysisJob** — one row per review (PR or commit). Tracks lifecycle status (`QUEUED`, `FETCHING`, `ANALYZING`, `GENERATING`, `POSTING`, `RETRYING`, `COMPLETED`, `FAILED`, `SKIPPED`, `CANCELLED`, or `TIMEOUT`; `RUNNING` remains for legacy jobs), commit SHA, and findings
+- **UsageLedger** — per-installation or per-user monthly usage counters, reserved atomically when a review is accepted
 
 ---
 

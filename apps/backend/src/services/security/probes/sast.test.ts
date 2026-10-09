@@ -17,6 +17,24 @@ function keys(diff: string): string[] {
   return scanSast(diff).findings.map((f) => f.ruleKey);
 }
 
+describe('SAST probe — additional cryptography and deserialization checks', () => {
+  it('flags JWT none algorithm configuration', () => {
+    expect(keys(diffWith('src/auth.ts', ['const options = { algorithm: "none" };']))).toContain('sast-jwt-alg-none');
+  });
+
+  it('flags disabled TLS peer verification', () => {
+    expect(keys(diffWith('src/client.ts', ['const agent = new https.Agent({ rejectUnauthorized: false });']))).toContain('sast-tls-verification-disabled');
+  });
+
+  it('flags weak Node hash algorithms', () => {
+    expect(keys(diffWith('src/hash.ts', ["createHash('md5')"])) ).toContain('sast-weak-hash');
+  });
+
+  it('flags Python pickle deserialization', () => {
+    expect(keys(diffWith('src/cache.py', ['pickle.loads(payload)']))).toContain('sast-python-pickle-untrusted');
+  });
+});
+
 describe('SAST probe — SQL injection', () => {
   it('flags a template-literal query in JS/TS', () => {
     const diff = diffWith('src/db.ts', ['db.query(`SELECT * FROM users WHERE id = ${id}`);']);

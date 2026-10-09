@@ -226,6 +226,44 @@ const SAST_RULES: SastRule[] = [
     remediation: 'Derive identity and roles from the authenticated session, never from client-supplied headers.',
   },
 
+  /* ── Weak cryptography / transport ────────────────────────────────────── */
+  {
+    key: 'sast-jwt-alg-none',
+    name: 'JWT accepts the none algorithm',
+    filePattern: ALL,
+    pattern: /(?:algorithm|alg)\s*[:=]\s*["'`]none["'`]/i,
+    severity: 'CRITICAL',
+    description: 'The JWT algorithm is configured as `none`, which can allow attackers to forge unsigned tokens if accepted by the verifier.',
+    remediation: 'Require an explicit asymmetric or HMAC algorithm and pin the allowed algorithm on both signing and verification.',
+  },
+  {
+    key: 'sast-tls-verification-disabled',
+    name: 'TLS certificate verification disabled',
+    filePattern: ALL,
+    pattern: /(?:rejectUnauthorized\s*:\s*false|verify\s*=\s*False|CERT_NONE|_create_unverified_context\s*\()/,
+    severity: 'HIGH',
+    description: 'TLS peer verification is disabled. Connections can be intercepted without the client detecting an invalid certificate.',
+    remediation: 'Keep certificate verification enabled; install the correct CA certificate instead of bypassing validation.',
+  },
+  {
+    key: 'sast-weak-hash',
+    name: 'Weak cryptographic hash',
+    filePattern: JS,
+    pattern: /\bcreateHash\s*\(\s*["'`](?:md5|sha1)["'`]\s*\)/i,
+    severity: 'MEDIUM',
+    description: 'MD5 and SHA-1 are collision-broken and should not be used for security-sensitive integrity or signature operations.',
+    remediation: 'Use SHA-256 or a stronger modern hash; use a password-hashing function such as Argon2id or scrypt for passwords.',
+  },
+  {
+    key: 'sast-python-pickle-untrusted',
+    name: 'Unsafe Python pickle deserialization',
+    filePattern: PY,
+    pattern: /\bpickle\.(?:loads?|Unpickler)\s*\(/,
+    severity: 'HIGH',
+    description: 'Python pickle can execute arbitrary code while deserializing. Loading attacker-controlled or tampered data can result in code execution.',
+    remediation: 'Use a non-executable format such as JSON for untrusted data; authenticate trusted serialized data before loading it.',
+  },
+
   /* ── Authorization bugs / open redirects ──────────────────────────────── */
   {
     key: 'sast-open-redirect-server',

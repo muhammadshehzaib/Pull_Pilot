@@ -43,6 +43,15 @@ describe('risk engine — verdicts', () => {
     expect(report.reasons.join()).toContain('credential');
   });
 
+  it('honors the repository option that disables secret-triggered blocking', () => {
+    const { report } = assessRisk(
+      [finding({ priority: 'HIGH', source: 'SECRETS' })],
+      { blockOnCriticalSecret: false },
+    );
+    expect(report.verdict).toBe('REVIEW');
+    expect(report.blockingCount).toBe(0);
+  });
+
   it('BLOCKs when the score reaches 75', () => {
     // 6 LOWs (2 each = 12) is too low; 3 CRITICAL via model findings (30 each = 90).
     const { report } = assessRisk([
