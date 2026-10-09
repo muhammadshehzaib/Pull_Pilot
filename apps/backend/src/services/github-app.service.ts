@@ -80,6 +80,25 @@ export class GitHubAppService {
     return jwt.sign(payload, privateKey, { algorithm: 'RS256' });
   }
 
+  /** Retrieves trusted installation metadata for the App setup callback. */
+  public static async getInstallationDetails(installationId: string): Promise<any> {
+    const response = await axios.get(`https://api.github.com/app/installations/${installationId}`, {
+      headers: {
+        Authorization: `Bearer ${this.generateAppJwt()}`,
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'AI-PR-Reviewer-App',
+      },
+    });
+    return response.data;
+  }
+
+  /** Lists the repositories currently authorized for an installation. */
+  public static async getInstallationRepositories(installationId: string): Promise<any[]> {
+    const octokit = await this.getInstallationOctokit(installationId);
+    const result = await octokit.paginate(octokit.apps.listReposAccessibleToInstallation, { per_page: 100 });
+    return result as any[];
+  }
+
   /**
    * Obtains a short-lived Installation Access Token for a specific installation ID.
    * Uses an in-memory cache with 5-minute pre-expiration renewal.

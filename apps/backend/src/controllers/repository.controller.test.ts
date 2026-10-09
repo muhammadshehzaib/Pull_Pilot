@@ -78,6 +78,12 @@ vi.mock('../config/queue', () => ({
   analysisQueue: { add: mockQueueAdd },
 }));
 
+vi.mock('../services/quota.service', () => ({
+  QuotaService: {
+    reserveReview: vi.fn().mockResolvedValue({ allowed: true, usage: { current: 1, limit: 50 } }),
+  },
+}));
+
 import { RepositoryController } from './repository.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
 

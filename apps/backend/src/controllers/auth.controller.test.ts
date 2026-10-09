@@ -26,6 +26,10 @@ vi.mock('../config/prisma', () => ({
 import { AuthController } from './auth.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
 
+const OAUTH_STATE = 'a'.repeat(64);
+const oauthCallbackReq = (query: Record<string, string>) =>
+  mockReq({ query: { ...query, state: OAUTH_STATE }, cookies: { github_oauth_state: OAUTH_STATE } });
+
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 beforeEach(() => {
@@ -74,7 +78,11 @@ describe('AuthController.startGitHubLogin', () => {
 
     expect(mockUserFind).not.toHaveBeenCalled();
     expect(mockUserCreate).not.toHaveBeenCalled();
-    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.cookie).toHaveBeenCalledWith(
+      'github_oauth_state',
+      expect.stringMatching(/^[0-9a-f]{64}$/),
+      expect.objectContaining({ httpOnly: true, sameSite: 'lax' }),
+    );
     expect(res.redirect.mock.calls[0][0]).toContain('github.com/login/oauth/authorize');
   });
 });
@@ -87,7 +95,7 @@ describe('AuthController.handleGitHubCallback', () => {
     });
     mockUserUpsert.mockResolvedValueOnce({ id: 'u-1', githubId: '99' });
 
-    const req = mockReq({ query: { code: 'oauth-code-abc' } });
+    const req = oauthCallbackReq({ code: 'oauth-code-abc' });
     const res = mockRes();
 
     await AuthController.handleGitHubCallback(req, res);
@@ -120,7 +128,7 @@ describe('AuthController.handleGitHubCallback', () => {
 
   it('returns 500 when GitHub OAuth credentials are not configured', async () => {
     delete process.env.GITHUB_CLIENT_SECRET;
-    const req = mockReq({ query: { code: 'x' } });
+    const req = oauthCallbackReq({ code: 'x' });
     const res = mockRes();
 
     await AuthController.handleGitHubCallback(req, res);
@@ -131,7 +139,7 @@ describe('AuthController.handleGitHubCallback', () => {
 
   it('returns 401 when GitHub did not return an access token', async () => {
     mockAxiosPost.mockResolvedValueOnce({ data: { error: 'bad_verification_code' } });
-    const req = mockReq({ query: { code: 'x' } });
+    const req = oauthCallbackReq({ code: 'x' });
     const res = mockRes();
 
     await AuthController.handleGitHubCallback(req, res);
@@ -146,7 +154,7 @@ describe('AuthController.handleGitHubCallback', () => {
     mockAxiosPost.mockResolvedValueOnce({ data: { access_token: 'tok' } });
     mockAxiosGet.mockRejectedValueOnce(new Error('GitHub down'));
 
-    const req = mockReq({ query: { code: 'x' } });
+    const req = oauthCallbackReq({ code: 'x' });
     const res = mockRes();
 
     await AuthController.handleGitHubCallback(req, res);
@@ -159,7 +167,7 @@ describe('AuthController.handleGitHubCallback', () => {
 
   it('does NOT set cookie or redirect on failure', async () => {
     mockAxiosPost.mockRejectedValueOnce(new Error('boom'));
-    const req = mockReq({ query: { code: 'x' } });
+    const req = oauthCallbackReq({ code: 'x' });
     const res = mockRes();
 
     await AuthController.handleGitHubCallback(req, res);

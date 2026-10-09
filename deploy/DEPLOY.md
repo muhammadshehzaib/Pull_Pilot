@@ -13,7 +13,11 @@ Topology (same pattern as the other apps on this VPS): Docker containers bound t
    the local one separate). Create at github.com/settings/developers with callback:
    `https://reviewerapi.shehzaib.com/api/auth/github/callback`
 3. **GitHub App** (optional but recommended). Without it every review runs as the
-   bot PAT, so third-party repos fail with 404. See step 1b.
+   bot PAT, so third-party repos fail with 404. Set the App's **Setup URL** to
+   `https://reviewerapi.shehzaib.com/api/auth/github-app/callback` and set
+   `GITHUB_APP_SLUG` to the App's URL slug. Users must sign in before installing
+   the App so its one-time state can link the installation to their account.
+   See step 1b.
 4. If ports 8090/8091 are taken on the VPS (`ss -tlnp | grep -E '8090|8091'`),
    change them in `docker-compose.prod.yml` AND the two nginx confs.
 
@@ -25,7 +29,7 @@ git clone https://github.com/muhammadshehzaib/ai-pr-reviewer.git /opt/ai-pr-revi
 cd /opt/ai-pr-reviewer
 cp .env.prod.example .env.prod
 # fill in: POSTGRES_PASSWORD + ENCRYPTION_KEY + JWT_SECRET (openssl rand -hex 32 each),
-# prod OAuth app client id/secret, GITHUB_APP_ID, bot PAT, random GITHUB_WEBHOOK_SECRET,
+# prod OAuth app client id/secret, GITHUB_APP_ID/GITHUB_APP_SLUG, bot PAT, random GITHUB_WEBHOOK_SECRET,
 # and the Polar token/secret/product ids (see step 1c)
 nano .env.prod
 ```

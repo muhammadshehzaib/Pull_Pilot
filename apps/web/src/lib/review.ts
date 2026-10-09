@@ -17,6 +17,7 @@ export type JobStatus =
   | 'ANALYZING'
   | 'GENERATING'
   | 'POSTING'
+  | 'RETRYING'
   | 'RUNNING'
   | 'COMPLETED'
   | 'FAILED'
@@ -78,6 +79,7 @@ export const IN_PROGRESS_STATUSES: readonly JobStatus[] = [
   'ANALYZING',
   'GENERATING',
   'POSTING',
+  'RETRYING',
   'RUNNING',
 ];
 
@@ -112,6 +114,7 @@ export const STATUS_LABELS: Record<JobStatus, string> = {
   ANALYZING: 'Analyzing',
   GENERATING: 'Building review',
   POSTING: 'Posting comments',
+  RETRYING: 'Retrying',
   RUNNING: 'Running',
   COMPLETED: 'Completed',
   FAILED: 'Failed',
@@ -126,6 +129,7 @@ export const STATUS_COLORS: Record<JobStatus, string> = {
   ANALYZING: 'var(--accent)',
   GENERATING: 'var(--accent)',
   POSTING: 'var(--accent)',
+  RETRYING: 'var(--warning)',
   RUNNING: 'var(--accent)',
   COMPLETED: 'var(--success)',
   FAILED: 'var(--danger)',

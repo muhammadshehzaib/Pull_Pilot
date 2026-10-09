@@ -5,6 +5,7 @@ import { GitHubAppService } from '../services/github-app.service';
 import { RepositoryContextCache } from '../services/repository-context-cache.service';
 import { analysisQueue } from '../config/queue';
 import { BACKEND_URL } from '../utils/constants';
+import { QuotaService } from '../services/quota.service';
 import { paginationMeta, parsePagination } from '../utils/pagination';
 
 async function getGitHub(installationId?: string | number | null): Promise<GitHubService> {
@@ -71,6 +72,13 @@ export class RepositoryController {
     try {
       const gh = await getGitHub(existing?.installation?.githubInstallationId?.toString());
       const ghRepo = await gh.getRepo(owner, repo);
+      const claimedRepo = await prisma.repository.findFirst({
+        where: { githubRepoId: BigInt(ghRepo.id) },
+        select: { id: true, userId: true },
+      });
+      if (claimedRepo && claimedRepo.id !== existing?.id && claimedRepo.userId !== req.auth!.userId) {
+        return res.status(409).json({ error: 'Repository is already connected to another account' });
+      }
       const webhookUrl = `${BACKEND_URL}/api/webhooks/github`;
 
       let hookId: string | null = null;
@@ -232,6 +240,15 @@ export class RepositoryController {
         status: 'QUEUED',
       },
     });
+
+    const reservation = await QuotaService.reserveReview(repo.installationId, repo.isPrivate, repo.userId);
+    if (!reservation.allowed) {
+      await prisma.analysisJob.update({
+        where: { id: job.id },
+        data: { status: 'SKIPPED', results: { reason: 'quota-exceeded', details: reservation.reason } },
+      });
+      return res.status(429).json({ error: reservation.reason, usage: reservation.usage });
+    }
 
     await analysisQueue.add(`manual-${eventType}-${referenceId}`, {
       jobId: job.id,

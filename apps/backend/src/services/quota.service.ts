@@ -134,6 +134,88 @@ export class QuotaService {
     };
   }
 
+  /** Atomically claims one review slot. Enqueueing the review consumes quota. */
+  public static async reserveReview(
+    installationId: string | null | undefined,
+    isPrivate: boolean,
+    userId?: string,
+  ): Promise<QuotaCheckResult> {
+    const billingMonth = this.getCurrentBillingMonth();
+    const installation = installationId
+      ? await prisma.installation.findUnique({ where: { id: installationId } })
+      : null;
+    const activeSubscription = !installationId && userId
+      ? await prisma.subscription.findFirst({
+          where: { userId, status: { in: ['active', 'trialing', 'past_due'] } },
+          orderBy: { updatedAt: 'desc' },
+        })
+      : null;
+    const tier = installation?.plan || activeSubscription?.plan || 'FREE';
+    const limit = isPrivate && tier === 'FREE' ? FREE_TIER_PRIVATE_LIMIT : null;
+    if (!installationId && !userId) {
+      return {
+        allowed: false,
+        reason: 'A usage owner is required to reserve a review.',
+        usage: { current: 0, limit, isPrivate, tier, billingMonth },
+      };
+    }
+
+    if (installationId) {
+      await this.getOrCreateLedger(installationId, billingMonth);
+    } else {
+      await prisma.usageLedger.upsert({
+        where: { userId_billingMonth: { userId: userId!, billingMonth } },
+        update: {},
+        create: { userId: userId!, billingMonth, publicReviewsCount: 0, privateReviewsCount: 0 },
+      });
+    }
+
+    if (limit !== null) {
+      const reserved = await prisma.usageLedger.updateMany({
+        where: {
+          ...(installationId ? { installationId } : { userId }),
+          billingMonth,
+          privateReviewsCount: { lt: limit },
+        },
+        data: { privateReviewsCount: { increment: 1 } },
+      });
+      const ledger = installationId
+        ? await this.getOrCreateLedger(installationId, billingMonth)
+        : await prisma.usageLedger.findUniqueOrThrow({
+            where: { userId_billingMonth: { userId: userId!, billingMonth } },
+          });
+      if (reserved.count === 0) {
+        return {
+          allowed: false,
+          reason: `Monthly free tier quota exceeded (${ledger.privateReviewsCount}/${limit} private reviews used this month).`,
+          usage: { current: ledger.privateReviewsCount, limit, isPrivate: true, tier: 'FREE', billingMonth },
+        };
+      }
+      return {
+        allowed: true,
+        usage: { current: ledger.privateReviewsCount, limit, isPrivate: true, tier, billingMonth },
+      };
+    }
+
+    const field = isPrivate ? 'privateReviewsCount' : 'publicReviewsCount';
+    const updated = await prisma.usageLedger.update({
+      where: installationId
+        ? { installationId_billingMonth: { installationId, billingMonth } }
+        : { userId_billingMonth: { userId: userId!, billingMonth } },
+      data: { [field]: { increment: 1 } },
+    });
+    return {
+      allowed: true,
+      usage: {
+        current: isPrivate ? updated.privateReviewsCount : updated.publicReviewsCount,
+        limit: null,
+        isPrivate,
+        tier,
+        billingMonth,
+      },
+    };
+  }
+
   /**
    * Atomically increments the review usage counter upon job completion.
    */

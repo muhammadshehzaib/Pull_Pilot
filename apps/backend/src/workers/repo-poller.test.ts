@@ -25,6 +25,12 @@ vi.mock('../config/redis', () => ({
   redisConnection: { get: mockRedisGet, set: mockRedisSet },
 }));
 
+vi.mock('../services/quota.service', () => ({
+  QuotaService: {
+    reserveReview: vi.fn().mockResolvedValue({ allowed: true, usage: { current: 1, limit: 50 } }),
+  },
+}));
+
 import { pollRepositoriesOnce } from './repo-poller';
 
 // pollRepositoriesOnce accepts the GitHub service as a parameter, so the

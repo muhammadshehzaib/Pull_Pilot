@@ -13,6 +13,7 @@ vi.mock('../config/prisma', () => ({
       findFirst: vi.fn(),
       update: vi.fn(),
     },
+    usageLedger: { aggregate: vi.fn().mockResolvedValue({ _sum: { publicReviewsCount: 0, privateReviewsCount: 0 } }) },
   },
 }));
 
@@ -37,6 +38,7 @@ const db = prisma as unknown as {
     findFirst: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
+  usageLedger: { aggregate: ReturnType<typeof vi.fn> };
 };
 
 const quota = QuotaService as unknown as {
@@ -335,10 +337,7 @@ describe('BillingService.getUserBillingOverview', () => {
   it('reports FREE with a 50 private review cap when not subscribed', async () => {
     db.installation.findMany.mockResolvedValueOnce([{ id: 'inst_1' }]);
     db.subscription.findFirst.mockResolvedValueOnce(null);
-    quota.getOrCreateLedger.mockResolvedValueOnce({
-      publicReviewsCount: 3,
-      privateReviewsCount: 45,
-    });
+    db.usageLedger.aggregate.mockResolvedValueOnce({ _sum: { publicReviewsCount: 3, privateReviewsCount: 45 } });
 
     const overview = await BillingService.getUserBillingOverview('user-123');
 
@@ -358,10 +357,7 @@ describe('BillingService.getUserBillingOverview', () => {
       currentPeriodEnd: new Date('2026-11-04T00:00:00.000Z'),
       cancelAtPeriodEnd: false,
     });
-    quota.getOrCreateLedger.mockResolvedValueOnce({
-      publicReviewsCount: 10,
-      privateReviewsCount: 500,
-    });
+    db.usageLedger.aggregate.mockResolvedValueOnce({ _sum: { publicReviewsCount: 10, privateReviewsCount: 500 } });
 
     const overview = await BillingService.getUserBillingOverview('user-123');
 
@@ -380,10 +376,7 @@ describe('BillingService.getUserBillingOverview', () => {
       currentPeriodEnd: null,
       cancelAtPeriodEnd: false,
     });
-    quota.getOrCreateLedger.mockResolvedValueOnce({
-      publicReviewsCount: 0,
-      privateReviewsCount: 50,
-    });
+    db.usageLedger.aggregate.mockResolvedValueOnce({ _sum: { publicReviewsCount: 0, privateReviewsCount: 50 } });
 
     const overview = await BillingService.getUserBillingOverview('user-123');
 

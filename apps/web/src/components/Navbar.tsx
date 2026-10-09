@@ -103,16 +103,14 @@ export function Navbar({ user }: NavbarProps) {
             ) : (
               <>
                 <a
-                  href={`${BACKEND_URL}/api/auth/github`}
+                  href={GITHUB_APP_INSTALL_URL}
                   className="nav-link-item hidden-mobile"
                   style={{ fontWeight: 600, fontSize: '0.86rem' }}
                 >
                   Sign In
                 </a>
                 <a
-                  href={GITHUB_APP_INSTALL_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`${BACKEND_URL}/api/auth/github`}
                   className="btn-primary-pill btn-shimmer"
                   style={{
                     fontSize: '0.85rem',
@@ -228,8 +226,6 @@ export function Navbar({ user }: NavbarProps) {
             <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '0.5rem 0' }} />
             <a
               href={GITHUB_APP_INSTALL_URL}
-              target="_blank"
-              rel="noopener noreferrer"
               className="btn-primary-pill"
               style={{ width: '100%', justifyContent: 'center' }}
             >

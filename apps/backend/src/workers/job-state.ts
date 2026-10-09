@@ -74,6 +74,7 @@ const IN_PROGRESS_REVIEW_STATUSES: readonly string[] = [
   'ANALYZING',
   'GENERATING',
   'POSTING',
+  'RETRYING',
   'RUNNING',
 ];
 

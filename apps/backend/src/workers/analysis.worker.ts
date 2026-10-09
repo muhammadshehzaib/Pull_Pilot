@@ -21,7 +21,6 @@ import {
   renderInlineComment,
   severityTally,
 } from '../services/ai/finding-format';
-import { QuotaService } from '../services/quota.service';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
 import { advanceReview, markReviewTerminal, wasSuperseded } from './job-state';
 import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS } from '../utils/constants';
@@ -40,8 +39,6 @@ export const analysisWorker = new Worker(
       referenceId,
       payloadSnapshot,
       githubInstallationId,
-      installationId,
-      isPrivate,
     } = job.data;
 
     const [owner, repo] = fullName.split('/');
@@ -538,10 +535,6 @@ export const analysisWorker = new Worker(
         );
       }
 
-      // 11. RECORD USAGE IN METERING LEDGER
-      const resolvedInstallationRecordId = installationId || dbRepo.installationId;
-      await QuotaService.incrementUsage(resolvedInstallationRecordId, Boolean(isPrivate ?? dbRepo.isPrivate));
-
       console.log(`🏁 Job Cycle ${jobId} gracefully exited with 100% success.\n`);
       SocketService.emitStatus(userId, jobId, `✅ All Analysis Finalized. Results fully loaded.`, 'COMPLETED', { suggestions });
       return { status: 'success', findingCount: suggestions.length };
@@ -584,12 +577,13 @@ export const analysisWorker = new Worker(
       console.error(`🚨 JOB FATALITY (attempt will retry): ${jobId} died:`, err);
       SocketService.emitStatus(userId, jobId, `🚨 Fatal Error Encountered: ${message}`, 'FAILED');
 
+      const attempts = Number(job.opts?.attempts ?? 1);
+      const willRetry = Number(job.attemptsMade ?? 0) + 1 < attempts;
+      const failureStatus = willRetry ? 'RETRYING' : 'FAILED';
+      SocketService.emitStatus(userId, jobId, message, failureStatus);
       await prisma.analysisJob.update({
         where: { id: jobId },
-        data: {
-          status: 'FAILED',
-          results: { error: message } as any,
-        },
+        data: { status: failureStatus, results: { error: message } as any },
       });
 
       throw err;

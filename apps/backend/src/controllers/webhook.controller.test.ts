@@ -15,7 +15,11 @@ const {
   mockCachedFileDeleteMany,
 } = vi.hoisted(() => ({
   mockRepoFindFirst: vi.fn(),
-  mockRepoFindMany: vi.fn(),
+  mockRepoFindMany: vi.fn(async (args: any) => {
+    if (!args?.where?.githubRepoId) return [];
+    const result = await mockRepoFindFirst(args);
+    return result ? [result] : [];
+  }),
   mockRepoCreate: vi.fn(),
   mockRepoUpdate: vi.fn(),
   mockRepoUpdateMany: vi.fn(),
@@ -53,12 +57,19 @@ vi.mock('../config/queue', () => ({
   analysisQueue: { add: mockQueueAdd },
 }));
 
+vi.mock('../services/quota.service', () => ({
+  QuotaService: {
+    checkQuota: vi.fn().mockResolvedValue({ allowed: true, usage: { current: 0, limit: 50 } }),
+    reserveReview: vi.fn().mockResolvedValue({ allowed: true, usage: { current: 1, limit: 50 } }),
+    getQuotaExceededComment: vi.fn(() => 'quota exceeded'),
+  },
+}));
+
 import { WebhookController } from './webhook.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRepoFindMany.mockResolvedValue([]);
 });
 
 describe('WebhookController.handleGitHubEvent — ping', () => {
@@ -100,6 +111,7 @@ describe('WebhookController.handleGitHubEvent — installation', () => {
         accountLogin: 'my-org',
         accountType: 'Organization',
         avatarUrl: 'https://avatar.png',
+        createdByGithubId: null,
         plan: 'FREE',
       },
     });
@@ -193,7 +205,7 @@ describe('WebhookController.handleGitHubEvent — installation_repositories', ()
 
   it('does not clear anything when repositories are added', async () => {
     mockInstallationFindUnique.mockResolvedValueOnce({ id: 'inst-1', userId: 'u-1' });
-    mockRepoUpsert.mockResolvedValueOnce({});
+    mockRepoCreate.mockResolvedValueOnce({});
 
     const req = mockReq({
       headers: { 'x-github-event': 'installation_repositories' },
@@ -204,7 +216,7 @@ describe('WebhookController.handleGitHubEvent — installation_repositories', ()
     await WebhookController.handleGitHubEvent(req, res);
 
     expect(mockCachedFileDeleteMany).not.toHaveBeenCalled();
-    expect(mockRepoUpsert).toHaveBeenCalled();
+    expect(mockRepoCreate).toHaveBeenCalled();
   });
 });
 
@@ -237,7 +249,7 @@ describe('WebhookController.handleGitHubEvent — pull_request', () => {
   const baseRepo = { id: 'r1', userId: 'u-owner', isActive: true, isPrivate: false };
   const prBody = (action: string) => ({
     action,
-    repository: { full_name: 'o/r', private: false },
+    repository: { id: 123, full_name: 'o/r', private: false },
     pull_request: {
       number: 7,
       head: { sha: 'head-sha' },
@@ -330,7 +342,7 @@ describe('WebhookController.handleGitHubEvent — push', () => {
     const req = mockReq({
       headers: { 'x-github-event': 'push' },
       body: {
-        repository: { full_name: 'o/r' },
+        repository: { id: 123, full_name: 'o/r' },
         after: 'after-sha',
         before: 'before-sha',
       },
@@ -381,7 +393,7 @@ describe('WebhookController.handleGitHubEvent — breaking path', () => {
       headers: { 'x-github-event': 'pull_request' },
       body: {
         action: 'opened',
-        repository: { full_name: 'stranger/unregistered' },
+        repository: { id: 123, full_name: 'stranger/unregistered' },
         pull_request: { number: 1, head: { sha: 'h' }, base: { sha: 'b' } },
       },
     });
@@ -402,7 +414,7 @@ describe('WebhookController.handleGitHubEvent — breaking path', () => {
 
     const req = mockReq({
       headers: { 'x-github-event': 'star' },
-      body: { repository: { full_name: 'o/r' } },
+      body: { repository: { id: 123, full_name: 'o/r' } },
     });
     const res = mockRes();
 
@@ -424,7 +436,7 @@ describe('WebhookController.handleGitHubEvent — breaking path', () => {
       headers: { 'x-github-event': 'pull_request' },
       body: {
         action: 'opened',
-        repository: { full_name: 'o/r' },
+        repository: { id: 123, full_name: 'o/r' },
         pull_request: { number: 1, head: { sha: 'h' }, base: { sha: 'b' } },
       },
     });
@@ -441,7 +453,7 @@ describe('WebhookController idempotency — duplicate webhook deliveries', () =>
   const baseRepo = { id: 'r1', userId: 'u-owner', isActive: true, isPrivate: false };
   const prBody = () => ({
     action: 'synchronize',
-    repository: { full_name: 'o/r', private: false },
+    repository: { id: 123, full_name: 'o/r', private: false },
     pull_request: { number: 7, head: { sha: 'head-sha' }, base: { sha: 'base-sha' } },
   });
 
@@ -537,12 +549,12 @@ describe('WebhookController idempotency — payloads with no head SHA', () => {
 
   const prWithoutSha = () => ({
     action: 'synchronize',
-    repository: { full_name: 'o/r', private: false },
+    repository: { id: 123, full_name: 'o/r', private: false },
     pull_request: { number: 7, base: { sha: 'base-sha' } },
   });
 
   const pushWithoutSha = () => ({
-    repository: { full_name: 'o/r', private: false },
+    repository: { id: 123, full_name: 'o/r', private: false },
     before: 'old-sha',
   });
 
@@ -632,7 +644,7 @@ describe('WebhookController idempotency — payloads with no head SHA', () => {
       headers: { 'x-github-event': 'pull_request' },
       body: {
         action: 'synchronize',
-        repository: { full_name: 'o/r', private: false },
+        repository: { id: 123, full_name: 'o/r', private: false },
         pull_request: { number: 7, head: { sha: 'head-sha' }, base: { sha: 'base-sha' } },
       },
     });

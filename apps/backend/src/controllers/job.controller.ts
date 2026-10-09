@@ -20,6 +20,7 @@ const JOB_STATUSES = [
   'ANALYZING',
   'GENERATING',
   'POSTING',
+  'RETRYING',
   'RUNNING',
   'COMPLETED',
   'FAILED',

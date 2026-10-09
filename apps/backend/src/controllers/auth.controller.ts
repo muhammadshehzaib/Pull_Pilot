@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import prisma from '../config/prisma';
 import { AuthService } from '../services/auth.service';
 import {
@@ -13,6 +14,109 @@ import {
 } from '../utils/constants';
 
 export class AuthController {
+  static async startGitHubAppInstall(req: Request, res: Response) {
+    const token = req.cookies?.[COOKIE_NAME];
+    if (!token) {
+      res.cookie('github_app_install_after_login', '1', {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 10 * 60 * 1000,
+        path: '/api/auth/github/callback',
+      });
+      return res.redirect(`${BACKEND_URL}/api/auth/github`);
+    }
+    try {
+      req.auth = AuthService.verifyToken(token);
+    } catch {
+      res.clearCookie(COOKIE_NAME);
+      return res.redirect(`${BACKEND_URL}/api/auth/github`);
+    }
+
+    const appSlug = process.env.GITHUB_APP_SLUG;
+    if (!appSlug) return res.status(503).json({ error: 'GitHub App install is not configured' });
+    await prisma.installationClaim.deleteMany({ where: { expiresAt: { lte: new Date() } } });
+    const state = randomBytes(32).toString('hex');
+    await prisma.installationClaim.create({
+      data: {
+        stateHash: createHash('sha256').update(state).digest('hex'),
+        userId: req.auth!.userId,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      },
+    });
+    return res.redirect(`https://github.com/apps/${encodeURIComponent(appSlug)}/installations/new?state=${state}`);
+  }
+
+  static async completeGitHubAppInstall(req: Request, res: Response) {
+    const installationId = req.query.installation_id;
+    const state = req.query.state;
+    if (typeof installationId !== 'string' || !/^\d+$/.test(installationId) || typeof state !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid GitHub installation callback parameters' });
+    }
+
+    const stateHash = createHash('sha256').update(state).digest('hex');
+    const claim = await prisma.installationClaim.findFirst({
+      where: { stateHash, expiresAt: { gt: new Date() } },
+    });
+    if (!claim) return res.status(400).json({ error: 'Installation state is invalid, expired, or already used' });
+
+    // The signed installation webhook identifies the GitHub account that
+    // actually installed the App. Never trust installation_id from the browser
+    // setup redirect on its own.
+    const [user, webhookInstallation] = await Promise.all([
+      prisma.user.findUnique({ where: { id: claim.userId }, select: { githubId: true } }),
+      prisma.installation.findUnique({ where: { githubInstallationId: BigInt(installationId) } }),
+    ]);
+    if (!user || !webhookInstallation || webhookInstallation.createdByGithubId !== user.githubId) {
+      return res.status(403).json({ error: 'GitHub has not confirmed that this account created the installation yet. Retry shortly.' });
+    }
+
+    // Consume the one-time state and link only after the signed webhook confirms
+    // the installation actor, preventing both callback replay and ID spoofing.
+    try {
+      const { GitHubAppService } = await import('../services/github-app.service');
+      const details = await GitHubAppService.getInstallationDetails(installationId);
+      const repositories = await GitHubAppService.getInstallationRepositories(installationId);
+      await prisma.$transaction(async (tx) => {
+        const consumed = await tx.installationClaim.deleteMany({ where: { id: claim.id, stateHash } });
+        if (consumed.count !== 1) throw new Error('Installation state has already been used');
+        const installation = await tx.installation.update({
+          where: { githubInstallationId: BigInt(installationId) },
+          data: {
+            userId: claim.userId,
+            accountLogin: details.account?.login || 'unknown',
+            accountType: details.account?.type || 'User',
+            avatarUrl: details.account?.avatar_url || null,
+          },
+        });
+        for (const repo of repositories) {
+          const githubRepoId = BigInt(repo.id);
+          const existingRepo = await tx.repository.findFirst({ where: { githubRepoId } });
+          const repoData = {
+            userId: claim.userId,
+            installationId: installation.id,
+            fullName: repo.full_name,
+            isPrivate: Boolean(repo.private),
+            isActive: true,
+            defaultBranch: repo.default_branch ?? null,
+          };
+          if (existingRepo && existingRepo.userId === claim.userId &&
+              (!existingRepo.installationId || existingRepo.installationId === installation.id)) {
+            await tx.repository.update({ where: { id: existingRepo.id }, data: repoData });
+          } else if (existingRepo?.installationId === installation.id) {
+            throw new Error('Repository installation is already linked to a different account');
+          } else {
+            await tx.repository.create({ data: { ...repoData, githubRepoId } });
+          }
+        }
+      });
+      return res.redirect(`${FRONTEND_URL}/repositories?installation=success`);
+    } catch (err) {
+      console.error('GitHub App installation linking failed:', err);
+      return res.status(502).json({ error: 'Could not link GitHub App installation. Please retry installation.' });
+    }
+  }
+
   static async startGitHubLogin(req: Request, res: Response) {
     const clientId = process.env.GITHUB_CLIENT_ID;
 
@@ -22,19 +126,37 @@ export class AuthController {
 
     const redirectUri = `${BACKEND_URL}/api/auth/github/callback`;
     const scope = 'read:user user:email';
+    const state = randomBytes(32).toString('hex');
+    res.cookie('github_oauth_state', state, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 10 * 60 * 1000,
+      path: '/api/auth/github/callback',
+    });
     const url = `${GITHUB_AUTHORIZE_URL}?client_id=${clientId}&redirect_uri=${encodeURIComponent(
       redirectUri,
-    )}&scope=${encodeURIComponent(scope)}`;
+    )}&scope=${encodeURIComponent(scope)}&state=${state}`;
 
     return res.redirect(url);
   }
 
   static async handleGitHubCallback(req: Request, res: Response) {
     const code = req.query.code as string | undefined;
+    if (!code) return res.status(400).json({ error: 'Missing OAuth code' });
+    const state = req.query.state;
+    const expectedState = req.cookies?.github_oauth_state;
+    const installAfterLogin = req.cookies?.github_app_install_after_login === '1';
+    res.clearCookie('github_oauth_state', { path: '/api/auth/github/callback' });
+    res.clearCookie('github_app_install_after_login', { path: '/api/auth/github/callback' });
+    if (typeof state !== 'string' || typeof expectedState !== 'string' || !/^[0-9a-f]{64}$/.test(state) ||
+        state.length !== expectedState.length || Buffer.byteLength(state) !== Buffer.byteLength(expectedState) ||
+        !timingSafeEqual(Buffer.from(state), Buffer.from(expectedState))) {
+      return res.status(400).json({ error: 'Invalid or expired OAuth state' });
+    }
     const clientId = process.env.GITHUB_CLIENT_ID;
     const clientSecret = process.env.GITHUB_CLIENT_SECRET;
 
-    if (!code) return res.status(400).json({ error: 'Missing OAuth code' });
     if (!clientId || !clientSecret) {
       return res.status(500).json({ error: 'GitHub OAuth not configured' });
     }
@@ -82,7 +204,9 @@ export class AuthController {
         maxAge: COOKIE_MAX_AGE_MS,
       });
 
-      return res.redirect(`${FRONTEND_URL}/dashboard`);
+      return res.redirect(installAfterLogin
+        ? `${BACKEND_URL}/api/auth/github-app/install`
+        : `${FRONTEND_URL}/dashboard`);
     } catch (err) {
       console.error('🔴 GitHub OAuth callback failure:', err);
       return res.status(500).json({ error: 'OAuth exchange failed' });

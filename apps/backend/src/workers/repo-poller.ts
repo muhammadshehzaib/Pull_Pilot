@@ -4,6 +4,7 @@ import { analysisQueue } from '../config/queue';
 import { GitHubService } from '../services/github.service';
 import { GitHubAppService } from '../services/github-app.service';
 import { POLL_ENABLED, POLL_INTERVAL_MS } from '../utils/constants';
+import { QuotaService } from '../services/quota.service';
 
 type PolledRepo = {
   id: string;
@@ -111,6 +112,15 @@ async function queueReview(
 
   if (!job) {
     console.log(`♻️  Poller skipped ${eventType} ${referenceId} for ${repo.fullName} — already reviewed at ${payloadSnapshot.headSha.slice(0, 7)}`);
+    return;
+  }
+
+  const reservation = await QuotaService.reserveReview(repo.installationId, repo.isPrivate, repo.user.id);
+  if (!reservation.allowed) {
+    await prisma.analysisJob.update({
+      where: { id: job.id },
+      data: { status: 'SKIPPED', results: { reason: 'quota-exceeded', details: reservation.reason } },
+    });
     return;
   }
 

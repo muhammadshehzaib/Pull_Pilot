@@ -8,9 +8,7 @@ describe('app constants', () => {
   });
 
   it('points at the GitHub App installation flow', () => {
-    // This is a user-facing install link, so a non-GitHub value would be a bug.
-    expect(GITHUB_APP_INSTALL_URL).toMatch(
-      /^https:\/\/github\.com\/apps\/[^/]+\/installations\/new$/,
-    );
+    // Installation must begin through our authenticated state-correlation route.
+    expect(GITHUB_APP_INSTALL_URL).toBe(`${BACKEND_URL}/api/auth/github-app/install`);
   });
 });

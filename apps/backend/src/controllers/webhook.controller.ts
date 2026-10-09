@@ -31,17 +31,30 @@ export class WebhookController {
     //    Billing moved to Polar and arrives on /api/billing/webhook.
     try {
       const repoFullName = payload?.repository?.full_name;
-      if (!repoFullName) {
+      const githubRepoId = payload?.repository?.id;
+      if (!repoFullName || !githubRepoId) {
         return res.status(400).json({ error: 'Invalid repository structure in payload' });
       }
 
-      // 4. Verify system has this repository registered or resolve via installation
-      let dbRepo = await prisma.repository.findFirst({
-        where: { fullName: repoFullName, isActive: true },
-        include: { installation: true },
-      });
-
       const githubInstallationId = payload.installation?.id ? BigInt(payload.installation.id) : null;
+
+      // GitHub IDs are stable; names can change and are not a tenant boundary.
+      const matchingRepos = await prisma.repository.findMany({
+        where: {
+          githubRepoId: BigInt(githubRepoId),
+          isActive: true,
+          ...(githubInstallationId
+            ? { installation: { githubInstallationId } }
+            : { installationId: null }),
+        },
+        include: { installation: true },
+        take: 2,
+      });
+      if (matchingRepos.length > 1) {
+        console.error(`Ambiguous repository ownership for GitHub repository ${githubRepoId}; refusing cross-tenant routing.`);
+        return res.status(200).json({ status: 'SKIPPED', reason: 'ambiguous-repository-ownership' });
+      }
+      let dbRepo = matchingRepos[0] ?? null;
 
       // If repository not found directly, check if installation exists to link/activate it
       if (!dbRepo && githubInstallationId && prisma.installation?.findUnique) {
@@ -145,6 +158,13 @@ export class WebhookController {
       // 6. Enforce Free Tier Quota Limits
       const quotaCheck = await QuotaService.checkQuota(dbRepo.installationId, isPrivate);
       if (!quotaCheck.allowed) {
+        const existingReview = await prisma.analysisJob.findFirst({
+          where: { repositoryId: dbRepo.id, eventType: jobType, referenceId: refId, commitSha },
+          select: { id: true },
+        });
+        if (existingReview) {
+          return res.status(200).json({ status: 'DUPLICATE', jobId: existingReview.id });
+        }
         console.log(`🚫 Quota exceeded for ${repoFullName}: ${quotaCheck.reason}`);
 
         // Post friendly quota limit explanation directly on the PR
@@ -169,6 +189,7 @@ export class WebhookController {
             eventType: jobType,
             referenceId: refId,
             status: 'SKIPPED',
+            commitSha,
             results: { reason: 'quota-exceeded', details: quotaCheck.reason },
           },
         });
@@ -211,6 +232,17 @@ export class WebhookController {
           });
         }
         throw createErr;
+      }
+
+      // Reserve only after the unique job insert so redelivered webhooks do not
+      // spend another slot. The conditional ledger increment closes quota races.
+      const reservation = await QuotaService.reserveReview(dbRepo.installationId, isPrivate, dbRepo.userId);
+      if (!reservation.allowed) {
+        await prisma.analysisJob.update({
+          where: { id: newJob.id },
+          data: { status: 'SKIPPED', results: { reason: 'quota-exceeded', details: reservation.reason } },
+        });
+        return res.status(200).json({ status: 'SKIPPED', reason: 'quota-exceeded', usage: reservation.usage });
       }
 
       // 8. Enqueue job into BullMQ
@@ -261,12 +293,18 @@ export class WebhookController {
     if (action === 'created' && prisma.installation?.upsert) {
       await prisma.installation.upsert({
         where: { githubInstallationId },
-        update: { accountLogin, accountType, avatarUrl },
+        update: {
+          accountLogin,
+          accountType,
+          avatarUrl,
+          ...(payload.sender?.id ? { createdByGithubId: String(payload.sender.id) } : {}),
+        },
         create: {
           githubInstallationId,
           accountLogin,
           accountType,
           avatarUrl,
+          createdByGithubId: payload.sender?.id ? String(payload.sender.id) : null,
           plan: 'FREE',
         },
       });
@@ -315,27 +353,37 @@ export class WebhookController {
 
     if (action === 'added' && Array.isArray(payload.repositories_added)) {
       for (const repo of payload.repositories_added) {
-        if (dbInstallation.userId && prisma.repository?.upsert) {
-          await prisma.repository.upsert({
-            where: { id: `repo-github-${repo.id}` },
-            update: {
-              fullName: repo.full_name,
-              isPrivate: Boolean(repo.private),
-              isActive: true,
-              installationId: dbInstallation.id,
-              defaultBranch: repo.default_branch ?? null,
-            },
-            create: {
-              id: `repo-github-${repo.id}`,
-              userId: dbInstallation.userId,
-              installationId: dbInstallation.id,
-              githubRepoId: BigInt(repo.id),
-              fullName: repo.full_name,
-              isPrivate: Boolean(repo.private),
-              isActive: true,
-              defaultBranch: repo.default_branch ?? null,
-            },
-          });
+        if (dbInstallation.userId) {
+          const repoId = BigInt(repo.id);
+          const existingRepo = await prisma.repository.findFirst({ where: { githubRepoId: repoId } });
+          if (existingRepo && existingRepo.userId === dbInstallation.userId &&
+              (!existingRepo.installationId || existingRepo.installationId === dbInstallation.id)) {
+            await prisma.repository.update({
+              where: { id: existingRepo.id },
+              data: {
+                userId: dbInstallation.userId,
+                fullName: repo.full_name,
+                isPrivate: Boolean(repo.private),
+                isActive: true,
+                installationId: dbInstallation.id,
+                defaultBranch: repo.default_branch ?? null,
+              },
+            });
+          } else if (existingRepo?.installationId === dbInstallation.id) {
+            console.error(`Repository ${repo.full_name} is linked to installation ${dbInstallation.id} under another user; skipping ownership change.`);
+          } else {
+            await prisma.repository.create({
+              data: {
+                userId: dbInstallation.userId,
+                installationId: dbInstallation.id,
+                githubRepoId: repoId,
+                fullName: repo.full_name,
+                isPrivate: Boolean(repo.private),
+                isActive: true,
+                defaultBranch: repo.default_branch ?? null,
+              },
+            });
+          }
         }
       }
     } else if (action === 'removed' && Array.isArray(payload.repositories_removed)) {

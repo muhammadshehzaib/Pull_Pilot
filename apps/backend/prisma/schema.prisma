@@ -19,8 +19,23 @@ model User {
   repositories  Repository[]
   installations Installation[]
   subscriptions Subscription[]
+  installationClaims InstallationClaim[]
+  usageLedgers UsageLedger[]
 
   @@map("users")
+}
+
+/// One-time state linking an authenticated user to a GitHub App setup callback.
+model InstallationClaim {
+  id        String   @id @default(uuid())
+  stateHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("installation_claims")
 }
 
 enum AiProvider {
@@ -81,6 +96,7 @@ model Subscription {
 model Installation {
   id                   String        @id @default(uuid())
   githubInstallationId BigInt        @unique
+  createdByGithubId    String?
   accountLogin         String
   accountType          String        @default("User") // "User" or "Organization"
   avatarUrl            String?
@@ -114,6 +130,7 @@ model Repository {
   rules          RepositoryRule[]
 
   @@map("repositories")
+  @@unique([installationId, githubRepoId])
 }
 
 /// Severity levels a stored rule can report, mirroring the AI finding
@@ -293,6 +310,7 @@ enum JobStatus {
   GENERATING
   POSTING
   RUNNING
+  RETRYING
   COMPLETED
   FAILED
   SKIPPED
@@ -321,8 +339,10 @@ model AnalysisJob {
 
 model UsageLedger {
   id                  String       @id @default(uuid())
-  installationId      String
-  installation        Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  installationId      String?
+  installation        Installation? @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  userId              String?
+  user                User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   billingMonth        String       // format "YYYY-MM"
   publicReviewsCount  Int          @default(0)
   privateReviewsCount Int          @default(0)
@@ -330,5 +350,6 @@ model UsageLedger {
   updatedAt           DateTime     @updatedAt
 
   @@unique([installationId, billingMonth])
+  @@unique([userId, billingMonth])
   @@map("usage_ledgers")
 }

@@ -372,12 +372,18 @@ export class BillingService {
     let totalPublicReviews = 0;
     let totalPrivateReviews = 0;
 
-    const installation = installations[0] ?? null;
-    if (installation) {
-      const ledger = await QuotaService.getOrCreateLedger(installation.id, currentMonth);
-      totalPublicReviews = ledger.publicReviewsCount;
-      totalPrivateReviews = ledger.privateReviewsCount;
-    }
+    const ledgerTotals = await prisma.usageLedger.aggregate({
+      where: {
+        billingMonth: currentMonth,
+        OR: [
+          ...(installations.length ? [{ installationId: { in: installations.map((item) => item.id) } }] : []),
+          { userId },
+        ],
+      },
+      _sum: { publicReviewsCount: true, privateReviewsCount: true },
+    });
+    totalPublicReviews = ledgerTotals._sum.publicReviewsCount ?? 0;
+    totalPrivateReviews = ledgerTotals._sum.privateReviewsCount ?? 0;
 
     const privateReviewLimit = plan === 'FREE' ? 50 : null;
     const privateReviewsRemaining =
