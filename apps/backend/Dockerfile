@@ -15,6 +15,15 @@ RUN npm run --workspace=apps/backend prisma:generate \
 
 FROM node:22-alpine
 RUN apk add --no-cache openssl
+# The Semgrep SAST probe is opt-in per repo (`security.semgrep`) and off by
+# default, so the binary is not shipped unless asked for. Build with
+# `--build-arg INSTALL_SEMGREP=true` to bake it in; otherwise set SEMGREP_BIN to
+# a binary mounted into the container, or the probe auto-skips.
+ARG INSTALL_SEMGREP=false
+RUN if [ "$INSTALL_SEMGREP" = "true" ]; then \
+      apk add --no-cache python3 py3-pip && \
+      pip install --break-system-packages --no-cache-dir semgrep; \
+    fi
 ENV NODE_ENV=production
 WORKDIR /app
 # Keep the full workspace node_modules: it includes the generated Prisma client

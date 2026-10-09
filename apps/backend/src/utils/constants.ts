@@ -187,8 +187,41 @@ export const CONTEXT_SOURCE_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs',
 ]);
 
+/**
+ * Extensions the external scanners (Semgrep) will be handed. Broader than the
+ * import-graph set because Semgrep understands many more languages, and unlike
+ * context these files are never sent to a model — only to a local binary.
+ */
+export const SCANNER_SOURCE_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mts', '.cts', '.mjs', '.cjs',
+  '.py', '.go', '.rb', '.java', '.kt', '.kts', '.php', '.cs', '.rs',
+  '.c', '.cc', '.cpp', '.h', '.hpp', '.scala', '.swift', '.m', '.mm',
+  '.ex', '.exs', '.erl', '.sh', '.bash', '.sql', '.vue', '.svelte',
+]);
+
 /** Files above this size are fetched but skipped for parsing/context. */
 export const CONTEXT_MAX_FILE_BYTES = parseInt(process.env.CONTEXT_MAX_FILE_BYTES || '200000', 10);
+
+/* -------------------------------------------------------------------------- */
+/* External security scanners                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** OSV.dev API base. Overridable so an air-gapped mirror can be pointed at. */
+export const OSV_API_URL = process.env.OSV_API_URL || 'https://api.osv.dev';
+
+/** Per-request OSV timeout. A slow advisory lookup must not hold a review. */
+export const OSV_QUERY_TIMEOUT_MS = parseInt(process.env.OSV_QUERY_TIMEOUT_MS || '8000', 10);
+
+/** Distinct packages per OSV batch request (the API allows up to 1000). */
+export const OSV_MAX_BATCH = parseInt(process.env.OSV_MAX_BATCH || '200', 10);
+
+/**
+ * Semgrep binary and ruleset. Semgrep is optional: when the binary is absent
+ * the extra SAST pass is skipped and the built-in rules still run.
+ */
+export const SEMGREP_BIN = process.env.SEMGREP_BIN || 'semgrep';
+export const SEMGREP_RULES = process.env.SEMGREP_RULES || 'p/security-audit';
+export const SEMGREP_TIMEOUT_MS = parseInt(process.env.SEMGREP_TIMEOUT_MS || '120000', 10);
 
 /** Directories never worth walking into for context. */
 export const CONTEXT_EXCLUDED_SEGMENTS = new Set([

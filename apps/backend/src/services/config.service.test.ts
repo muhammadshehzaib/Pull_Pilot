@@ -178,6 +178,17 @@ describe('ConfigService security block', () => {
     expect(config.security.block_on_critical_secret).toBe(false);
   });
 
+  it('enables OSV by default and leaves Semgrep opt-in', () => {
+    expect(DEFAULT_AIPR_CONFIG.security.osv).toBe(true);
+    expect(DEFAULT_AIPR_CONFIG.security.semgrep).toBe(false);
+  });
+
+  it('accepts external scanners being toggled', () => {
+    const config = ConfigService.parseConfigYaml('security:\n  semgrep: true\n  osv: false');
+    expect(config.security.semgrep).toBe(true);
+    expect(config.security.osv).toBe(false);
+  });
+
   it('ignores non-boolean values rather than trusting them', () => {
     const config = ConfigService.parseConfigYaml(
       'security:\n  sast: "yes"\n  enabled: 1',

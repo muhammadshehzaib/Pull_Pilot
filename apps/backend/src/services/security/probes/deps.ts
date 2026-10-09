@@ -7,16 +7,28 @@ import {
   checkForProbe,
 } from '../probe-types';
 import { advisoriesFor, isVulnerable, minSelectableVersion } from '../advisory-registry';
+import { OsvClient, type OsvPackageRef, type OsvVulnerability } from '../osv-client';
+import { SEVERITY_RANK } from '../../ai/finding-taxonomy';
 
 /**
  * Dependency probe.
  *
  * Parses manifest lines from the *filtered diff* — package.json (tracking
- * dependency sections), requirements*.txt, go.mod, Gemfile — then checks every
- * introduced package against the advisory registry. Also notes newly
- * introduced runtime dependencies (INFO) and detects removed-for-+
- * major-bump changes (LOW) as education. Lockfiles are excluded by the default
- * `ignore:` and are not parsed here.
+ * dependency sections), requirements*.txt, go.mod, Gemfile — and checks every
+ * introduced package for known vulnerabilities. Lockfiles are excluded by the
+ * default `ignore:` and are not parsed here.
+ *
+ * Two sources are consulted, in priority order:
+ *   1. OSV.dev (https://osv.dev) — a live, aggregated advisory database. This
+ *      is the real scanner; the probe does not pretend to maintain one.
+ *   2. The bundled offline registry — a small strict upper-bound table used
+ *      only when OSV is disabled or unreachable, so a network outage degrades
+ *      coverage instead of silently dropping it.
+ *
+ * Because a manifest usually carries a range rather than a resolved version,
+ * the OSV lookup asks about the *minimum selectable* version implied by the
+ * constraint. If a resolution could legally land on a vulnerable release, the
+ * finding fires — the same conservative stance the offline registry takes.
  *
  * Section headers inside package.json ("dependencies": {) are usually diff
  * *context*, not added lines, so the section stack is parsed from the whole
@@ -35,6 +47,11 @@ interface ManifestDependency {
 interface ParsedLine {
   text: string;
   added: boolean;
+}
+
+export interface DependencyScanOptions {
+  /** When present, packages are looked up against the live OSV database. */
+  osv?: OsvClient;
 }
 
 /** Splits a per-file chunk into cleaned content lines with their origin. */
@@ -121,29 +138,42 @@ function parseGemfile(lines: ParsedLine[]): ManifestDependency[] {
   return deps;
 }
 
-const MANIFEST_PARSERS: { file: RegExp; parse: (lines: ParsedLine[]) => ManifestDependency[] }[] = [
-  { file: /(?:^|\/)package\.json$/, parse: parsePackageJson },
-  { file: /requirements[^.]*\.txt$|requirements\.in$/, parse: parseRequirements },
-  { file: /(?:^|\/)go\.mod$/, parse: parseGoMod },
-  { file: /(?:^|\/)Gemfile$/, parse: parseGemfile },
-];
-
-function parseDependenciesForFile(filename: string, textLines: ParsedLine[]): ManifestDependency[] {
-  for (const p of MANIFEST_PARSERS) {
-    if (p.file.test(filename)) return p.parse(textLines);
-  }
-  return [];
+interface ManifestParser {
+  file: RegExp;
+  /** OSV ecosystem name for packages in this manifest. */
+  ecosystem: string;
+  parse: (lines: ParsedLine[]) => ManifestDependency[];
 }
 
-function isManifestFile(filename: string): boolean {
-  return MANIFEST_PARSERS.some((p) => p.file.test(filename));
+const MANIFEST_PARSERS: ManifestParser[] = [
+  { file: /(?:^|\/)package\.json$/, ecosystem: 'npm', parse: parsePackageJson },
+  { file: /requirements[^.]*\.txt$|requirements\.in$/, ecosystem: 'PyPI', parse: parseRequirements },
+  { file: /(?:^|\/)go\.mod$/, ecosystem: 'Go', parse: parseGoMod },
+  { file: /(?:^|\/)Gemfile$/, ecosystem: 'RubyGems', parse: parseGemfile },
+];
+
+function parserForFile(filename: string): ManifestParser | undefined {
+  return MANIFEST_PARSERS.find((p) => p.file.test(filename));
+}
+
+interface DependencyCandidate {
+  filename: string;
+  dep: ManifestDependency;
+  anchor: AddedLine;
+  ecosystem: string;
 }
 
 /**
  * Scans changed manifest lines for known-vulnerable ranges and notes
  * newly introduced runtime dependencies.
+ *
+ * Async because the OSV lookup is a network call; the diff parsing itself is
+ * synchronous and unchanged.
  */
-export function scanDependencies(diff: string): SecurityProbeResult {
+export async function scanDependencies(
+  diff: string,
+  options: DependencyScanOptions = {},
+): Promise<SecurityProbeResult> {
   const findings: SecuritySuggestion[] = [];
   const counts = new Map<string, number>();
 
@@ -167,42 +197,121 @@ export function scanDependencies(diff: string): SecurityProbeResult {
     removedByFile.get(l.filename)!.push(l);
   }
 
+  // Parse every changed manifest up front so the OSV lookup can batch across
+  // files into a single request.
+  const candidates: DependencyCandidate[] = [];
+  const perFile = new Map<string, { parser: ManifestParser; deps: ManifestDependency[] }>();
+
   for (const chunk of DiffFilterService.splitDiffByFile(diff)) {
     const filename = chunk.filename.replace(/^\.\//, '');
-    if (!isManifestFile(filename)) continue;
+    const parser = parserForFile(filename);
+    if (!parser) continue;
+
     const addedLines = addedByFile.get(filename) ?? [];
     const removedLines = removedByFile.get(filename) ?? [];
     if (addedLines.length === 0 && removedLines.length === 0) continue;
 
     const parsed = collectChunkLines(chunk.content);
-    const deps = parseDependenciesForFile(filename, parsed);
+    const deps = parser.parse(parsed);
     if (deps.length === 0) continue;
 
-    const addedDeps = deps.filter((d) => d.added);
+    perFile.set(filename, { parser, deps });
+
+    for (const dep of deps.filter((d) => d.added)) {
+      const anchor = addedLines.find((l) => l.text.toLowerCase().includes(dep.name.toLowerCase()));
+      if (!anchor) continue;
+      candidates.push({ filename, dep, anchor, ecosystem: parser.ecosystem });
+    }
+  }
+
+  // ── OSV lookup ────────────────────────────────────────────────────────────
+  // Only packages whose constraint pins a queryable version are sent. A `*` or
+  // `latest` spec offers nothing concrete to ask about; those fall back to the
+  // bundled registry below.
+  const osvByRef = new Map<string, OsvVulnerability[]>();
+  const queriedRefs = new Set<string>();
+  let osvActive = false;
+
+  if (options.osv && candidates.length > 0) {
+    const refs: OsvPackageRef[] = [];
+    for (const { dep, ecosystem } of candidates) {
+      const version = osvVersionFor(dep.spec);
+      if (!version) continue;
+      refs.push({ name: dep.name, version, ecosystem });
+    }
+
+    if (refs.length > 0) {
+      const outcome = await options.osv.query(refs);
+      if (!outcome.degraded) {
+        osvActive = true;
+        for (const r of outcome.results) {
+          const key = refKey(r.ref);
+          queriedRefs.add(key);
+          osvByRef.set(key, r.vulnerabilities);
+        }
+      }
+    }
+  }
+
+  // ── Findings ──────────────────────────────────────────────────────────────
+  for (const [filename, { deps }] of perFile) {
+    const addedLines = addedByFile.get(filename) ?? [];
     const removedByName = new Map<string, string>();
     for (const d of deps) {
       if (!d.added) removedByName.set(d.name.toLowerCase(), d.spec);
     }
 
-    for (const dep of addedDeps) {
+    for (const dep of deps.filter((d) => d.added)) {
       const anchor = addedLines.find((l) => l.text.toLowerCase().includes(dep.name.toLowerCase()));
       if (!anchor) continue;
 
-      const advisories = advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a));
-      if (advisories.length > 0 && recordCount('deps-vulnerable')) {
-        const first = advisories[0];
-        findings.push({
-          filePath: filename,
-          lineNumber: anchor.lineNumber,
-          agentType: 'SECURITY',
-          source: 'DEPENDENCIES',
-          ruleKey: 'deps-vulnerable',
-          issue: `Introduced dependency "${dep.name}@${dep.spec}" has known vulnerabilities (${first.description}).`,
-          suggestion: `Upgrade "${dep.name}" to a fixed release that satisfies the advisory.`,
-          priority: first.severity,
-        });
-        continue;
+      const ecosystem = parserForFile(filename)?.ecosystem ?? '';
+      const version = osvVersionFor(dep.spec);
+      const key = version ? `${ecosystem}\u0000${dep.name}\u0000${version}`.toLowerCase() : '';
+
+      // OSV is authoritative: if it answered for this package we trust it, and
+      // never resurrect a stale offline entry it did not report. Only packages
+      // OSV could not be asked about fall back to the bundled registry.
+      const osvAnswerable = osvActive && version !== null && queriedRefs.has(key);
+      let vulnerable = false;
+
+      if (osvAnswerable) {
+        const vulns = [...(osvByRef.get(key) ?? [])].sort(
+          (a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0),
+        );
+        for (const vuln of vulns) {
+          if (!recordCount('deps-vulnerable')) break;
+          vulnerable = true;
+          findings.push({
+            filePath: filename,
+            lineNumber: anchor.lineNumber,
+            agentType: 'SECURITY',
+            source: 'DEPENDENCIES',
+            ruleKey: 'deps-vulnerable',
+            issue: `Introduced dependency "${dep.name}@${dep.spec}" has a known vulnerability (${vuln.id}: ${vuln.summary})`,
+            suggestion: `Upgrade "${dep.name}" to a release that fixes ${vuln.id}.`,
+            priority: vuln.severity,
+          });
+        }
+      } else {
+        const advisories = advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a));
+        if (advisories.length > 0 && recordCount('deps-vulnerable')) {
+          vulnerable = true;
+          const first = advisories[0];
+          findings.push({
+            filePath: filename,
+            lineNumber: anchor.lineNumber,
+            agentType: 'SECURITY',
+            source: 'DEPENDENCIES',
+            ruleKey: 'deps-vulnerable',
+            issue: `Introduced dependency "${dep.name}@${dep.spec}" has known vulnerabilities (${first.description}).`,
+            suggestion: `Upgrade "${dep.name}" to a fixed release that satisfies the advisory.`,
+            priority: first.severity,
+          });
+        }
       }
+
+      if (vulnerable) continue;
 
       if (recordCount('deps-introduced')) {
         findings.push({
@@ -221,7 +330,7 @@ export function scanDependencies(diff: string): SecurityProbeResult {
     }
 
     if (recordCount('deps-major-bump')) {
-      for (const dep of addedDeps) {
+      for (const dep of deps.filter((d) => d.added)) {
         const prior = removedByName.get(dep.name.toLowerCase());
         if (!prior) continue;
         const before = minSelectableVersion(prior);
@@ -248,4 +357,15 @@ export function scanDependencies(diff: string): SecurityProbeResult {
     findings,
     checks: [checkForProbe('DEPENDENCIES', 'dependencies', 'Vulnerable dependency scan', findings.length)],
   };
+}
+
+/** The concrete version to ask OSV about, or null when the spec is a wildcard. */
+function osvVersionFor(spec: string): string | null {
+  const v = minSelectableVersion(spec);
+  if (!v) return null;
+  return `${v.major}.${v.minor}.${v.patch}`;
+}
+
+function refKey(ref: OsvPackageRef): string {
+  return `${ref.ecosystem}\u0000${ref.name}\u0000${ref.version}`.toLowerCase();
 }

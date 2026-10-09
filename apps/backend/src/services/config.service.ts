@@ -44,6 +44,17 @@ export interface SecurityConfig {
   secrets: boolean;
   /** Introduced-dependency + known-vulnerability scan. */
   dependencies: boolean;
+  /**
+   * Consult the live OSV.dev advisory database for dependencies. When off (or
+   * unreachable) the probe falls back to its bundled offline registry.
+   */
+  osv: boolean;
+  /**
+   * Run the external Semgrep scanner alongside the built-in SAST rules. Opt-in
+   * because it requires the `semgrep` binary on the host; when unavailable the
+   * pass is skipped and the built-in rules still run.
+   */
+  semgrep: boolean;
   /** A critical secret exposure raises the risk verdict to BLOCK. */
   block_on_critical_secret: boolean;
 }
@@ -92,6 +103,8 @@ export const DEFAULT_AIPR_CONFIG: AiPrConfig = {
     sast: true,
     secrets: true,
     dependencies: true,
+    osv: true,
+    semgrep: false,
     block_on_critical_secret: true,
   },
 };
@@ -116,6 +129,8 @@ function parseSecurityConfig(raw: unknown): SecurityConfig {
     sast: pick(input.sast) ?? defaults.sast,
     secrets: pick(input.secrets) ?? defaults.secrets,
     dependencies: pick(input.dependencies) ?? defaults.dependencies,
+    osv: pick(input.osv) ?? defaults.osv,
+    semgrep: pick(input.semgrep) ?? defaults.semgrep,
     block_on_critical_secret: pick(input.block_on_critical_secret) ?? defaults.block_on_critical_secret,
   };
 }

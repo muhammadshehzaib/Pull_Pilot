@@ -8,6 +8,8 @@ import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { RulesService } from '../services/rules.service';
 import { runSecurityProbes, countByProbe } from '../services/security/run-probes';
+import { OsvClient } from '../services/security/osv-client';
+import { fetchChangedFileContents } from '../services/changed-files.service';
 import { assessRisk } from '../services/security/risk-engine';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { buildReviewContext } from '../services/context-builder';
@@ -219,7 +221,26 @@ export const analysisWorker = new Worker(
       //     the model is called. Findings bypass min_severity exactly like rule
       //     violations: a deterministic scanner must not be silently optional
       //     behind a repo-wide threshold. Each probe writes a PASS/FAIL row.
-      const securityScan = runSecurityProbes(repoConfig.security, filteredDiff);
+      //
+      //     The dependency probe consults the live OSV.dev advisory database
+      //     (falling back to the bundled offline registry if unreachable), and
+      //     when enabled the extra Semgrep SAST pass runs over the full content
+      //     of the changed files — fetched here because a diff carries only
+      //     hunks.
+      let semgrepFiles: Map<string, string> | undefined;
+      if (repoConfig.security.enabled && repoConfig.security.semgrep) {
+        SocketService.emitStatus(userId, jobId, `🔬 Gathering changed files for Semgrep`, 'FETCHING');
+        semgrepFiles = await guard(
+          fetchChangedFileContents(ghService, owner, repo, headSha, includedFiles),
+        );
+      }
+
+      const securityScan = await guard(
+        runSecurityProbes(repoConfig.security, filteredDiff, {
+          osv: repoConfig.security.osv ? new OsvClient() : undefined,
+          semgrep: semgrepFiles && semgrepFiles.size > 0 ? { files: semgrepFiles } : undefined,
+        }),
+      );
       const probeTallies = countByProbe(securityScan.findings);
       if (securityScan.checks.length > 0) {
         const failed = securityScan.checks.filter((c) => c.status === 'FAIL').length;

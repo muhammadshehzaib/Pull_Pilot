@@ -38,6 +38,8 @@ security:
   sast: true
   secrets: true
   dependencies: true
+  osv: true
+  semgrep: false
   block_on_critical_secret: true
 
 language: en
@@ -98,6 +100,8 @@ defaults.
 The deterministic security layer. Three probes run against the **filtered
 diff** before the model is ever called — no LLM judgement involved — and a risk
 engine combines their findings with the model's into a single score and verdict.
+Two probes can delegate to real external scanners instead of hand-rolled rules:
+dependencies to **OSV.dev**, and SAST to **Semgrep** (opt-in).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -105,7 +109,19 @@ engine combines their findings with the model's into a single score and verdict.
 | `sast` | `true` | Static analysis patterns — SQL injection, `exec`/`spawn` misuse, XSS sinks, SSRF, auth bypass, open redirects. |
 | `secrets` | `true` | Credential scan — API keys, tokens, JWT signatures, connection strings; reported redacted. |
 | `dependencies` | `true` | Advisory lookup for new/changed dependency ranges across `package.json`, `requirements*.txt`, `go.mod`, and `Gemfile`. |
+| `osv` | `true` | Query the live OSV.dev advisory database for dependencies. When off — or unreachable — the probe falls back to a small bundled offline registry. |
+| `semgrep` | `false` | Run the external **Semgrep** scanner as an extra SAST pass. Requires the `semgrep` binary; when it is absent the pass is skipped and the built-in rules still run. |
 | `block_on_critical_secret` | `true` | When a hardcoded credential is found, the review verdict is `BLOCK`. |
+
+**External scanners.** Dependencies are checked against [OSV.dev](https://osv.dev)
+using the minimum selectable version implied by each constraint, so a range that
+could resolve to a vulnerable release is flagged. If OSV is disabled or
+unreachable, the built-in advisory registry is used so coverage degrades rather
+than disappearing. Semgrep is opt-in because it needs the `semgrep` binary on the
+host (`pip install semgrep`); when present it scans the changed files' full
+contents and its findings are folded into the SAST probe. The tunables
+(`OSV_API_URL`, `OSV_QUERY_TIMEOUT_MS`, `OSV_MAX_BATCH`, `SEMGREP_BIN`,
+`SEMGREP_RULES`, `SEMGREP_TIMEOUT_MS`) live in the backend environment.
 
 The risk engine scores every finding (info `0`, low `2`, medium `6`, high `15`,
 critical `30`, capped at `100`) and picks a verdict:

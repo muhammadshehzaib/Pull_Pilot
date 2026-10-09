@@ -50,7 +50,8 @@ describe('secrets probe — provider formats', () => {
   });
 
   it('flags Google API keys', () => {
-    expect(keys(diffWith('env.ts', ['const K = "AIzaSyBvNU8q0jUzWj4f-aSR3p3hBvqL0uKqX3v";']))).toContain('secrets-google-api-key');
+    const dummyGoogleKey = `AIza${'0'.repeat(35)}`;
+    expect(keys(diffWith('env.ts', [`const K = "${dummyGoogleKey}";`]))).toContain('secrets-google-api-key');
   });
 
   it('flags OpenAI, Anthropic, GitHub, Slack and Stripe keys', () => {
