@@ -63,8 +63,8 @@ describe('normalizePathScope', () => {
     expect(normalizePathScope('./src/index.ts')).toBe('src/index');
   });
 
-  it('lowercases the result', () => {
-    expect(normalizePathScope('SRC/Services/Auth.TS')).toBe('src/services/auth');
+  it('preserves case-sensitive repository paths', () => {
+    expect(normalizePathScope('SRC/Services/Auth.TS')).toBe('SRC/Services/Auth');
   });
 });
 
@@ -111,6 +111,12 @@ describe('generateFingerprint – deterministic sources', () => {
 // ---------------------------------------------------------------------------
 
 describe('generateFingerprint – LLM', () => {
+  it('does not merge case-distinct files', () => {
+    expect(generateFingerprint(llmFinding({ filePath: 'src/Auth.ts' })))
+      .not.toBe(generateFingerprint(llmFinding({ filePath: 'src/auth.ts' })));
+    expect(generateFingerprint(deterministicFinding('SAST', { filePath: 'src/Auth.ts' })))
+      .not.toBe(generateFingerprint(deterministicFinding('SAST', { filePath: 'src/auth.ts' })));
+  });
   it('starts with version prefix', () => {
     const fp = generateFingerprint(llmFinding());
     expect(fp).toMatch(new RegExp(`^${FINGERPRINT_VERSION}_`));

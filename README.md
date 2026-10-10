@@ -53,6 +53,8 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 
 Behavioral verification (Phase 6) supports owner-approved scenarios against an existing trusted public preview, executed in repository-owner CI with a network-disabled browser container. Explainable PR risk (Phase 7) adds a versioned advisory score, per-signal explanations and separate evidence coverage/confidence. Existing reports remain compatible. Enabling execution requires an owner-installed workflow, GitHub App permissions, OIDC configuration and the database migration; see [setup, limits and verification](docs/behavioral-verification.md).
 
+Historical intelligence (Phase 8) adds explicit finding feedback, recurring cross-PR patterns, and opt-in repository memory. History now exposes feedback and insights, with durable finding snapshots, concurrent-edit protection, bounded retention, and untrusted historical context separated from owner rules. Apply the historical integrity migration before deploying; see [setup, safety boundaries, and tests](docs/historical-intelligence.md). Historical context is not independent verification or demonstrated improvement in review accuracy.
+
 ```
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
 │   Next.js Web    │◄──────│  Express API     │──────►│   PostgreSQL     │

@@ -241,7 +241,7 @@ describe('FindingController', () => {
 
       const req = mockReq({
         params: { id: 'job-1', findingId: 'occ-other' },
-        body: { disposition: 'ACCEPTED' },
+        body: { disposition: 'ACCEPTED', expectedRevision: 0 },
       });
       const res = mockRes();
 
@@ -259,7 +259,7 @@ describe('FindingController', () => {
 
       const req = mockReq({
         params: { id: 'job-1', findingId: 'occ-1' },
-        body: { disposition: 'ACCEPTED' },
+        body: { disposition: 'ACCEPTED', expectedRevision: 0 },
       });
       const res = mockRes();
 
@@ -317,6 +317,7 @@ describe('FindingController', () => {
           disposition: 'REJECTED',
           rejectionReason: 'FALSE_POSITIVE',
           note: 'Not applicable here',
+          expectedRevision: 0,
         },
       });
       const res = mockRes();

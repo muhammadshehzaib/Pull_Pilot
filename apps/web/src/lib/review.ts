@@ -48,6 +48,13 @@ export type AgentType =
 export type FindingSource = 'LLM' | 'RULES' | 'SAST' | 'SECRETS' | 'DEPENDENCIES';
 
 export interface AiSuggestion {
+  findingId?: string;
+  feedback?: {
+    disposition: 'UNREVIEWED' | 'ACCEPTED' | 'REJECTED' | 'NEEDS_REVIEW';
+    rejectionReason: 'FALSE_POSITIVE' | 'DUPLICATE' | 'INTENDED_BEHAVIOR' | 'OUT_OF_SCOPE' | 'STYLE_PREFERENCE' | 'OTHER' | null;
+    note: string | null;
+    revision: number;
+  };
   filePath: string;
   lineNumber: number;
   agentType: AgentType;

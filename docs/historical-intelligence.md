@@ -1,121 +1,143 @@
-# Phase 8 — Historical Intelligence & Review Memory
+# Phase 8: Historical intelligence
 
-## Overview
+Historical intelligence records explicit feedback, groups recurring repository issues,
+and optionally supplies bounded historical context to future reviews. It retrieves
+historical evidence at inference time; it does not train model weights or establish
+that review accuracy has improved.
 
-Historical Intelligence introduces an auditable, repository-scoped feedback loop that enables:
-1. **Explicit Developer Feedback:** Developers can accept, reject (with structured reasons), flag for review, or reset feedback on individual finding occurrences.
-2. **Recurring Pattern Detection:** Cross-PR pattern aggregation detects recurring issues across distinct pull requests with deduplication and retry inflation prevention.
-3. **Opt-in Review Memory:** Bounded, relevant historical patterns are supplied as background context to future reviews of the same repository.
-4. **Transparent Governance:** Clear safety boundaries guarantee that historical context never suppresses security checks or substitutes for concrete evidence in code changes.
+## Deployment
 
-> **Note on "Learning":** In this system, "learning" refers to retrieving and applying explicit developer feedback and historical patterns at inference time. It does **not** perform fine-tuning or model weight training.
+Deploy migration `20261017000000_historical_integrity` and regenerate Prisma before
+starting the updated backend:
 
----
+```sh
+npm exec --workspace=backend -- prisma migrate deploy
+npm run prisma:generate
+```
 
-## 1. Stable Identity & Grouping
+The migration adds durable snapshot and aggregation watermarks, an exact finding key,
+aggregate expiry, and a deletion-invalidation trigger. It deletes only rebuildable
+historical aggregates, not review results or developer feedback. The maintenance
+worker rebuilds aggregates from retained occurrences, reconstructing case-sensitive
+v2 fingerprints from original file paths. No migration is applied automatically on
+application startup.
 
-A critical flaw in naive review feedback systems is attaching feedback to fragile attributes like line numbers or array indices. Phase 8 decouples occurrence identity from cross-review pattern identity:
+## Developer flow
 
-### Finding Occurrence ID (`FindingOccurrence`)
-- Uniquely identifies one finding within one specific review snapshot.
-- Retrying a background analysis job marks previous attempts as superseded and assigns monotonic snapshot keys (`jobId:seq:index`), ensuring idempotency and preventing duplicate entries.
+1. Open a completed review in History.
+2. Accept, reject with a structured reason, request further review, or reset feedback.
+3. Notes have an explicit Save action. Failed requests preserve entered text.
+4. Open **Historical insights** to inspect patterns or explicitly enable memory.
+5. For older eligible reviews, **Enable feedback for this review** performs an
+   authenticated, explicit backfill. Reading history never backfills occurrences.
 
-### Pattern Fingerprint (`fingerprint`)
-- Generates a versioned (`fp_v1_...`), deterministic grouping key across different pull requests:
-  - Scope: Normalised file/module path (extension-agnostic, lowercased, test prefixes stripped).
-  - Detector rule key: Rule ID or detector probe name when available.
-  - Category fallback: When detector ID is absent, combines category and stable signature.
+Memory is off by default. Recording feedback identities is independent of this
+setting; disabling memory stops supplying history to new reviews, not collecting
+review identities or erasing feedback. Disconnecting a repository erases its Phase 8
+occurrences, feedback, audit events, and aggregates, and disables memory. Existing
+review-history results follow their existing separate lifecycle.
 
----
+Accepted means useful/actionable, not verified, fixed, or tested. Silence is
+unreviewed. Rejections distinguish false positives, duplicates, intended behavior,
+out-of-scope findings, style preferences, and other reasons. Only explicit
+`FALSE_POSITIVE` feedback contributes to that reported count.
 
-## 2. Developer Feedback Lifecycle
+## Identity and concurrency
 
-Developer feedback is recorded against a specific finding occurrence with optimistic concurrency control.
+Each job has a durable snapshot revision and a content hash. Reordering or retrying
+the same normalized artifact preserves occurrence IDs. Different generated results
+advance the revision, supersede old occurrences, and create new IDs. Empty snapshots
+also supersede old findings. Final review results, snapshot identity, occurrences,
+and aggregation invalidation commit in one transaction.
 
-### Dispositions
-- `UNREVIEWED`: Initial default state. Silence is never interpreted as acceptance.
-- `ACCEPTED`: Developer confirmed the finding was actionable or useful. (Does not prove the issue was fixed or tested).
-- `REJECTED`: Finding was dismissed. Requires an explicit rejection reason.
-- `NEEDS_REVIEW`: Flagged for subsequent review or team consultation.
+An exact `findingKey` includes the finding text, remediation, path, location,
+severity, category, and provenance. The detail API attaches feedback by this key,
+not by array position or approximate file/line matching. Cross-review fingerprints
+are separate, versioned keys and preserve repository path case.
 
-### Rejection Reasons
-- `FALSE_POSITIVE`: Detector error, impossible code path, or invalid assumption.
-- `INTENDED_BEHAVIOR`: Deliberate design choice or approved architectural exception.
-- `DUPLICATE`: Redundant finding flagged elsewhere in the review.
-- `OUT_OF_SCOPE`: Pre-existing code defect unrelated to the pull request changes.
-- `STYLE_PREFERENCE`: Stylistic suggestion conflicting with team preference.
-- `OTHER`: Other reasons (optionally documented in note).
+Feedback requires `expectedRevision`, including `0` for initial creation. Successful
+creation returns revision `1`. Writes lock the owning repository, recheck ownership
+and supersession, use a revision-qualified update, append an audit event, and
+invalidate aggregates transactionally. Conflicting changes return `409`; an
+immediate retry of the same intent is a no-op. Audit responses return the newest
+100 events.
 
-### Optimistic Concurrency & Audit Events
-- Each feedback record carries a monotonic `revision` counter.
-- Updates can specify `expectedRevision` to detect concurrent edits and return HTTP `409 Conflict`.
-- Every feedback modification appends an immutable event to `finding_feedback_events` recording the actor ID, disposition, rejection reason, and timestamp.
+## Aggregation and bounded execution
 
----
+- At most 200 completed jobs in a 90-day window contribute to a rebuild.
+- Distinct PR support counts PR references, not worker retries or number of findings.
+- Push findings do not add PR support. Memory requires at least three distinct PRs.
+- Repository mutations increment a durable history revision and invalidate old
+  aggregates immediately. Rebuilds serialize with those mutations and publish their
+  watermark in the same transaction.
+- A maintenance pass runs at startup and every minute. It removes at most 500 expired
+  occurrences and attempts at most 10 due repository rebuilds per pass. Failed work
+  remains pending in database watermarks for a later retry.
+- Each rebuild has a 30-second transaction timeout. Review memory failure is
+  best-effort: the review proceeds without historical context.
+- Job deletion cascades remove raw feedback; a database trigger invalidates derived
+  patterns as well. Repository deletion cascades remove all Phase 8 records.
 
-## 3. Cross-PR Pattern Aggregation
+The 90-day policy applies to Phase 8 copies and feedback associated with a review,
+not to deletion of the original completed review JSON. Expired reviews cannot be
+backfilled. Their findings remain readable, with feedback unavailable.
 
-The aggregation service (`aggregation.service.ts`) periodically rebuilds `historical_patterns`:
+## Memory boundaries
 
-### Invariants & Counting Rules
-- **Sliding Window:** Bounded to the last 90 days and up to 200 candidate completed jobs.
-- **Distinct PR Support (`distinctPrCount`):** Only counts unique pull request numbers (`referenceId`). Repeated analysis runs or retries of the same PR never inflate distinct PR support.
-- **Push Jobs:** Non-PR push audits contribute to total occurrence count but do not inflate distinct PR metrics.
-- **Recurring Threshold:** Patterns supported by $\ge 3$ distinct PRs are classified as **recurring**.
-- **False Positive Metrics:** Only explicitly rejected findings with reason `FALSE_POSITIVE` contribute to the reported false-positive rate.
+Retrieval refreshes dirty or hour-old aggregates. It excludes inactive repositories,
+disabled memory, expired contributions, and patterns below the recurring threshold.
+An aggregate expires when its earliest contributing job/occurrence reaches the
+window boundary, so expired support is excluded even before cleanup runs. If a
+historical date barrier is requested, both observation and aggregation timestamps
+must precede it; unavailable historical snapshots are not fabricated.
 
----
+At most five patterns and 4,000 serialized characters are supplied. Fields are JSON
+encoded and explicitly framed as untrusted data, separately from binding owner
+rules. Free-text feedback notes are never supplied. This reduces instruction-channel
+confusion; it is not a guarantee that an LLM is immune to prompt injection.
 
-## 4. Review Memory & Safety Boundaries
+All new findings still require current-code evidence. Historical feedback does not
+disable deterministic checks, change repository rules, lower risk scores, or mark
+anything verified. The UI reports context supplied, not independent verification.
+Attribution includes only actually serialized pattern IDs, the algorithm version,
+and whether some patterns were omitted to fit the limit.
 
-When a repository enables Historical Intelligence (`historicalIntelligenceEnabled: true`), the review pipeline supplies bounded historical patterns to future AI reviews.
+## API
 
-### Retrieval & Bounding
-- Evaluates changed file paths against pattern representative paths to prioritize relevant patterns.
-- Retrieves up to **5 candidate patterns**.
-- Bounded serialized context: up to **4,000 characters**.
-- Free-text feedback notes are **never** injected into the model prompt to prevent prompt injection or credential leakage.
+All endpoints require authentication and repository ownership.
 
-### Safety Boundaries
-1. **Background Guidance Only:** Historical patterns inform what potential defects to inspect. They are **never** evidence that a current defect exists.
-2. **Current-Code Evidence Mandatory:** Every reported finding must be anchored directly to a changed line in the current diff.
-3. **No Automatic Suppression:** Past rejections never suppress deterministic security checks (SAST, secrets, dependency vulnerabilities) or repository rules.
-4. **Risk Engine Integrity:** Risk scoring and blocking verdicts are never relaxed based on historical feedback alone.
-5. **Fault Isolation:** Memory retrieval failure logs a warning and proceeds with normal review execution.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/jobs/:id/findings` | Current occurrences and feedback |
+| PUT | `/api/jobs/:id/findings/:findingId/feedback` | Feedback with required expected revision |
+| GET | `/api/jobs/:id/findings/:findingId/feedback/events` | Bounded audit trail |
+| POST | `/api/jobs/:id/findings/backfill` | Explicit eligible legacy backfill |
+| GET/PATCH | `/api/repositories/:id/historical-intelligence/settings` | Opt-in setting; PATCH body `{ "enabled": true }` |
+| GET | `/api/repositories/:id/historical-insights` | Patterns, metrics, and freshness |
 
----
+## Verification
 
-## 5. API Reference
+```sh
+npm run test --workspace=backend
+npm run test --workspace=web
+npm run build --workspace=backend
+npm run build --workspace=web
+```
 
-All endpoints require authentication and enforce repository ownership scoping (`repository.userId = req.auth.userId`).
+PostgreSQL integration tests are opt-in. Apply migrations to a disposable local
+database whose name ends in `_test`, then set both `DATABASE_URL` and
+`HISTORICAL_TEST_DATABASE_URL` to that same URL before running:
 
-### Finding Occurrences & Feedback
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/jobs/:id/findings` | Lists stable findings with their current feedback state and revision. |
-| `PUT` | `/api/jobs/:id/findings/:findingId/feedback` | Upserts feedback with optimistic concurrency (`expectedRevision`). |
-| `GET` | `/api/jobs/:id/findings/:findingId/feedback/events` | Retrieves append-only audit trail for a finding. |
-| `POST` | `/api/jobs/:id/findings/backfill` | Idempotent on-demand backfill for legacy reviews. |
+```sh
+npm run test --workspace=backend -- src/services/historical/historical.integration.test.ts
+```
 
-### Repository Settings & Insights
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/repositories/:id/historical-intelligence/settings` | Gets opt-in review memory setting. |
-| `PATCH` | `/api/repositories/:id/historical-intelligence/settings` | Updates `historicalIntelligenceEnabled` boolean. |
-| `GET` | `/api/repositories/:id/historical-insights` | Retrieves recurring patterns, distinct PR counts, and summary metrics. |
+The suite rejects non-local or non-test destinations and creates/removes only its
+own fixture owner. It tests rollback, snapshot retries, concurrent feedback,
+tenant isolation, invalidation, legacy fingerprint conversion, retention, and
+disconnect cleanup. Ordinary unit tests do not load this database client when the
+integration suite is disabled.
 
----
-
-## 6. Frontend UI Controls
-
-- **Per-Finding Feedback Controls:** Integrated into `/history` finding cards (`FindingFeedbackControl.tsx`), providing 1-click Accept, structured Reject with reason selection, Needs Review, Reset, optional notes, and audit history viewer.
-- **Repository Insights Panel:** Modal dialog (`RepositoryInsightsPanel.tsx`) showing overall occurrence stats, recurring patterns, distinct PR counts, affected file paths, feedback breakdowns, and settings toggles.
-- **Attribution Banner:** Review detail cards clearly display attribution when historical review memory was supplied to an audit.
-
----
-
-## 7. Privacy, Deletion, & Retention
-
-- **Tenant Isolation:** Patterns and feedback are strictly isolated to the owning repository. Cross-repository or cross-user memory sharing is prohibited.
-- **Repository Deletion:** Cascading foreign keys ensure that deleting a repository removes all occurrences, feedbacks, audit events, and historical patterns.
-- **Data Minimization:** No entire source files are stored for historical memory; only bounded summaries ($\le 300$ chars) and fingerprints are preserved.
+Before claiming better review quality, evaluate with human-adjudicated examples,
+chronological holdouts, and a no-memory baseline. Measure correctness, important-defect
+recall, unsupported findings, latency, and cost; acceptance rate is not accuracy.

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../workers/historical-maintenance', () => ({ clearRepositoryHistory: vi.fn() }));
 const {
   mockRepoFindMany,
   mockRepoCount,

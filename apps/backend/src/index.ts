@@ -67,6 +67,8 @@ async function startServer() {
     startContextRetentionSweep();
     const { startBehavioralRetentionSweep } = await import('./workers/behavioral-retention');
     startBehavioralRetentionSweep();
+    const { startHistoricalMaintenance } = await import('./workers/historical-maintenance');
+    startHistoricalMaintenance();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);

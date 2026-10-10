@@ -21,7 +21,6 @@ import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import { recordJobFindings } from '../services/historical/occurrence.service';
 import { retrieveHistoricalMemory, type HistoricalReviewContext } from '../services/historical/review-memory.service';
-import { aggregateRepositoryPatterns } from '../services/historical/aggregation.service';
 import {
   renderFindingListItem,
   renderInlineComment,
@@ -181,7 +180,8 @@ export const analysisWorker = new Worker(
 
       if (!rawDiff || rawDiff.length < 5) {
         console.log(`💨 Diff empty or too small. Finishing early.`);
-        return await prisma.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
+        await recordJobFindings(jobId, repositoryId, [], { suggestions: [] });
+        return { status: 'success', findingCount: 0 };
       }
 
       // Filter out files specified in .aipr.yml ignore list
@@ -194,7 +194,8 @@ export const analysisWorker = new Worker(
       if (!filteredDiff || filteredDiff.trim().length < 5) {
         console.log(`💨 Diff empty after applying .aipr.yml ignore filters. Finishing early.`);
         SocketService.emitStatus(userId, jobId, `💨 All changed files matched ignore rules. No audit required.`, 'COMPLETED');
-        return await prisma.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED' } });
+        await recordJobFindings(jobId, repositoryId, [], { suggestions: [], ignoredFiles, includedFiles });
+        return { status: 'success', findingCount: 0 };
       }
 
       // 6b. DETERMINISTIC RULE ENGINE. Runs on the filtered diff — ignored
@@ -293,7 +294,7 @@ export const analysisWorker = new Worker(
       //     Safety boundaries: guidance only, never suppresses security checks.
       let historicalMemory: HistoricalReviewContext | null = null;
       try {
-        historicalMemory = await retrieveHistoricalMemory(dbRepo.id, includedFiles);
+        historicalMemory = await guard(retrieveHistoricalMemory(dbRepo.id, includedFiles));
         if (historicalMemory?.patterns.length) {
           console.log(
             `📜 [Phase8] Supplied ${historicalMemory.patterns.length} historical pattern(s) to review prompt (IDs: ${historicalMemory.suppliedPatternIds.join(', ')}).`,
@@ -303,17 +304,13 @@ export const analysisWorker = new Worker(
         console.warn('⚠️ [Phase8] Historical memory retrieval error (proceeding without memory):', memErr);
       }
 
-      const activeGuidelines = historicalMemory?.serializedContext
-        ? [...promptGuidelines, historicalMemory.serializedContext]
-        : promptGuidelines;
-
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await guard(
         aiDriver.analyzeCode(
           filteredDiff,
-          activeGuidelines,
+          promptGuidelines,
           context,
-          { signal: abort.signal },
+          { signal: abort.signal, historicalContext: historicalMemory?.serializedContext },
         ),
       );
 
@@ -582,11 +579,7 @@ export const analysisWorker = new Worker(
       // with a cheerful COMPLETED.
       await assertNotSuperseded();
 
-      await prisma.analysisJob.update({
-        where: { id: jobId },
-        data: {
-          status: 'COMPLETED',
-          results: {
+      await recordJobFindings(jobId, repositoryId, suggestions, {
             suggestions,
             ignoredFiles,
             includedFiles,
@@ -603,25 +596,13 @@ export const analysisWorker = new Worker(
               ? {
                   suppliedPatternIds: historicalMemory.suppliedPatternIds,
                   patternCount: historicalMemory.patterns.length,
+                  version: historicalMemory.version,
+                  algorithmVersion: historicalMemory.algorithmVersion,
+                  truncated: historicalMemory.truncated,
                 }
               : undefined,
-          } as any,
-        },
-      });
-
-      // Phase 8: record findings as stable occurrences (best-effort).
-      // A failure here must never abort a review that already posted comments.
-      try {
-        if (dbRepo.historicalIntelligenceEnabled && suggestions.length > 0) {
-          await recordJobFindings(jobId, repositoryId, suggestions);
-          // Refresh aggregated patterns in background (best-effort)
-          aggregateRepositoryPatterns(repositoryId).catch((aggErr) =>
-            console.warn(`⚠️ [Phase8] Post-review pattern aggregation warning:`, (aggErr as Error).message),
-          );
-        }
-      } catch (occErr) {
-        console.warn(`⚠️ [Phase8] Occurrence recording failed for job ${jobId}:`, (occErr as Error).message);
-      }
+      } as any);
+      // Durable historicalRevision is reconciled by the bounded maintenance worker.
 
       if (commentFailures.length > 0) {
         SocketService.emitStatus(

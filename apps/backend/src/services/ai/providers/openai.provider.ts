@@ -17,7 +17,7 @@ export class OpenAiProvider extends BaseAiProvider {
     options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]> {
     try {
-      const contextBlock = this.renderContext(context);
+      const contextBlock = this.renderContext(context, options);
 
       const response = await this.aiClient.chat.completions.create({
         model: 'gpt-4o', // Utilizing top-tier omni model for extreme reasoning

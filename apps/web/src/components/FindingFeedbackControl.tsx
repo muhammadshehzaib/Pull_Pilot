@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, X, HelpCircle, RotateCcw, History, AlertTriangle, Loader2 } from 'lucide-react';
 import { api, type ApiError } from '../lib/api';
 
@@ -76,6 +76,11 @@ export function FindingFeedbackControl({
   const [showHistory, setShowHistory] = useState(false);
   const [historyEvents, setHistoryEvents] = useState<FeedbackEventData[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const savingRef = useRef(false);
+  useEffect(() => {
+    setFeedback(initialFeedback ?? { disposition: 'UNREVIEWED', rejectionReason: null, note: null, revision: 0 });
+    setNote(initialFeedback?.note ?? '');
+  }, [findingId, initialFeedback]);
 
   if (isLegacy || !findingId) {
     return (
@@ -90,7 +95,8 @@ export function FindingFeedbackControl({
     reason?: RejectionReason,
     customNote?: string,
   ) {
-    if (saving) return;
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setStatusMessage(null);
 
@@ -130,6 +136,7 @@ export function FindingFeedbackControl({
         });
       }
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -478,10 +485,13 @@ export function FindingFeedbackControl({
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.4rem', marginTop: '0.2rem' }}>
               <button
                 type="button"
-                onClick={() => setShowNoteInput(false)}
+                onClick={() => { setNote(feedback.note ?? ''); setShowNoteInput(false); }}
                 style={{ fontSize: '0.7rem', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
               >
-                Done
+                Cancel
+              </button>
+              <button type="button" disabled={saving} onClick={() => submitFeedback(feedback.disposition, feedback.rejectionReason ?? undefined)}>
+                Save note
               </button>
             </div>
           </div>

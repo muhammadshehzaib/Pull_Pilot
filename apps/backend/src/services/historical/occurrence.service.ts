@@ -1,99 +1,69 @@
-﻿/**
- * Occurrence service — Phase 8 Historical Intelligence
- *
- * Persists FindingOccurrence rows for a completed analysis job.
- *
- * Safety invariants:
- *  - Each (jobId, arrayIndex) is idempotent via the unique snapshotKey, so
- *    BullMQ retries and superseded snapshots never create duplicate rows.
- *  - "Superseded" snapshots: if the worker writes results more than once for
- *    the same job (e.g. a crash/retry between the intermediate results write
- *    and the COMPLETED write), previously written occurrences are marked
- *    superseded and a fresh batch is written.
- *  - No writes are performed on GET requests; this service is only called
- *    from the analysis worker, never from any HTTP handler.
- *  - If this service throws, the worker catches and logs but does NOT abort
- *    the review — occurrence recording is best-effort.
- */
-
+import { createHash } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import prisma from '../../config/prisma';
-import type { AiSuggestion } from '../ai/finding-taxonomy';
+import { normalizeStoredSuggestions, type AiSuggestion } from '../ai/finding-taxonomy';
 import { generateFingerprint, buildFindingSummary } from './fingerprint.service';
+import { dirtyHistory, historyCutoff, lockHistoricalRepository } from './state';
 
-/**
- * Record all merged findings for a completed job as FindingOccurrence rows.
- *
- * @param jobId         The AnalysisJob primary key
- * @param repositoryId  The owning repository's primary key
- * @param findings      The final merged+deduplicated findings array
- * @param snapshotSeq   Monotonic integer from the worker (0 = first/only attempt).
- *                      Used to build idempotency keys and to mark previous rows.
- */
-export async function recordJobFindings(
-  jobId: string,
-  repositoryId: string,
-  findings: AiSuggestion[],
-  snapshotSeq: number = 0,
-): Promise<void> {
-  if (findings.length === 0) return;
-
-  // Mark any occurrences from earlier snapshots of this job as superseded.
-  // This covers the edge case of a crash/retry that wrote a partial batch.
-  // Uses updateMany to avoid a race window: only touches rows for this job
-  // where snapshotKey does NOT start with the current snapshotSeq prefix.
-  const currentPrefix = `${jobId}:${snapshotSeq}:`;
-  await prisma.findingOccurrence.updateMany({
-    where: {
-      analysisJobId: jobId,
-      superseded: false,
-      NOT: { snapshotKey: { startsWith: currentPrefix } },
-    },
-    data: { superseded: true },
-  });
-
-  // Build rows. We use createMany with skipDuplicates so a retry that reaches
-  // this point after the superseded-mark above never double-inserts.
-  const rows = findings.map((finding, index) => {
-    const source = finding.source ?? 'LLM';
-    return {
-      repositoryId,
-      analysisJobId: jobId,
-      snapshotKey: `${currentPrefix}${index}`,
-      filePath: finding.filePath,
-      lineNumber: finding.lineNumber,
-      category: finding.agentType,
-      severity: finding.priority,
-      source,
-      sources: (finding.sources ?? [source]) as unknown as any,
-      ruleKeys: (finding.ruleKeys ?? []) as unknown as any,
-      summary: buildFindingSummary(finding),
-      fingerprint: generateFingerprint(finding),
-      superseded: false,
-    };
-  });
-
-  await prisma.findingOccurrence.createMany({
-    data: rows,
-    skipDuplicates: true,
-  });
-
-  console.log(
-    `📝 [Phase8] Recorded ${rows.length} finding occurrence(s) for job ${jobId} (snapshotSeq=${snapshotSeq}).`,
-  );
+/** Exact artifact identity, not a fuzzy cross-review pattern or array position. */
+export function findingIdentity(f: AiSuggestion): string {
+  return createHash('sha256').update(JSON.stringify([
+    f.filePath, f.lineNumber, f.agentType, f.priority, f.issue, f.suggestion,
+    f.source ?? 'LLM', [...(f.sources ?? [f.source ?? 'LLM'])].sort(),
+    [...(f.ruleKeys ?? [])].sort(), f.corroborated === true,
+  ])).digest('hex');
 }
 
-/**
- * Retrieves non-superseded occurrences for a job, sorted by createdAt.
- */
+function normalizedResults(results: unknown): AiSuggestion[] {
+  return normalizeStoredSuggestions(Array.isArray(results) ? results :
+    results && typeof results === 'object' ? (results as { suggestions?: unknown }).suggestions : []);
+}
+
+export const snapshotIdentity = (findings: AiSuggestion[]) => createHash('sha256')
+  .update(JSON.stringify([...new Set(findings.map(findingIdentity))].sort())).digest('hex');
+
+/** Completion and occurrence publication share one transaction. Legacy backfill
+ * checks the stored artifact under lock and cannot resurrect expired reviews. */
+export async function recordJobFindings(
+  jobId: string, repositoryId: string, findings: AiSuggestion[],
+  completedResults?: Prisma.InputJsonValue,
+): Promise<void> {
+  await prisma.$transaction(async tx => {
+    await lockHistoricalRepository(tx, repositoryId);
+    const repo = await tx.repository.findUnique({ where: { id: repositoryId } });
+    const job = await tx.analysisJob.findFirst({ where: { id: jobId, repositoryId } });
+    if (!job || !repo?.isActive) throw new Error('Review or repository unavailable');
+    const normalized = normalizeStoredSuggestions(findings);
+    const hash = snapshotIdentity(normalized);
+    if (completedResults === undefined &&
+      (job.status !== 'COMPLETED' || snapshotIdentity(normalizedResults(job.results)) !== hash)) {
+      throw new Error('Review changed; reload before backfilling');
+    }
+    if (job.createdAt < historyCutoff()) throw new Error('Historical feedback retention has expired for this review');
+    if (completedResults !== undefined) {
+      await tx.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED', results: completedResults } });
+    }
+    if (job.findingSnapshotHash === hash) return;
+    const revision = job.findingSnapshot + 1;
+    await tx.findingOccurrence.updateMany({ where: { analysisJobId: jobId, superseded: false }, data: { superseded: true } });
+    const unique = new Map(normalized.map(f => [findingIdentity(f), f]));
+    if (unique.size) await tx.findingOccurrence.createMany({
+      data: [...unique].map(([findingKey, f]) => ({
+        repositoryId, analysisJobId: jobId, findingKey,
+        snapshotKey: `${jobId}:${revision}:${findingKey}`, filePath: f.filePath,
+        lineNumber: f.lineNumber, category: f.agentType, severity: f.priority,
+        source: f.source ?? 'LLM', sources: f.sources ?? [f.source ?? 'LLM'],
+        ruleKeys: f.ruleKeys ?? [], summary: buildFindingSummary(f), fingerprint: generateFingerprint(f),
+      })),
+    });
+    await tx.analysisJob.update({ where: { id: jobId }, data: { findingSnapshot: revision, findingSnapshotHash: hash } });
+    await dirtyHistory(tx, repositoryId);
+  }, { timeout: 15000 });
+}
+
 export async function getOccurrencesForJob(jobId: string) {
   return prisma.findingOccurrence.findMany({
-    where: {
-      analysisJobId: jobId,
-      superseded: false,
-    },
-    include: {
-      feedback: true,
-    },
-    orderBy: { createdAt: 'asc' },
+    where: { analysisJobId: jobId, superseded: false, analysisJob: { createdAt: { gte: historyCutoff() } } },
+    include: { feedback: true }, orderBy: { snapshotKey: 'asc' },
   });
 }

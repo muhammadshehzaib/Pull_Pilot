@@ -6,6 +6,8 @@ import { AiSuggestion, normalizeStoredSuggestions } from '../services/ai/finding
 import { paginationMeta, parsePagination } from '../utils/pagination';
 import { behavioralForJob } from '../services/behavioral/behavioral.service';
 import { assessExplainableRisk, type ExplainableRiskReport } from '../services/security/risk-engine';
+import { findingIdentity } from '../services/historical/occurrence.service';
+import { historyCutoff } from '../services/historical/state';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
@@ -127,6 +129,8 @@ export class JobController {
         // Per-probe pass/fail records for the deterministic security layer.
         securityChecks: { orderBy: { createdAt: 'asc' } },
         behavioralRuns: { where: { expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, take: 5 },
+        findingOccurrences: { where: { superseded: false, findingKey: { not: '' },
+          analysisJob: { createdAt: { gte: historyCutoff() } } }, include: { feedback: true } },
       },
     });
 
@@ -136,7 +140,15 @@ export class JobController {
     const rawObj = (job.results && typeof job.results === 'object' && !Array.isArray(job.results))
       ? (job.results as Record<string, unknown>)
       : {};
-    const { behavioralRuns, ...publicJob } = job;
+    const { behavioralRuns, findingOccurrences, ...publicJob } = job;
+    const occurrencesByKey = new Map((findingOccurrences ?? []).map(occ => [occ.findingKey, occ]));
+    const findingsWithFeedback = normalizedFindings.map(finding => {
+      const occurrence = occurrencesByKey.get(findingIdentity(finding));
+      return occurrence ? { ...finding, findingId: occurrence.id, feedback: occurrence.feedback ? {
+        disposition: occurrence.feedback.disposition, rejectionReason: occurrence.feedback.rejectionReason,
+        note: occurrence.feedback.note, revision: occurrence.feedback.revision,
+      } : { disposition: 'UNREVIEWED', rejectionReason: null, note: null, revision: 0 } } : finding;
+    });
     const behavioral = behavioralForJob(rawObj, behavioralRuns);
     const storedRiskV2 = rawObj.riskV2 as ExplainableRiskReport | undefined;
     // Do not retroactively invent scan coverage or upgrade legacy risk reports.
@@ -153,7 +165,7 @@ export class JobController {
     return res.json({
       job: {
         ...publicJob,
-        results: normalizedFindings,
+        results: findingsWithFeedback,
         metadata: {
           ignoredFiles: Array.isArray(rawObj.ignoredFiles) ? (rawObj.ignoredFiles as string[]) : [],
           includedFiles: Array.isArray(rawObj.includedFiles) ? (rawObj.includedFiles as string[]) : [],
@@ -166,6 +178,8 @@ export class JobController {
           // evidence), or undefined when the provider did not support it.
           testGaps: rawObj.testGaps,
           behavioral,
+          historicalMemory: normalizeHistoricalAttribution(rawObj.historicalMemory),
+          historicalFeedbackEligible: job.status === 'COMPLETED' && job.createdAt >= historyCutoff(),
           error: typeof rawObj.error === 'string' ? rawObj.error : undefined,
         },
       },
@@ -233,4 +247,15 @@ export class JobController {
 
     return res.json({ status: 'CANCELLED', id: job.id });
   }
+}
+
+export function normalizeHistoricalAttribution(value: unknown) {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const ids = Array.isArray(raw.suppliedPatternIds) ? raw.suppliedPatternIds
+    .filter((id): id is string => typeof id === 'string' && id.length <= 128).slice(0, 5) : [];
+  if (!ids.length) return undefined;
+  return { version: raw.version === 1 ? 1 : undefined,
+    algorithmVersion: typeof raw.algorithmVersion === 'string' ? raw.algorithmVersion.slice(0, 40) : undefined,
+    suppliedPatternIds: ids, patternCount: ids.length, truncated: raw.truncated === true };
 }

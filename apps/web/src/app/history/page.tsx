@@ -76,7 +76,9 @@ interface JobDetail extends JobSummary {
   /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
   securityChecks?: SecurityCheck[];
   /** Risk engine output, rehydrated from the results blob by the controller. */
-  metadata?: { risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown };
+  metadata?: { risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown;
+    historicalFeedbackEligible?: boolean;
+    historicalMemory?: { version?: number; algorithmVersion?: string; suppliedPatternIds: string[]; patternCount: number; truncated: boolean } };
 }
 
 export default function HistoryPage() {
@@ -378,7 +380,7 @@ export default function HistoryPage() {
             ) : loadingDetail ? (
               <div className="glass-card" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Loading…</div>
             ) : (
-              <JobDetailView job={selected} />
+              <JobDetailView key={selected.id} job={selected} />
             )}
           </div>
         </div>
@@ -404,15 +406,32 @@ function JobDetailView({ job }: { job: JobDetail }) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [liveRisk, setLiveRisk] = useState(job.metadata?.riskV2);
   const [showInsights, setShowInsights] = useState(false);
+  const [feedbackFindings, setFeedbackFindings] = useState(job.results ?? []);
+  const [backfilling, setBackfilling] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+  useEffect(() => { setFeedbackFindings(job.results ?? []); setFeedbackError(''); }, [job.id, job.results]);
   useEffect(() => { setLiveRisk(job.metadata?.riskV2); }, [job.id, job.metadata?.riskV2]);
 
-  const sortedSuggestions = (job.results || []).slice().sort(
+  const sortedSuggestions = feedbackFindings.slice().sort(
     (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority],
   );
 
   // CRITICAL + HIGH. Surfaced separately because a reviewer deciding whether to
   // approve only needs this number, not the full breakdown.
   const blockingCount = sortedSuggestions.filter((s) => isBlocking(s.priority)).length;
+
+  async function backfillFeedback() {
+    if (backfilling) return;
+    setBackfilling(true);
+    setFeedbackError('');
+    try {
+      await api(`/api/jobs/${job.id}/findings/backfill`, { method: 'POST' });
+      const result = await api<{ job: JobDetail }>(`/api/jobs/${job.id}`);
+      setFeedbackFindings(result.job.results ?? []);
+    } catch {
+      setFeedbackError('Could not enable feedback. The review may have changed or expired; reload and retry.');
+    } finally { setBackfilling(false); }
+  }
 
   async function handleCopyAll() {
     const plan = generateFixPlanForLLM(job, sortedSuggestions);
@@ -440,6 +459,9 @@ function JobDetailView({ job }: { job: JobDetail }) {
             </h3>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button type="button" className="btn-secondary" onClick={() => setShowInsights(true)}>
+              <Brain size={15} /> Historical insights
+            </button>
             {sortedSuggestions.length > 0 && (
               <button
                 type="button"
@@ -564,7 +586,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
         <TestGapCard report={job.metadata.testGaps} jobId={job.id} />
       )}
       <ExplainableRiskCard report={liveRisk} />
-      {Boolean((job.metadata as any)?.historicalMemory?.patternCount) && (
+      {Boolean(job.metadata?.historicalMemory?.patternCount) && (
         <div
           className="historical-memory-attribution-card"
           style={{
@@ -581,7 +603,9 @@ function JobDetailView({ job }: { job: JobDetail }) {
         >
           <Brain size={16} color="var(--accent, #2563eb)" />
           <span>
-            <strong>Historical Review Memory Active:</strong> {(job.metadata as any)?.historicalMemory?.patternCount} recurring pattern(s) guided this review as background context. Every finding was independently verified against the current diff.
+            <strong>Historical Review Memory Active:</strong> {job.metadata?.historicalMemory?.patternCount} recurring pattern(s) were supplied as untrusted background context. Findings still require evidence in the current changes; this is not independent verification.
+            {job.metadata?.historicalMemory?.truncated && ' Some patterns were omitted to fit the context limit.'}
+            {job.metadata?.historicalMemory?.algorithmVersion && ` Algorithm: ${job.metadata.historicalMemory.algorithmVersion}.`}
           </span>
         </div>
       )}
@@ -595,6 +619,17 @@ function JobDetailView({ job }: { job: JobDetail }) {
       <BehavioralVerification jobId={job.id} initialReport={job.metadata?.behavioral} onUpdated={() => {
         api<{ job: JobDetail }>(`/api/jobs/${job.id}`).then(data => setLiveRisk(data.job.metadata?.riskV2)).catch(() => {});
       }} />
+
+      {job.status === 'COMPLETED' && sortedSuggestions.some(finding => !finding.findingId) && (
+        <div className="glass-card">
+          {job.metadata?.historicalFeedbackEligible ? (
+            <button type="button" onClick={backfillFeedback} disabled={backfilling}>
+              {backfilling ? 'Enabling feedback…' : 'Enable feedback for this review'}
+            </button>
+          ) : <span>Historical feedback is unavailable for this review (90-day retention).</span>}
+          {feedbackError && <p role="alert">{feedbackError}</p>}
+        </div>
+      )}
 
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
@@ -623,7 +658,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
         </div>
       ) : (
         sortedSuggestions.map((s, i) => (
-          <div key={i} className="glass-card">
+          <div key={s.findingId ?? `${s.filePath}:${s.lineNumber}:${i}`} className="glass-card">
             <div className="finding-card-header">
               <span
                 className={`badge-${s.priority.toLowerCase()}`}
@@ -680,6 +715,11 @@ function JobDetailView({ job }: { job: JobDetail }) {
             <pre className="mono finding-code-container">
               {s.suggestion}
             </pre>
+            {job.status === 'COMPLETED' && <FindingFeedbackControl
+              jobId={job.id} findingId={s.findingId} initialFeedback={s.feedback}
+              onFeedbackChanged={feedback => setFeedbackFindings(current => current.map(finding =>
+                finding.findingId === s.findingId ? { ...finding, feedback } : finding))}
+            />}
           </div>
         ))
       )}

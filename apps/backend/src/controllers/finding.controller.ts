@@ -85,6 +85,7 @@ export class FindingController {
         sources: occ.sources,
         ruleKeys: occ.ruleKeys,
         summary: occ.summary,
+        findingKey: occ.findingKey,
         fingerprint: occ.fingerprint,
         feedback: occ.feedback
           ? {
@@ -144,8 +145,10 @@ export class FindingController {
       }
     }
 
-    if (expectedRevision !== undefined && expectedRevision !== null) {
-      if (typeof expectedRevision !== 'number' || expectedRevision < 0 || !Number.isInteger(expectedRevision)) {
+    if (expectedRevision === undefined || expectedRevision === null) {
+      return res.status(400).json({ error: 'expectedRevision is required' });
+    } else {
+      if (typeof expectedRevision !== 'number' || expectedRevision < 0 || !Number.isSafeInteger(expectedRevision)) {
         return res.status(400).json({ error: 'expectedRevision must be a non-negative integer' });
       }
     }
@@ -185,7 +188,7 @@ export class FindingController {
           currentRevision: err.currentRevision,
         });
       }
-      return res.status(400).json({ error: err.message });
+      return res.status(503).json({ error: 'Feedback could not be saved; reload and retry' });
     }
   }
 
@@ -239,7 +242,11 @@ export class FindingController {
     }
 
     const findings = extractNormalizedFindings(job.results);
-    await recordJobFindings(job.id, job.repositoryId, findings, 0);
+    try {
+      await recordJobFindings(job.id, job.repositoryId, findings);
+    } catch {
+      return res.status(409).json({ error: 'Review changed, expired, or repository unavailable; reload before backfilling' });
+    }
 
     return res.json({
       jobId: job.id,

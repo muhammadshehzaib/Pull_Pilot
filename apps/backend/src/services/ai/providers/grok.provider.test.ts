@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const { mockCreate, OpenAICtor } = vi.hoisted(() => {
+  // Prisma generation can load local provider overrides. Unit fixtures must be explicit.
+  vi.stubEnv('GROK_BASE_URL', 'https://api.x.ai/v1');
+  vi.stubEnv('GROK_MODEL', 'grok-2-latest');
   const mockCreate = vi.fn();
   const OpenAICtor = vi.fn(function (this: any, opts?: { apiKey: string; baseURL?: string }) {
     (this as any)._opts = opts;
@@ -35,6 +38,13 @@ describe('GrokProvider', () => {
   });
 
   describe('constructor', () => {
+    it('keeps historical summaries in the user context rather than system rules', async () => {
+      mockCreate.mockResolvedValueOnce(chatResponse('[]'));
+      await provider.analyzeCode('CURRENT_DIFF', [], undefined, { historicalContext: 'UNTRUSTED_HISTORY_PAYLOAD' });
+      const request = mockCreate.mock.calls[0][0];
+      expect(request.messages[0].content).not.toContain('UNTRUSTED_HISTORY_PAYLOAD');
+      expect(request.messages[1].content).toContain('UNTRUSTED_HISTORY_PAYLOAD');
+    });
     it('initializes OpenAI client pointed at the xAI baseURL', () => {
       new GrokProvider('xai-abc');
       const opts = OpenAICtor.mock.calls.at(-1)?.[0] as any;

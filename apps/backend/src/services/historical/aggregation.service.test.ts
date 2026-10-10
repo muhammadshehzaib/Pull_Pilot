@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import prisma from '../../config/prisma';
 
-vi.mock('../../config/prisma', () => ({
-  default: {
+vi.mock('../../config/prisma', () => {
+  const db: any = {
     analysisJob: {
       findMany: vi.fn(),
     },
@@ -15,11 +15,12 @@ vi.mock('../../config/prisma', () => ({
       findMany: vi.fn(),
       findFirst: vi.fn(),
     },
-    repository: {
-      findUnique: vi.fn(),
-    },
-  },
-}));
+    repository: { findUnique: vi.fn(), update: vi.fn() },
+    $queryRaw: vi.fn().mockResolvedValue([{ id: 'repo-1' }]),
+  };
+  db.$transaction = vi.fn(async (cb: any) => cb(db));
+  return { default: db };
+});
 
 import {
   aggregateRepositoryPatterns,
@@ -29,6 +30,7 @@ import {
 describe('aggregation.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (prisma.repository.findUnique as any).mockResolvedValue({ isActive: true, historicalRevision: 2 });
   });
 
   describe('aggregateRepositoryPatterns', () => {
@@ -40,7 +42,7 @@ describe('aggregation.service', () => {
       expect(result.totalOccurrences).toBe(0);
       expect(result.distinctPatternsCount).toBe(0);
       expect(prisma.historicalPattern.deleteMany).toHaveBeenCalledWith({
-        where: { repositoryId: 'repo-1', algorithmVersion: 'fp_v1' },
+        where: { repositoryId: 'repo-1', algorithmVersion: 'fp_v2' },
       });
     });
 
@@ -58,7 +60,7 @@ describe('aggregation.service', () => {
         {
           id: 'occ-1',
           analysisJobId: 'job-1',
-          fingerprint: 'fp_v1_SECURITY:auth:1',
+          fingerprint: 'fp_v2_SECURITY:auth:1',
           category: 'SECURITY',
           source: 'SEMANTIC',
           summary: 'Hardcoded secret in auth',
@@ -71,7 +73,7 @@ describe('aggregation.service', () => {
         {
           id: 'occ-2',
           analysisJobId: 'job-2',
-          fingerprint: 'fp_v1_SECURITY:auth:1',
+          fingerprint: 'fp_v2_SECURITY:auth:1',
           category: 'SECURITY',
           source: 'SEMANTIC',
           summary: 'Hardcoded secret in auth',
@@ -84,7 +86,7 @@ describe('aggregation.service', () => {
         {
           id: 'occ-3',
           analysisJobId: 'job-3',
-          fingerprint: 'fp_v1_SECURITY:auth:1',
+          fingerprint: 'fp_v2_SECURITY:auth:1',
           category: 'SECURITY',
           source: 'SEMANTIC',
           summary: 'Hardcoded secret in auth',
@@ -110,8 +112,8 @@ describe('aggregation.service', () => {
           where: {
             repositoryId_fingerprint_algorithmVersion: {
               repositoryId: 'repo-1',
-              fingerprint: 'fp_v1_SECURITY:auth:1',
-              algorithmVersion: 'fp_v1',
+              fingerprint: 'fp_v2_SECURITY:auth:1',
+              algorithmVersion: 'fp_v2',
             },
           },
           create: expect.objectContaining({
@@ -136,7 +138,7 @@ describe('aggregation.service', () => {
       const occurrences = candidateJobs.map((j, i) => ({
         id: `occ-${i}`,
         analysisJobId: j.id,
-        fingerprint: 'fp_v1_BUG:null-check:1',
+        fingerprint: 'fp_v2_BUG:null-check:1',
         category: 'BUG',
         source: 'LLM',
         summary: 'Missing null check',
@@ -191,8 +193,8 @@ describe('aggregation.service', () => {
       const mockPatterns = [
         {
           id: 'pat-1',
-          fingerprint: 'fp_v1_SECURITY:auth:1',
-          algorithmVersion: 'fp_v1',
+          fingerprint: 'fp_v2_SECURITY:auth:1',
+          algorithmVersion: 'fp_v2',
           category: 'SECURITY',
           source: 'SEMANTIC',
           summary: 'Hardcoded secret',

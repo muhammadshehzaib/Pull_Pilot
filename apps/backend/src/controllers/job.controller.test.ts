@@ -367,6 +367,25 @@ describe('parseJobStatus', () => {
 });
 
 describe('JobController.get', () => {
+  it('attaches feedback by exact artifact identity rather than order or location', async () => {
+    const { findingIdentity } = await import('../services/historical/occurrence.service');
+    const finding = { filePath: 'src/a.ts', lineNumber: 1, agentType: 'BUG' as const, priority: 'HIGH' as const, issue: 'First defect', suggestion: 'Fix it' };
+    const different = { ...finding, issue: 'Second defect at same location' };
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'job', status: 'COMPLETED', createdAt: new Date(),
+      results: { suggestions: [finding, different], historicalMemory: { version: 1, algorithmVersion: 'fp_v2', suppliedPatternIds: ['p1'], patternCount: 5, truncated: true } },
+      findingOccurrences: [
+        { id: 'second-id', findingKey: findingIdentity(different), feedback: null },
+        { id: 'first-id', findingKey: findingIdentity(finding), feedback: { disposition: 'ACCEPTED', rejectionReason: null, note: 'Internal note', revision: 3 } },
+      ],
+    });
+    const response = mockRes();
+    await JobController.get(authedReq({ params: { id: 'job' } }), response);
+    const data = response.json.mock.calls[0][0].job;
+    expect(data.results.map((f: any) => f.findingId)).toEqual(['first-id', 'second-id']);
+    expect(data.results[0].feedback.revision).toBe(3);
+    expect(data.metadata.historicalMemory).toEqual({ version: 1, algorithmVersion: 'fp_v2', suppliedPatternIds: ['p1'], patternCount: 1, truncated: true });
+    expect(data).not.toHaveProperty('findingOccurrences');
+  });
   it('returns updated v2 behavioral risk without exposing internal dispatch records', async () => {
     const { assessExplainableRisk } = await import('../services/security/risk-engine');
     const { baselineBehavioral } = await import('../services/behavioral/contracts');
@@ -398,7 +417,7 @@ describe('JobController.get', () => {
         id: 'j1',
         status: 'COMPLETED',
         results: [],
-        metadata: { ignoredFiles: [], includedFiles: [], error: undefined },
+        metadata: { ignoredFiles: [], includedFiles: [], error: undefined, historicalFeedbackEligible: false },
       },
     });
   });
@@ -446,6 +465,7 @@ describe('JobController.get', () => {
       ignoredFiles: ['dist/**'],
       includedFiles: ['src/**'],
       error: 'No API key',
+      historicalFeedbackEligible: false,
     });
     expect(out.job.results).toEqual([]);
   });

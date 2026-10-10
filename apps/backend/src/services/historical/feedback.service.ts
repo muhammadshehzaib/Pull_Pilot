@@ -9,12 +9,13 @@
  *
  * Safety invariants:
  *   - Silence is never acceptance: only explicit ACCEPTED disposition counts.
- *   - Tenant isolation: every write is scoped by repository.userId = actorId,
- *     enforced by the caller (controller) before this service is invoked.
+ *   - Tenant isolation: every write rechecks repository.userId = actorId
+ *     inside the transaction, after locking the repository.
  *   - No silent backfills during GET requests; this service is write-only.
  */
 
 import prisma from '../../config/prisma';
+import { dirtyHistory, historyCutoff, lockHistoricalRepository } from './state';
 import type { FeedbackDisposition, RejectionReason } from '@prisma/client';
 
 export type { FeedbackDisposition, RejectionReason };
@@ -29,8 +30,7 @@ export interface UpdateFeedbackInput {
   /**
    * Expected current revision. If the server revision does not match,
    * a 409 Conflict must be returned to prevent lost updates.
-   * Omit (or pass undefined) to skip the concurrency check — useful for
-   * initial creation where no prior revision exists.
+   * Required, including initial creation (revision 0).
    */
   expectedRevision?: number;
 }
@@ -59,8 +59,8 @@ export class FeedbackConflictError extends Error {
  * Upsert feedback for a finding occurrence.
  *
  * If a FindingFeedback row does not yet exist it is created.
- * If it does exist and expectedRevision is supplied, the revision must match
- * the stored value or a FeedbackConflictError is thrown.
+ * Every request requires expectedRevision (zero for creation). A stale,
+ * different intent throws FeedbackConflictError; exact retries are no-ops.
  */
 export async function updateFeedback(input: UpdateFeedbackInput): Promise<FeedbackResult> {
   const { occurrenceId, actorId, disposition, rejectionReason, note, expectedRevision } = input;
@@ -78,22 +78,33 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
   // Non-REJECTED dispositions must not carry a rejection reason.
   const effectiveRejectionReason = disposition === 'REJECTED' ? (rejectionReason ?? null) : null;
 
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision! < 0) {
+    throw new Error('expectedRevision is required and must be a non-negative integer');
+  }
+  const occurrenceWhere = {
+    id: occurrenceId, superseded: false,
+    repository: { userId: actorId, isActive: true },
+    analysisJob: { status: 'COMPLETED' as const, createdAt: { gte: historyCutoff() } },
+  };
+  const occurrence = await prisma.findingOccurrence.findFirst({ where: occurrenceWhere });
+  if (!occurrence) throw new FeedbackConflictError(0);
+
   return prisma.$transaction(async (tx) => {
+    await lockHistoricalRepository(tx, occurrence.repositoryId);
+    occurrenceWhere.analysisJob.createdAt.gte = historyCutoff();
+    if (!await tx.findingOccurrence.findFirst({ where: occurrenceWhere })) throw new FeedbackConflictError(0);
     const existing = await tx.findingFeedback.findUnique({
       where: { occurrenceId },
     });
 
     if (existing) {
       // Concurrency check: caller must supply the revision they last saw.
-      if (expectedRevision !== undefined && existing.revision !== expectedRevision) {
-        throw new FeedbackConflictError(existing.revision);
-      }
-
       // Idempotency: no-op if nothing changed.
       if (
         existing.disposition === disposition &&
         existing.rejectionReason === (effectiveRejectionReason ?? null) &&
-        existing.note === (note ?? null)
+        existing.note === (note ?? null) &&
+        (existing.revision === expectedRevision || existing.revision === expectedRevision! + 1)
       ) {
         return {
           id: existing.id,
@@ -106,10 +117,12 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
         };
       }
 
+      if (existing.revision !== expectedRevision) throw new FeedbackConflictError(existing.revision);
+
       const newRevision = existing.revision + 1;
 
       const updated = await tx.findingFeedback.update({
-        where: { id: existing.id },
+        where: { id: existing.id, revision: expectedRevision },
         data: {
           actorId,
           disposition,
@@ -129,6 +142,8 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
         },
       });
 
+      await dirtyHistory(tx, occurrence.repositoryId);
+
       return {
         id: updated.id,
         occurrenceId,
@@ -141,6 +156,7 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
     }
 
     // Create new feedback row.
+    if (expectedRevision !== 0) throw new FeedbackConflictError(0);
     const created = await tx.findingFeedback.create({
       data: {
         occurrenceId,
@@ -148,7 +164,7 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
         disposition,
         rejectionReason: effectiveRejectionReason,
         note: note ?? null,
-        revision: 0,
+        revision: 1,
       },
     });
 
@@ -158,9 +174,11 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
         actorId,
         disposition,
         rejectionReason: effectiveRejectionReason,
-        revision: 0,
+        revision: 1,
       },
     });
+
+    await dirtyHistory(tx, occurrence.repositoryId);
 
     return {
       id: created.id,
@@ -171,6 +189,13 @@ export async function updateFeedback(input: UpdateFeedbackInput): Promise<Feedba
       revision: created.revision,
       updatedAt: created.updatedAt,
     };
+  }).catch(async (err: unknown) => {
+    const code = (err as { code?: string })?.code;
+    if (code === 'P2025' || code === 'P2002') {
+      const current = await prisma.findingFeedback.findUnique({ where: { occurrenceId } });
+      throw new FeedbackConflictError(current?.revision ?? 0);
+    }
+    throw err;
   });
 }
 
@@ -222,6 +247,7 @@ export async function getFeedbackEvents(occurrenceId: string): Promise<FeedbackE
     include: {
       events: {
         orderBy: { createdAt: 'desc' },
+        take: 100,
       },
     },
   });

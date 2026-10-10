@@ -19,7 +19,7 @@ export class ClaudeProvider extends BaseAiProvider {
   ): Promise<AiSuggestion[]> {
     try {
       const systemPrompt = this.getSystemPrompt(customRules);
-      const contextBlock = this.renderContext(context);
+      const contextBlock = this.renderContext(context, options);
 
       const response = await this.aiClient.messages.create({
         model: CLAUDE_MODEL,

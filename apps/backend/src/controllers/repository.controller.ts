@@ -171,6 +171,8 @@ export class RepositoryController {
     // from it. Deactivating alone leaves every cached file in the database
     // forever under indefinite retention, so drop the cached context here.
     await new RepositoryContextCache().clearRepository(repo.id);
+    const { clearRepositoryHistory } = await import('../workers/historical-maintenance');
+    await clearRepositoryHistory(repo.id);
 
     return res.json({ status: 'OK' });
   }

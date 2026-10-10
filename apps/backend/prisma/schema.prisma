@@ -134,6 +134,9 @@ model Repository {
 
   /// Phase 8: opt-in historical intelligence (default off).
   historicalIntelligenceEnabled Boolean  @default(false)
+  historicalRevision            Int      @default(0)
+  historicalAggregatedRevision  Int      @default(-1)
+  historicalAggregatedAt        DateTime?
   findingOccurrences             FindingOccurrence[]
   historicalPatterns             HistoricalPattern[]
 
@@ -331,6 +334,8 @@ enum JobStatus {
 }
 
 model AnalysisJob {
+  findingSnapshot               Int      @default(0)
+  findingSnapshotHash           String?
   id              String          @id @default(uuid())
   repositoryId    String
   repository      Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
@@ -497,16 +502,17 @@ enum RejectionReason {
 ///   - FindingOccurrence.id  → identifies this finding in this review.
 ///   - FindingOccurrence.fingerprint → groups related findings across reviews.
 ///
-/// The `snapshotKey` is a composite of (jobId + arrayIndex) written once and
-/// never changed; it prevents duplicate rows on worker retries.
+  /// The `snapshotKey` combines job, persisted artifact revision and exact finding
+  /// key. Regeneration never rebinds old IDs to different findings.
 model FindingOccurrence {
   id             String         @id @default(uuid())
   repositoryId   String
   repository     Repository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   analysisJobId  String
   analysisJob    AnalysisJob    @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
-  /// Idempotency key: jobId + ":" + arrayIndex; retries reuse the same row.
+  /// Idempotency key: jobId + artifact revision + exact finding key.
   snapshotKey    String         @unique
+  findingKey     String         @default("")
   /// Exact file path as reported; case-preserved.
   filePath       String
   lineNumber     Int
@@ -520,7 +526,7 @@ model FindingOccurrence {
   ruleKeys       Json           @default("[]")
   /// Bounded (≤ 500 chars) human-readable summary of the finding.
   summary        String         @db.VarChar(500)
-  /// Versioned cross-review grouping key, e.g. "fp_v1_SECURITY:src/auth:abc123".
+  /// Versioned cross-review grouping key (fp_v2 preserves file path case).
   fingerprint    String
   /// True when this occurrence is superseded by a newer snapshot for the same job.
   superseded     Boolean        @default(false)
@@ -604,6 +610,8 @@ model HistoricalPattern {
   lastObservedAt    DateTime
   /// Freshness timestamp of the last aggregation run.
   aggregatedAt      DateTime   @default(now())
+  /// Earliest contribution expiry; stale support must not survive until the next sweep.
+  expiresAt         DateTime   @default(now())
 
   @@unique([repositoryId, fingerprint, algorithmVersion])
   @@index([repositoryId, distinctPrCount])

@@ -13,9 +13,12 @@
  */
 
 import prisma from '../../config/prisma';
-import type { FindingCategory } from '@prisma/client';
+import type { FindingCategory, Prisma } from '@prisma/client';
 import { normalizeCategory } from '../ai/finding-taxonomy';
 import { FINGERPRINT_VERSION } from './fingerprint.service';
+import { generateFingerprint, normalizePathScope } from './fingerprint.service';
+import { HISTORY_DAYS, RECURRING_PR_THRESHOLD, lockHistoricalRepository } from './state';
+import type { AiSuggestion } from '../ai/finding-taxonomy';
 
 export interface AggregationOptions {
   windowDays?: number;
@@ -71,9 +74,9 @@ export interface RepositoryInsightsDto {
   }>;
 }
 
-const DEFAULT_WINDOW_DAYS = 90;
+const DEFAULT_WINDOW_DAYS = HISTORY_DAYS;
 const DEFAULT_MAX_JOBS = 200;
-const DEFAULT_RECURRING_THRESHOLD = 3;
+const DEFAULT_RECURRING_THRESHOLD = RECURRING_PR_THRESHOLD;
 
 /**
  * Rebuild aggregated patterns for a repository.
@@ -83,6 +86,17 @@ export async function aggregateRepositoryPatterns(
   repositoryId: string,
   options?: AggregationOptions,
 ): Promise<AggregationSummary> {
+  return prisma.$transaction(async tx => {
+    await lockHistoricalRepository(tx, repositoryId);
+    return rebuildLockedPatterns(tx, repositoryId, options);
+  }, { timeout: 30000 });
+}
+
+async function rebuildLockedPatterns(
+  prisma: Prisma.TransactionClient, repositoryId: string, options?: AggregationOptions,
+): Promise<AggregationSummary> {
+  const repository = await prisma.repository.findUnique({ where: { id: repositoryId } });
+  if (!repository?.isActive) throw new Error('Repository unavailable');
   const windowDays = options?.windowDays ?? DEFAULT_WINDOW_DAYS;
   const maxJobs = options?.maxJobs ?? DEFAULT_MAX_JOBS;
   const algorithmVersion = options?.algorithmVersion ?? FINGERPRINT_VERSION;
@@ -108,6 +122,9 @@ export async function aggregateRepositoryPatterns(
   });
 
   const now = new Date();
+  await prisma.repository.update({ where: { id: repositoryId }, data: {
+    historicalAggregatedRevision: repository.historicalRevision, historicalAggregatedAt: now,
+  } });
 
   if (candidateJobs.length === 0) {
     // Delete any stale aggregates for this repo since no completed reviews exist in window
@@ -132,6 +149,7 @@ export async function aggregateRepositoryPatterns(
   // 2. Fetch all non-superseded occurrences for candidate jobs
   const occurrences = await prisma.findingOccurrence.findMany({
     where: {
+      repositoryId,
       analysisJobId: { in: jobIds },
       superseded: false,
     },
@@ -169,11 +187,24 @@ export async function aggregateRepositoryPatterns(
   const grouped = new Map<string, GroupedPatternData>();
 
   for (const occ of occurrences) {
-    let group = grouped.get(occ.fingerprint);
+    // v1 flattened path case; reconstruct scope from the original case-preserved path.
+    let fingerprint = occ.fingerprint;
+    if (fingerprint.startsWith('fp_v1_')) {
+      if (occ.source !== 'LLM') {
+        fingerprint = generateFingerprint({ filePath: occ.filePath, source: occ.source,
+          agentType: occ.category, ruleKeys: Array.isArray(occ.ruleKeys) ? occ.ruleKeys : [],
+        } as AiSuggestion);
+      } else {
+        const tokenHash = fingerprint.split(':').at(-1);
+        if (!tokenHash || !/^[a-f0-9]{16}$/.test(tokenHash)) continue;
+        fingerprint = `${FINGERPRINT_VERSION}_${occ.category}:${normalizePathScope(occ.filePath)}:${tokenHash}`;
+      }
+    }
+    let group = grouped.get(fingerprint);
     if (!group) {
       const validCategory = (normalizeCategory(occ.category) ?? 'MAINTAINABILITY') as FindingCategory;
       group = {
-        fingerprint: occ.fingerprint,
+        fingerprint,
         category: validCategory,
         source: occ.source,
         summary: occ.summary.slice(0, 300),
@@ -187,7 +218,7 @@ export async function aggregateRepositoryPatterns(
         firstObservedAt: occ.createdAt,
         lastObservedAt: occ.createdAt,
       };
-      grouped.set(occ.fingerprint, group);
+      grouped.set(fingerprint, group);
     }
 
     group.occurrences.push(occ);
@@ -230,6 +261,8 @@ export async function aggregateRepositoryPatterns(
     const occurrenceCount = data.occurrences.length;
     const representativePaths = Array.from(data.paths).slice(0, 10);
     const fpCount = data.rejectionReasons['FALSE_POSITIVE'] ?? 0;
+    const expiresAt = new Date(Math.min(...data.occurrences.map(occ =>
+      Math.min(occ.createdAt.getTime(), occ.analysisJob.createdAt.getTime()))) + windowDays * 86400000);
 
     totalOccurrences += occurrenceCount;
     acceptedTotal += data.acceptedCount;
@@ -261,6 +294,7 @@ export async function aggregateRepositoryPatterns(
         firstObservedAt: data.firstObservedAt,
         lastObservedAt: data.lastObservedAt,
         aggregatedAt: now,
+        expiresAt,
       },
       create: {
         repositoryId,
@@ -279,6 +313,7 @@ export async function aggregateRepositoryPatterns(
         firstObservedAt: data.firstObservedAt,
         lastObservedAt: data.lastObservedAt,
         aggregatedAt: now,
+        expiresAt,
       },
     });
   }
@@ -347,6 +382,7 @@ export async function getRepositoryInsights(
       repositoryId,
       algorithmVersion: FINGERPRINT_VERSION,
       distinctPrCount: { gte: minPrs },
+      expiresAt: { gt: new Date() },
     },
     orderBy: [{ distinctPrCount: 'desc' }, { occurrenceCount: 'desc' }],
     take: 50,
@@ -373,7 +409,7 @@ export async function getRepositoryInsights(
     }
   }
 
-  const freshness = latestPattern?.aggregatedAt ?? new Date();
+  const freshness = needsRebuild ? new Date() : latestPattern!.aggregatedAt;
   const insufficientHistory = patterns.length === 0 || recurringPatternsCount === 0;
 
   return {

@@ -5,7 +5,7 @@
  * that group semantically equivalent findings across distinct pull requests.
  *
  * Design invariants:
- *  - Fingerprints are versioned (fp_v1_...) so a schema change yields a new
+ *  - Fingerprints are versioned (fp_v2_...) so a schema change yields a new
  *    algorithm version instead of silently mixing incompatible groupings.
  *  - Rule/probe findings are fingerprinted by source + ruleKey + path scope,
  *    making them stable across paraphrases.
@@ -13,14 +13,14 @@
  *    tolerating word-order variation while grouping the same problem.
  *  - Path scope is normalised to module level so minor path diffs (e.g.
  *    src/foo.ts vs src/foo.test.ts) still group.
- *  - All output is lower-case hex or ASCII to be safe as a DB key.
+ *  - Repository path casing is preserved; hashes use lower-case hex.
  */
 
 import { createHash } from 'node:crypto';
 import type { AiSuggestion, FindingSource } from '../ai/finding-taxonomy';
 
 /** Algorithm version prefix embedded in every fingerprint. */
-export const FINGERPRINT_VERSION = 'fp_v1' as const;
+export const FINGERPRINT_VERSION = 'fp_v2' as const;
 
 /** Sources that are deterministic and have stable rule keys. */
 const DETERMINISTIC_SOURCES = new Set<FindingSource>(['SAST', 'SECRETS', 'DEPENDENCIES', 'RULES']);
@@ -38,9 +38,8 @@ export function normalizePathScope(filePath: string): string {
     .replace(/\\/g, '/')
     .replace(/^\.\//, '')
     .replace(/^\//, '')
-    .toLowerCase()
-    .replace(/\.(test|spec)\.[jt]sx?$/, '')
-    .replace(/\.[jt]sx?$/, '')
+    .replace(/\.(test|spec)\.[jt]sx?$/i, '')
+    .replace(/\.[jt]sx?$/i, '')
     .replace(/\.py$/, '')
     .replace(/\.go$/, '')
     .replace(/\.java$/, '')
@@ -75,8 +74,8 @@ function tokenFingerprint(text: string): string {
 /**
  * Generate a versioned pattern fingerprint for a finding.
  *
- * Deterministic sources: fp_v1_<SOURCE>:<ruleKey|category>:<pathScope>
- * LLM sources:           fp_v1_<CATEGORY>:<pathScope>:<tokenHash>
+ * Deterministic sources: fp_v2_<SOURCE>:<ruleKey|category>:<pathScope>
+ * LLM sources:           fp_v2_<CATEGORY>:<pathScope>:<tokenHash>
  */
 export function generateFingerprint(finding: AiSuggestion): string {
   const pathScope = normalizePathScope(finding.filePath);

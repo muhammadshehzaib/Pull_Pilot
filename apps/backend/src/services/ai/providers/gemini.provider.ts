@@ -26,7 +26,7 @@ export class GeminiProvider extends BaseAiProvider {
       });
 
       const systemPrompt = this.getSystemPrompt(customRules);
-      const contextBlock = this.renderContext(context);
+      const contextBlock = this.renderContext(context, options);
 
       const prompt = `
         ${systemPrompt}

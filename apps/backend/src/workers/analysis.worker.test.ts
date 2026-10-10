@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('../services/historical/occurrence.service', () => ({
+  recordJobFindings: vi.fn(async (jobId: string, _repositoryId: string, _findings: unknown, results: unknown) => {
+    await mockJobUpdate({ where: { id: jobId }, data: { status: 'COMPLETED', results } });
+  }),
+}));
+vi.mock('../services/historical/review-memory.service', () => ({ retrieveHistoricalMemory: vi.fn() }));
+
 /**
  * The worker module does `new Worker(QUEUE_NAME, handler, opts)` at import time.
  * To test the handler in isolation we mock the bullmq Worker class, capture the
@@ -156,6 +163,22 @@ describe('analysis worker — module wiring', () => {
 });
 
 describe('analysis worker — happy path', () => {
+  it('keeps historical context out of binding rules and persists accurate attribution', async () => {
+    const { retrieveHistoricalMemory } = await import('../services/historical/review-memory.service');
+    vi.mocked(retrieveHistoricalMemory).mockResolvedValueOnce({ version: 1, algorithmVersion: 'fp_v2',
+      patterns: [{ patternId: 'p1' } as any], suppliedPatternIds: ['p1'], truncated: true,
+      serializedContext: 'UNTRUSTED_HISTORICAL_JSON',
+    });
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff --git body');
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    await capturedHandler.fn!(makeJobPayload());
+    expect(mockAnalyzeCode.mock.calls[0][1]).not.toContain('UNTRUSTED_HISTORICAL_JSON');
+    expect(mockAnalyzeCode.mock.calls[0][3]).toMatchObject({ historicalContext: 'UNTRUSTED_HISTORICAL_JSON' });
+    expect(mockJobUpdate.mock.calls.at(-1)![0].data.results.historicalMemory).toEqual({
+      version: 1, algorithmVersion: 'fp_v2', suppliedPatternIds: ['p1'], patternCount: 1, truncated: true,
+    });
+  });
   it('runs the full pipeline: status RUNNING -> decrypt -> diff -> AI -> COMPLETED + posts comments on PR', async () => {
     mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
     mockFetchDiff.mockResolvedValueOnce('diff --git a/foo b/foo\n+ x');
@@ -294,7 +317,7 @@ describe('analysis worker — happy path', () => {
     expect(mockAnalyzeCode).not.toHaveBeenCalled();
     expect(mockJobUpdate).toHaveBeenLastCalledWith({
       where: { id: 'job-1' },
-      data: { status: 'COMPLETED' },
+      data: { status: 'COMPLETED', results: { suggestions: [] } },
     });
   });
 
