@@ -9,7 +9,18 @@ import type { AiSuggestion } from '../ai/finding-taxonomy';
 
 export type SecurityProbe = 'SAST' | 'SECRETS' | 'DEPENDENCIES';
 
-export type SecurityCheckStatus = 'PASS' | 'FAIL' | 'SKIPPED';
+/**
+ * Outcome of one probe for one job.
+ *
+ * - PASS — the probe ran with full coverage and found nothing.
+ * - FAIL — the probe ran and found at least one finding.
+ * - SKIPPED — the probe was enabled but had nothing applicable to scan (no
+ *   manifests/lockfiles in the diff), or could not run at all.
+ * - DEGRADED — the probe ran but with *reduced* coverage: one of its optional
+ *   inputs (Semgrep binary, live OSV database) was unavailable, so a clean
+ *   result must NOT be read as a full scan. `detail` explains the reduction.
+ */
+export type SecurityCheckStatus = 'PASS' | 'FAIL' | 'SKIPPED' | 'DEGRADED';
 
 /** A security finding is an `AiSuggestion` that says who produced it. */
 export interface SecuritySuggestion extends AiSuggestion {
@@ -22,7 +33,9 @@ export interface SecuritySuggestion extends AiSuggestion {
 
 /**
  * One durable outcome row per probe per job. A review normally writes at most
- * three — SAST / SECRETS / DEPENDENCIES — mirroring rule_checks.
+ * three — SAST / SECRETS / DEPENDENCIES — mirroring rule_checks. `detail` holds
+ * a human-readable note when the status is DEGRADED (which optional input was
+ * unavailable) or SKIPPED (why nothing was scanned).
  */
 export interface SecurityCheckRecord {
   probe: SecurityProbe;
@@ -30,6 +43,7 @@ export interface SecurityCheckRecord {
   ruleName: string;
   status: SecurityCheckStatus;
   findingCount: number;
+  detail?: string;
 }
 
 export interface SecurityProbeResult {
@@ -56,5 +70,28 @@ export function checkForProbe(probe: SecurityProbe, ruleKey: string, ruleName: s
     ruleName,
     status: findingCount > 0 ? 'FAIL' : 'PASS',
     findingCount,
+  };
+}
+
+/**
+ * Constructor for the non-happy-path statuses. The shared priority rule keeps
+ * the probe summary readable: a probe that found something is FAIL even when
+ * it also ran degraded, and a probe that ran fully but clean is PASS.
+ */
+export function checkForProbeWithStatus(
+  probe: SecurityProbe,
+  ruleKey: string,
+  ruleName: string,
+  status: 'SKIPPED' | 'DEGRADED',
+  findingCount: number,
+  detail?: string,
+): SecurityCheckRecord {
+  return {
+    probe,
+    ruleKey,
+    ruleName,
+    status: findingCount > 0 ? 'FAIL' : status,
+    findingCount,
+    ...(detail ? { detail } : {}),
   };
 }

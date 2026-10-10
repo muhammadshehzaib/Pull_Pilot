@@ -230,13 +230,15 @@ enum SecurityProbe {
   DEPENDENCIES
 }
 
-/// Outcome of one security probe during one analysis job: PASS (scanned clean)
-/// or FAIL (at least one finding). SKIPPED is reserved for a probe that could
-/// not run against the diff (e.g. no dependency manifests present).
+/// Outcome of one security probe during one analysis job: PASS (scanned clean),
+/// FAIL (at least one finding), SKIPPED (nothing applicable to scan), or
+/// DEGRADED (ran with reduced coverage — e.g. the optional Semgrep pass or the
+/// live OSV lookup was unavailable, so a clean result is not a full scan).
 enum SecurityCheckStatus {
   PASS
   FAIL
   SKIPPED
+  DEGRADED
 }
 
 /// One outcome row per security probe per analysis job, mirroring rule_checks
@@ -246,7 +248,8 @@ enum SecurityCheckStatus {
 /// A review normally writes at most three of these (SAST, SECRETS,
 /// DEPENDENCIES). `ruleName` is a human label and `ruleKey` an opaque key for
 /// the unique index; the finding details themselves live in
-/// `analysis_jobs.results.suggestions`.
+/// `analysis_jobs.results.suggestions`. `detail` explains a DEGRADED/SKIPPED
+/// status (which optional input was unavailable, or why nothing was scanned).
 model SecurityCheck {
   id            String              @id @default(uuid())
   analysisJobId String
@@ -256,6 +259,7 @@ model SecurityCheck {
   ruleName      String
   status        SecurityCheckStatus
   findingCount  Int                 @default(0)
+  detail        String?
   createdAt     DateTime            @default(now())
 
   @@unique([analysisJobId, probe, ruleKey])

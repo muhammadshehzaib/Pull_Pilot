@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 
 export class GeminiProvider extends BaseAiProvider {
@@ -48,5 +48,19 @@ export class GeminiProvider extends BaseAiProvider {
       console.error('🔴 Gemini Provider Error:', error);
       throw new Error(`Gemini API request failed: ${(error as Error).message}`);
     }
+  }
+
+  protected async completeJson(request: JsonCompletionRequest): Promise<unknown> {
+    const model = this.aiClient.getGenerativeModel({
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      generationConfig: { responseMimeType: 'application/json' },
+    });
+
+    const result = await model.generateContent(
+      `${request.systemPrompt}\n\n${request.userPrompt}`,
+      { signal: request.signal },
+    );
+
+    return JSON.parse(result.response.text());
   }
 }

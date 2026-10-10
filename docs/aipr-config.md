@@ -108,29 +108,47 @@ dependencies to **OSV.dev**, and SAST to **Semgrep** (opt-in).
 | `enabled` | `true` | Master switch for the whole security layer. `false` skips every probe. |
 | `sast` | `true` | Static analysis patterns — SQL injection, command execution, XSS sinks, SSRF, unsafe file paths, insecure auth patterns, disabled TLS verification, weak hashes, unsafe Python pickle loading, and open redirects. |
 | `secrets` | `true` | Credential scan — API keys, tokens, JWT signatures, connection strings; reported redacted. |
-| `dependencies` | `true` | Advisory lookup for new/changed dependency ranges across `package.json`, `requirements*.txt`, `go.mod`, and `Gemfile`, plus newly resolved npm packages in `package-lock.json` (including transitive dependencies). |
+| `dependencies` | `true` | Advisory lookup for new/changed dependency ranges in `package.json`, `requirements*.txt`, `go.mod`, and `Gemfile`, plus newly resolved exact versions in lockfiles: `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` (npm), `go.sum` (Go), `Gemfile.lock` (RubyGems), `Cargo.lock` (crates.io), and `poetry.lock` (PyPI) — including transitive packages. |
 | `osv` | `true` | Query the live OSV.dev advisory database for dependencies. When off — or unreachable — the probe falls back to a small bundled offline registry. |
-| `semgrep` | `false` | Run the external **Semgrep** scanner as an extra SAST pass. Requires the `semgrep` binary; when it is absent the pass is skipped and the built-in rules still run. |
+| `semgrep` | `false` | Run the external **Semgrep** scanner as an extra SAST pass. Requires the `semgrep` binary; when it is absent the SAST probe is marked `DEGRADED` and the built-in rules still run. |
 | `block_on_critical_secret` | `true` | When a hardcoded credential is found, the review verdict is `BLOCK`. |
 
-**External scanners.** Dependencies are checked against [OSV.dev](https://osv.dev)
-using the minimum selectable version implied by each constraint, so a range that
-could resolve to a vulnerable release is flagged. If OSV is disabled or
-unreachable, the built-in advisory registry is used so coverage degrades rather
-than disappearing. Semgrep is opt-in because it needs the `semgrep` binary on the
-host (`pip install semgrep`); when present it scans the changed files' full
-contents and its findings are folded into the SAST probe. The tunables
-(`OSV_API_URL`, `OSV_QUERY_TIMEOUT_MS`, `OSV_MAX_BATCH`, `SEMGREP_BIN`,
-`SEMGREP_RULES`, `SEMGREP_TIMEOUT_MS`) live in the backend environment.
+**Probe statuses.** Each probe records one durable outcome per job. The
+dashboard renders the status verbatim, and a status is never upgraded to a clean
+pass when coverage was partial:
 
-The npm dependency probe also reads added exact versions from `package-lock.json`
-changes, including nested `node_modules` entries, so newly resolved transitive
-packages are checked rather than only direct manifest declarations. Lockfiles
-remain excluded from the AI prompt by default; the dependency security probe
-still inspects their changed package/version entries even when the review's
-`ignore` patterns exclude them from the model diff. This lockfile support is
-currently specific to npm `package-lock.json` v2/v3; other ecosystems are checked
-through the manifests listed above.
+| Status | Meaning |
+|---|---|
+| `PASS` | The probe ran with full coverage and found nothing. |
+| `FAIL` | The probe found at least one issue (for dependencies, a known-vulnerable package; informational "introduced"/"major bump" notes do not count). |
+| `SKIPPED` | The probe had nothing applicable to scan — e.g. no supported manifests or lockfiles changed. |
+| `DEGRADED` | The probe ran with **reduced coverage**: the optional Semgrep pass was unavailable, or the live OSV.dev lookup could not answer for some packages and the bundled offline registry filled the gaps. `detail` explains the reduction. |
+
+**External scanners.** Dependencies are checked against [OSV.dev](https://osv.dev)
+using the minimum selectable version implied by each manifest constraint (and the
+exact resolved version from a lockfile). A range that could resolve to a
+vulnerable release is flagged. If OSV is disabled, unreachable, or only partly
+available, the built-in advisory registry covers the gaps and the probe is
+reported `DEGRADED` rather than `PASS`, so a partial scan is never mistaken for a
+clean one. Semgrep is opt-in because it needs the `semgrep` binary on the host
+(`pip install semgrep`); when present it scans the changed files' full contents
+and its findings are folded into the SAST probe. The tunables (`OSV_API_URL`,
+`OSV_QUERY_TIMEOUT_MS`, `OSV_MAX_BATCH`, `SEMGREP_BIN`, `SEMGREP_RULES`,
+`SEMGREP_TIMEOUT_MS`) live in the backend environment.
+
+Lockfiles remain excluded from the AI prompt by default; the dependency security
+probe still inspects their changed package/version entries even when the review's
+`ignore` patterns exclude them from the model diff. Findings are deduplicated by
+package/version/advisory, so a manifest range and its lockfile resolution do not
+double-count the same advisory, and the probe stays bounded (a capped number of
+lockfiles, candidates, and per-rule findings).
+
+**Limitations.** The dependency probe only proposes packages whose version the
+diff actually *adds*; removals and unchanged entries are not re-audited. Lockfile
+parsers are best-effort over added lines and cover the formats listed above — an
+unsupported ecosystem is not scanned and yields a `SKIPPED` (or the manifest-only
+path). The bundled offline registry is deliberately small; it is a fallback for
+network outages, not a replacement for OSV.
 
 The risk engine scores every finding (info `0`, low `2`, medium `6`, high `15`,
 critical `30`, capped at `100`) and picks a verdict:
@@ -145,6 +163,35 @@ A `BLOCK` verdict still posts the review (findings and summary) but marks the
 PR merge-blocked in the dashboard. Deterministic findings always bypass
 `min_severity` — the security layer is not quietly optional behind a repo-wide
 threshold.
+
+## Test-gap analysis
+
+After the security layer runs, the reviewer makes one extra, best-effort pass
+over the changed source files to suggest tests the change may be missing. It is
+always on (there is no `.aipr.yml` switch) because it is advisory and cannot
+affect the review's verdict or block a merge.
+
+Before asking the model, discovery does pure path matching: changed files that
+look like code under test are compared against existing test files by naming
+convention (`*.test.*`, `*_test.go`, `test_*.py`, `*_Test.java`, `tests/`
+directories, and similar), and a bounded number of source and test excerpts are
+read. The model is then asked only for genuinely missing scenarios — edge cases,
+error paths, boundary and invalid input, and security-relevant inputs — and may
+cite only the changed source files it was given.
+
+Properties and limitations:
+
+- Nothing is executed. Suggested tests are text only; no code runs, no files
+  are written, and the repository is never modified.
+- The report is advisory. It never changes the risk score or verdict, and it is
+  stored on the job under `metadata.testGaps` rather than in the findings list.
+- It is bounded and best-effort: scenarios are capped, excerpts are truncated,
+  and the step silently disappears if the provider does not support it or the
+  model call fails.
+- The evidence records whether the repository view was partial (a missing or
+  truncated tree listing, or a file that could not be read), so an empty result
+  is never mistaken for proof of coverage. Absence of suggestions is not a claim
+  of exhaustive test coverage.
 
 ## Notes
 

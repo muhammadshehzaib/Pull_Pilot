@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 
 export class OpenAiProvider extends BaseAiProvider {
@@ -43,5 +43,18 @@ export class OpenAiProvider extends BaseAiProvider {
       console.error('🔴 OpenAI Provider Error:', error);
       throw new Error(`OpenAI Request Failed: ${(error as Error).message}`);
     }
+  }
+
+  protected async completeJson(request: JsonCompletionRequest): Promise<unknown> {
+    const response = await this.aiClient.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: request.systemPrompt },
+        { role: 'user', content: request.userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+    }, { signal: request.signal });
+
+    return JSON.parse(response.choices[0].message.content || '{}');
   }
 }

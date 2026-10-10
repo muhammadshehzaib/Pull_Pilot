@@ -130,3 +130,48 @@ describe('risk engine — report shape', () => {
     expect(input[0].corroborated).toBeUndefined();
   });
 });
+
+describe('risk engine — block_on_critical_secret boundary', () => {
+  it('does not block on a CRITICAL secret finding when the policy is disabled', () => {
+    const { report } = assessRisk(
+      [finding({ priority: 'CRITICAL', source: 'SECRETS' })],
+      { blockOnCriticalSecret: false },
+    );
+    expect(report.verdict).toBe('REVIEW');
+    expect(report.blockingCount).toBe(0);
+    expect(report.reasons.join()).not.toContain('credential');
+  });
+
+  it('still blocks on a CRITICAL non-secret finding when the secret policy is disabled', () => {
+    const { report } = assessRisk(
+      [finding({ priority: 'CRITICAL', source: 'SAST' })],
+      { blockOnCriticalSecret: false },
+    );
+    expect(report.verdict).toBe('BLOCK');
+    expect(report.blockingCount).toBe(1);
+  });
+});
+
+describe('risk engine — score boundary', () => {
+  it('BLOCKs exactly at the 75 threshold', () => {
+    const { report } = assessRisk([
+      finding({ priority: 'CRITICAL', filePath: 'a.ts' }),
+      finding({ priority: 'CRITICAL', filePath: 'b.ts' }),
+      finding({ priority: 'HIGH', filePath: 'c.ts' }),
+    ]); // 30 + 30 + 15 = 75
+    expect(report.score).toBe(75);
+    expect(report.verdict).toBe('BLOCK');
+  });
+
+  it('REVIEWs one point below the blocking threshold', () => {
+    const { report } = assessRisk([
+      finding({ priority: 'CRITICAL', filePath: 'a.ts' }),
+      finding({ priority: 'CRITICAL', filePath: 'b.ts' }),
+      finding({ priority: 'MEDIUM', filePath: 'c.ts' }),
+      finding({ priority: 'MEDIUM', filePath: 'd.ts' }),
+      finding({ priority: 'LOW', filePath: 'e.ts' }),
+    ]); // 30 + 30 + 6 + 6 + 2 = 74
+    expect(report.score).toBe(74);
+    expect(report.verdict).toBe('REVIEW');
+  });
+});

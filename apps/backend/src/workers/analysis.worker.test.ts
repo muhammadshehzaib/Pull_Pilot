@@ -729,7 +729,7 @@ describe('analysis worker — security probes', () => {
     const deps = payload.data.find((c: any) => c.probe === 'DEPENDENCIES');
     expect(sast).toMatchObject({ analysisJobId: 'job-1', status: 'FAIL', findingCount: 1 });
     expect(secrets).toMatchObject({ status: 'PASS', findingCount: 0 });
-    expect(deps).toMatchObject({ status: 'PASS', findingCount: 0 });
+    expect(deps).toMatchObject({ status: 'SKIPPED', findingCount: 0 });
 
     const finalResults = mockJobUpdate.mock.calls
       .map((c: any[]) => c[0]?.data?.results)
@@ -792,5 +792,66 @@ describe('analysis worker — security probes', () => {
       .filter(Boolean)
       .pop();
     expect(finalResults.risk.score).toBe(30); // CRITICAL weight confirms severity survived
+  });
+});
+
+describe('analysis worker — test-gap analysis', () => {
+  const diffWithSourceFile =
+    'diff --git a/src/db.ts b/src/db.ts\n' +
+    '--- a/src/db.ts\n' +
+    '+++ b/src/db.ts\n' +
+    '@@ -1,3 +1,4 @@\n' +
+    ' const a = 1;\n' +
+    '+export function load(id) { return db.get(id); }\n' +
+    ' console.log(a);';
+
+  it('persists a test-gap report when the provider supports analysis', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diffWithSourceFile);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    const analyzeTestGaps = vi.fn().mockResolvedValueOnce([
+      {
+        filePath: 'src/db.ts',
+        lineNumber: 1,
+        scenario: 'load() with an undefined id',
+        expected: 'rejects',
+        confidence: 'HIGH',
+      },
+    ]);
+    mockGetProvider.mockReturnValueOnce({ analyzeCode: mockAnalyzeCode, analyzeTestGaps });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    expect(analyzeTestGaps).toHaveBeenCalledOnce();
+    const input = analyzeTestGaps.mock.calls[0][0];
+    // Only the changed source is proposed as an analysis target.
+    expect(input.changedSources).toEqual(['src/db.ts']);
+
+    const finalResults = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+    expect(finalResults.testGaps).toMatchObject({ analyzed: true });
+    expect(finalResults.testGaps.scenarios).toHaveLength(1);
+
+    const messages = mockEmitStatus.mock.calls.map((c) => String(c[2]));
+    expect(messages.some((m) => m.includes('missing test scenario'))).toBe(true);
+  });
+
+  it('omits test-gap data when the provider cannot analyze test gaps', async () => {
+    // The default mock provider exposes only analyzeCode; the step must be a
+    // silent no-op rather than crashing the review.
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diffWithSourceFile);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+
+    const result = await capturedHandler.fn!(makeJobPayload());
+    expect(result.status).toBe('success');
+
+    const finalResults = mockJobUpdate.mock.calls
+      .map((c: any[]) => c[0]?.data?.results)
+      .filter(Boolean)
+      .pop();
+    expect(finalResults.testGaps).toBeNull();
   });
 });

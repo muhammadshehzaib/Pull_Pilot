@@ -63,14 +63,32 @@ const MAX_FILES = 60;
 const MAX_FILE_BYTES = 200_000;
 
 /**
+ * Outcome of one Semgrep pass. Unlike the old optional-`null` contract this
+ * tells the caller *why* nothing was produced, so the SAST probe can truthfully
+ * report DEGRADED instead of pretending the extra pass ran.
+ */
+export interface SemgrepRun {
+  findings: SecuritySuggestion[];
+  /** True when the extra pass did not actually run (missing binary, unusable
+   *  output, no scannable files) — coverage was reduced, not clean. */
+  degraded: boolean;
+  /** Human-readable reason for a degraded run, for the probe's detail field. */
+  reason?: string;
+}
+
+/**
  * Runs Semgrep over the supplied changed files.
  *
- * Returns the normalized findings, or `null` when Semgrep is unavailable or
- * produced unusable output (the caller then keeps the built-in SAST results).
+ * Findings are normalized into `SecuritySuggestion`. A `degraded: true` result
+ * means Semgrep did not run to completion (binary missing, unparsable output,
+ * no files, or a crash); the caller keeps the built-in SAST results either way,
+ * but must not report the optional pass as a successful scan.
  */
-export async function runSemgrep(options: SemgrepOptions): Promise<SecuritySuggestion[] | null> {
+export async function runSemgrep(options: SemgrepOptions): Promise<SemgrepRun> {
   const files = selectScannableFiles(options.files);
-  if (files.length === 0) return null;
+  if (files.length === 0) {
+    return { findings: [], degraded: true, reason: 'no scannable changed files' };
+  }
 
   const bin = options.bin ?? SEMGREP_BIN;
   const rules = options.rules ?? SEMGREP_RULES;
@@ -90,7 +108,7 @@ export async function runSemgrep(options: SemgrepOptions): Promise<SecuritySugge
 
     // `--metrics=off` keeps source paths off Semgrep's telemetry. Exit code 1
     // simply means "findings found", so only a missing binary or unparsable
-    // output is treated as a failure.
+    // output is treated as a degraded run.
     const exec = await runner(
       ['--json', '--quiet', '--metrics=off', '--config', rules, '.'],
       dir,
@@ -99,7 +117,7 @@ export async function runSemgrep(options: SemgrepOptions): Promise<SecuritySugge
 
     if (exec.missing) {
       console.log('ℹ️  Semgrep not found on PATH; skipping the extra SAST pass.');
-      return null;
+      return { findings: [], degraded: true, reason: 'semgrep binary not found (install it or disable security.semgrep)' };
     }
 
     const parsed = parseSemgrepJson(exec.stdout);
@@ -107,13 +125,23 @@ export async function runSemgrep(options: SemgrepOptions): Promise<SecuritySugge
       if (exec.stderr.trim()) {
         console.warn(`⚠️ Semgrep produced no usable output: ${exec.stderr.trim().slice(0, 300)}`);
       }
-      return null;
+      return {
+        findings: [],
+        degraded: true,
+        reason: exec.stderr.trim()
+          ? `semgrep produced no usable output (${exec.stderr.trim().slice(0, 120)})`
+          : 'semgrep produced no usable output',
+      };
     }
 
-    return toFindings(parsed);
+    return { findings: toFindings(parsed), degraded: false };
   } catch (error) {
     console.warn(`⚠️ Semgrep pass failed (${(error as Error).message}); continuing with built-in SAST only.`);
-    return null;
+    return {
+      findings: [],
+      degraded: true,
+      reason: `semgrep pass failed: ${(error as Error).message}`,
+    };
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

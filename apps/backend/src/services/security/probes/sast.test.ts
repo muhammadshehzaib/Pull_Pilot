@@ -168,6 +168,29 @@ describe('SAST probe — auth & authz', () => {
     expect(keys(diff)).not.toContain('sast-trusted-client-role');
   });
 
+  it('flags JWT decoded without signature verification', () => {
+    const diff = diffWith('app/auth.ts', ['const claims = jwt.decode(token);']);
+    const f = scanSast(diff).findings[0];
+    expect(f.ruleKey).toBe('sast-jwt-decode-without-verify');
+    expect(f.priority).toBe('HIGH');
+  });
+
+  it('does NOT flag JWT verification', () => {
+    const diff = diffWith('app/auth.ts', ['const claims = jwt.verify(token, key);']);
+    expect(keys(diff)).not.toContain('sast-jwt-decode-without-verify');
+  });
+
+  it('flags an authorization decision from a client-supplied role', () => {
+    const diff = diffWith('app/mw.ts', ["if (req.body.role === 'admin') grantAccess();"]);
+    const f = keys(diff);
+    expect(f).toContain('sast-authz-request-role');
+  });
+
+  it('does NOT flag reading a role header outside an authorization decision', () => {
+    const diff = diffWith('app/mw.ts', ['const role = req.body.role;']);
+    expect(keys(diff)).not.toContain('sast-authz-request-role');
+  });
+
   it('flags server-side open redirect', () => {
     const diff = diffWith('app/web.ts', ['res.redirect(req.query.next);']);
     expect(keys(diff)).toContain('sast-open-redirect-server');

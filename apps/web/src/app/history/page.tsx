@@ -43,6 +43,13 @@ import {
   type RiskReport,
   type SecurityCheck,
 } from '../../lib/security';
+import {
+  CONFIDENCE_COLORS,
+  confidenceLabel,
+  hasTestGaps,
+  testGapSummary,
+  type TestGapReport,
+} from '../../lib/testGap';
 
 export interface JobSummary {
   id: string;
@@ -64,7 +71,7 @@ interface JobDetail extends JobSummary {
   /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
   securityChecks?: SecurityCheck[];
   /** Risk engine output, rehydrated from the results blob by the controller. */
-  metadata?: { risk?: RiskReport };
+  metadata?: { risk?: RiskReport; testGaps?: TestGapReport | null };
 }
 
 export default function HistoryPage() {
@@ -545,6 +552,10 @@ function JobDetailView({ job }: { job: JobDetail }) {
         <SecurityCard risk={job.metadata?.risk} checks={job.securityChecks} />
       )}
 
+      {job.metadata?.testGaps && hasTestGaps(job.metadata.testGaps) && (
+        <TestGapCard report={job.metadata.testGaps} />
+      )}
+
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
           {job.status === 'COMPLETED' ? (
@@ -791,16 +802,82 @@ function SecurityCard({ risk, checks }: { risk?: RiskReport; checks?: SecurityCh
           {checks.map((check) => (
             <div
               key={check.id}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.82rem', flexWrap: 'wrap' }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', fontSize: '0.82rem' }}
             >
-              <span style={{ color: SECURITY_CHECK_STATUS_COLORS[check.status], fontWeight: 600, minWidth: 96 }}>
-                {check.status === 'PASS' ? '✓' : check.status === 'FAIL' ? '✗' : '•'}{' '}
-                {SECURITY_CHECK_STATUS_LABELS[check.status]}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <span style={{ color: SECURITY_CHECK_STATUS_COLORS[check.status], fontWeight: 600, minWidth: 96 }}>
+                  {check.status === 'PASS' ? '✓' : check.status === 'FAIL' ? '✗' : check.status === 'DEGRADED' ? '⚠' : '•'}{' '}
+                  {SECURITY_CHECK_STATUS_LABELS[check.status]}
+                </span>
+                <span style={{ fontWeight: 500 }}>{check.ruleName}</span>
+                {check.findingCount > 0 && (
+                  <span style={{ color: 'var(--text-secondary)' }}>
+                    {check.findingCount} finding{check.findingCount === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
+              {check.detail && (
+                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', paddingLeft: '0.2rem' }}>
+                  {check.detail}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Advisory list of tests the worker believes the change is missing. Nothing
+ * here is executed and nothing affects the verdict, so the card is styled with
+ * a neutral accent rather than the danger language used for findings.
+ */
+function TestGapCard({ report }: { report: TestGapReport }) {
+  const scenarios = report.scenarios ?? [];
+
+  return (
+    <div className="glass-card" style={{ padding: '0.9rem 1rem', borderLeft: '3px solid var(--accent)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+          flexWrap: 'wrap',
+          marginBottom: '0.6rem',
+        }}
+      >
+        <strong style={{ fontSize: '0.88rem' }}>🧪 Test gaps</strong>
+        <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+          {testGapSummary(report)}
+        </span>
+      </div>
+
+      {scenarios.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {scenarios.map((scenario, i) => (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', fontSize: '0.82rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <span
+                  style={{
+                    color: CONFIDENCE_COLORS[scenario.confidence] ?? 'var(--text-secondary)',
+                    fontWeight: 600,
+                    minWidth: 56,
+                  }}
+                >
+                  {confidenceLabel(scenario.confidence)}
+                </span>
+                <span style={{ fontWeight: 500 }}>{scenario.scenario}</span>
+              </div>
+              <span style={{ color: 'var(--text-secondary)', paddingLeft: '0.2rem' }}>
+                <code>{scenario.filePath}</code>
+                {scenario.lineNumber > 1 ? `:${scenario.lineNumber}` : ''} — expects: {scenario.expected}
               </span>
-              <span style={{ fontWeight: 500 }}>{check.ruleName}</span>
-              {check.status === 'FAIL' && (
-                <span style={{ color: 'var(--text-secondary)' }}>
-                  {check.findingCount} finding{check.findingCount === 1 ? '' : 's'}
+              {scenario.edgeCase && (
+                <span style={{ color: 'var(--text-secondary)', paddingLeft: '0.2rem', fontSize: '0.78rem' }}>
+                  Edge case: {scenario.edgeCase}
                 </span>
               )}
             </div>
@@ -808,9 +885,9 @@ function SecurityCard({ risk, checks }: { risk?: RiskReport; checks?: SecurityCh
         </div>
       )}
 
-      {blocking && (
-        <div style={{ marginTop: '0.6rem', fontSize: '0.82rem', color: 'var(--danger)', fontWeight: 500 }}>
-          🚫 This review was stopped by its own findings — the flagged security issues block a merge.
+      {report.evidence?.incomplete && (
+        <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+          ⚠ Discovery only saw part of the repository, so the list may be incomplete.
         </div>
       )}
     </div>

@@ -145,6 +145,9 @@ export class JobController {
           // results blob so the history page can render the risk card without
           // re-parsing the whole findings array.
           risk: rawObj.risk,
+          // Best-effort test-gap report (missing test scenarios + discovery
+          // evidence), or undefined when the provider did not support it.
+          testGaps: rawObj.testGaps,
           error: typeof rawObj.error === 'string' ? rawObj.error : undefined,
         },
       },

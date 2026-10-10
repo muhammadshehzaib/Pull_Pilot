@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 import { GROK_BASE_URL, GROK_MODEL } from '../../../utils/constants';
 
@@ -38,5 +38,18 @@ export class GrokProvider extends BaseAiProvider {
       console.error('🔴 Grok Provider Error:', error);
       throw new Error(`Grok API request failed: ${(error as Error).message}`);
     }
+  }
+
+  protected async completeJson(request: JsonCompletionRequest): Promise<unknown> {
+    const response = await this.aiClient.chat.completions.create({
+      model: GROK_MODEL,
+      messages: [
+        { role: 'system', content: request.systemPrompt },
+        { role: 'user', content: request.userPrompt },
+      ],
+      response_format: { type: 'json_object' },
+    }, { signal: request.signal });
+
+    return JSON.parse(response.choices[0].message.content || '{}');
   }
 }

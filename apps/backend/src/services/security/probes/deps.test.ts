@@ -244,3 +244,139 @@ describe('dependencies probe — provenance', () => {
     expect(f.agentType).toBe('SECURITY');
   });
 });
+
+function lockfileDiff(filename: string, addedLines: string[], contextLines: string[] = []): string {
+  const header = `diff --git a/${filename} b/${filename}`;
+  return [
+    header,
+    `--- a/${filename}`,
+    `+++ b/${filename}`,
+    '@@ -1,1 +1,1 @@',
+    ...contextLines.map((l) => ` ${l}`),
+    ...addedLines.map((l) => `+${l}`),
+  ].join('\n');
+}
+
+describe('dependencies probe — check status truthfulness', () => {
+  it('reports SKIPPED when the diff has no manifests or lockfiles', async () => {
+    const probe = await scanDependencies('');
+    expect(probe.checks).toEqual([
+      expect.objectContaining({ probe: 'DEPENDENCIES', status: 'SKIPPED', findingCount: 0 }),
+    ]);
+    expect(probe.checks[0].detail).toContain('No supported manifests');
+  });
+
+  it('reports SKIPPED when only removals touch a manifest', async () => {
+    const probe = await scanDependencies(npmDiff([], ['"lodash": "^4.17.14",']));
+    expect(probe.checks[0].status).toBe('SKIPPED');
+  });
+
+  it('reports PASS for a clean, fully-covered run', async () => {
+    const osv = osvClientReturning(() => []);
+    const probe = await scanDependencies(npmDiff(['"commander": "^9.0.0",']), { osv });
+    expect(probe.checks[0].status).toBe('PASS');
+  });
+
+  it('reports DEGRADED (not PASS) when the live OSV lookup fails but nothing is flagged', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const probe = await scanDependencies(npmDiff(['"commander": "^9.0.0",']), { osv: failingOsvClient() });
+    expect(probe.checks[0].status).toBe('DEGRADED');
+    expect(probe.checks[0].detail).toContain('OSV');
+    warn.mockRestore();
+  });
+
+  it('keeps a finding as FAIL while still recording the degraded coverage in detail', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const probe = await scanDependencies(npmDiff(['"lodash": "^4.17.14",']), { osv: failingOsvClient() });
+    expect(probe.checks[0].status).toBe('FAIL');
+    expect(probe.checks[0].detail).toContain('incomplete');
+    warn.mockRestore();
+  });
+});
+
+describe('dependencies probe — lockfile formats', () => {
+  it('parses pnpm-lock.yaml single-line keys', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('pnpm-lock.yaml', ['  transitive-vuln@1.2.3:'], ['packages:']),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: 'transitive-vuln', version: '1.2.3', ecosystem: 'npm' });
+  });
+
+  it('parses scoped pnpm keys', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('pnpm-lock.yaml', ["  '@scope/pkg@2.0.1':"], ['packages:']),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: '@scope/pkg', version: '2.0.1', ecosystem: 'npm' });
+  });
+
+  it('parses yarn.lock v1 headers and version lines', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('yarn.lock', ['lodash@^4.17.14:', '  version "4.17.20"']),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: 'lodash', version: '4.17.20', ecosystem: 'npm' });
+  });
+
+  it('parses go.sum module pins without double-counting the go.mod hash', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('go.sum', [
+        'github.com/foo/bar v1.2.3 h1:AAAA=',
+        'github.com/foo/bar v1.2.3/go.mod h1:BBBB=',
+      ]),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toEqual([{ name: 'github.com/foo/bar', version: '1.2.3', ecosystem: 'Go' }]);
+  });
+
+  it('parses Gemfile.lock resolved specs', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('Gemfile.lock', ['    rake (13.0.1)']),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: 'rake', version: '13.0.1', ecosystem: 'RubyGems' });
+  });
+
+  it('parses Cargo.lock name/version blocks', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('Cargo.lock', ['version = "1.0.6"'], ['name = "serde"']),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: 'serde', version: '1.0.6', ecosystem: 'crates.io' });
+  });
+
+  it('parses poetry.lock name/version pairs', async () => {
+    const seen: Array<{ name: string; version: string; ecosystem: string }> = [];
+    await scanDependencies('', {
+      lockfileDiff: lockfileDiff('poetry.lock', ['version = "2.25.0"'], ['name = "requests"']),
+      osv: osvClientReturning(() => [], seen),
+    });
+    expect(seen).toContainEqual({ name: 'requests', version: '2.25.0', ecosystem: 'PyPI' });
+  });
+});
+
+describe('dependencies probe — deduplication', () => {
+  it('does not double-count the same advisory from a manifest and its lockfile', async () => {
+    const osv = osvClientReturning(() => [
+      { id: 'GHSA-DEDUPE-0001', summary: 'Duplicate advisory', database_specific: { severity: 'HIGH' } },
+    ]);
+    const probe = await scanDependencies(npmDiff(['"lodash": "^4.17.14",']), {
+      osv,
+      lockfileDiff: lockfileDiff('package-lock.json', [
+        '"packages": {',
+        '  "node_modules/lodash": {',
+        '    "version": "4.17.14",',
+      ]),
+    });
+    const vulns = probe.findings.filter((f) => f.ruleKey === 'deps-vulnerable');
+    expect(vulns).toHaveLength(1);
+    expect(vulns[0].filePath).toBe('package.json');
+  });
+});

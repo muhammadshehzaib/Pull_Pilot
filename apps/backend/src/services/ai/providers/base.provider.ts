@@ -4,6 +4,12 @@ import {
   FINDING_SEVERITIES,
 } from '../finding-taxonomy';
 import { type ReviewContext, formatContextForPrompt } from '../context-prompt';
+import {
+  type TestGapInput,
+  type TestGapScenario,
+  normalizeTestGapScenarios,
+} from '../../test-gap/test-gap-types';
+import { buildTestGapPrompt, TEST_GAP_SYSTEM_PROMPT } from '../../test-gap/test-gap-prompt';
 
 export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
@@ -16,6 +22,13 @@ export { normalizeSuggestions } from '../finding-taxonomy';
  * its worker slot occupied until the SDK's own socket timeout.
  */
 export interface AnalyzeOptions {
+  signal?: AbortSignal;
+}
+
+/** A prompt pair handed to a provider for a JSON-shaped completion. */
+export interface JsonCompletionRequest {
+  systemPrompt: string;
+  userPrompt: string;
   signal?: AbortSignal;
 }
 
@@ -49,6 +62,32 @@ export abstract class BaseAiProvider {
     context?: ReviewContext,
     options?: AnalyzeOptions,
   ): Promise<AiSuggestion[]>;
+
+  /**
+   * Sends a prompt and returns the parsed JSON payload, whatever its shape.
+   *
+   * Each SDK exposes completions differently, so the request/response plumbing
+   * lives in the provider while the prompt and the normalization are shared.
+   * Used by test-gap analysis; the review path keeps its own formatting so this
+   * addition cannot change review behaviour.
+   */
+  protected abstract completeJson(request: JsonCompletionRequest): Promise<unknown>;
+
+  /**
+   * Proposes the tests the change is missing.
+   *
+   * Best-effort by design: it never runs tests and its output is additive to
+   * the review. The worker calls it only when it is present, which keeps test
+   * doubles that expose just `analyzeCode` fully working.
+   */
+  async analyzeTestGaps(input: TestGapInput, options?: AnalyzeOptions): Promise<TestGapScenario[]> {
+    const raw = await this.completeJson({
+      systemPrompt: TEST_GAP_SYSTEM_PROMPT,
+      userPrompt: buildTestGapPrompt(input),
+      signal: options?.signal,
+    });
+    return normalizeTestGapScenarios(raw);
+  }
 
   /**
    * Renders the context block appended to a user message, or an empty string.

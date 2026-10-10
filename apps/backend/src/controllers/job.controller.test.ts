@@ -384,6 +384,33 @@ describe('JobController.get', () => {
     });
   });
 
+  it('surfaces the persisted test-gap report via metadata', async () => {
+    const testGaps = {
+      analyzed: true,
+      scenarios: [{ filePath: 'src/db.ts', scenario: 'missing edge case' }],
+      evidence: {
+        changedSources: ['src/db.ts'],
+        relatedTests: [],
+        treeTruncated: false,
+        incomplete: false,
+      },
+    };
+    mockJobFindFirst.mockResolvedValueOnce({
+      id: 'j3',
+      status: 'COMPLETED',
+      results: { testGaps },
+    });
+    const req = authedReq({ params: { id: 'j3' } });
+    const res = mockRes();
+
+    await JobController.get(req, res);
+
+    const out = (res.json as any).mock.calls[0][0];
+    expect(out.job.metadata.testGaps).toEqual(testGaps);
+    // Test gaps stay out of the findings array.
+    expect(out.job.results).toEqual([]);
+  });
+
   it('exposes ignored/included files and the error message from results', async () => {
     mockJobFindFirst.mockResolvedValueOnce({
       id: 'j2',

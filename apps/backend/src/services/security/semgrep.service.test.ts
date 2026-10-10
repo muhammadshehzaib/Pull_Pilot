@@ -36,15 +36,15 @@ async function collectFiles(root: string, base = ''): Promise<string[]> {
 
 describe('runSemgrep', () => {
   it('normalises Semgrep results into SAST findings', async () => {
-    const findings = await runSemgrep({
+    const result = await runSemgrep({
       files: new Map([['src/app.js', 'const x = 1;']]),
       runner: runnerReturning(VALID_OUTPUT),
     });
 
-    expect(findings).not.toBeNull();
-    expect(findings).toHaveLength(2);
+    expect(result.degraded).toBe(false);
+    expect(result.findings).toHaveLength(2);
 
-    const sqli = findings!.find((f) => f.ruleKey.includes('sqli'))!;
+    const sqli = result.findings.find((f) => f.ruleKey.includes('sqli'))!;
     expect(sqli.filePath).toBe('src/app.js');
     expect(sqli.lineNumber).toBe(12);
     expect(sqli.priority).toBe('HIGH');
@@ -52,51 +52,57 @@ describe('runSemgrep', () => {
     expect(sqli.agentType).toBe('SECURITY');
     expect(sqli.issue).toContain('Possible SQL injection');
 
-    const generic = findings!.find((f) => f.ruleKey.includes('hardcoded'))!;
+    const generic = result.findings.find((f) => f.ruleKey.includes('hardcoded'))!;
     // A leading "./" is stripped and ERROR maps to HIGH.
     expect(generic.filePath).toBe('src/keys.ts');
     expect(generic.priority).toBe('HIGH');
   });
 
-  it('returns null when the binary is missing', async () => {
+  it('reports a degraded run when the binary is missing', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const findings = await runSemgrep({
+    const result = await runSemgrep({
       files: new Map([['src/app.js', 'const x = 1;']]),
       runner: runnerReturning('', true),
     });
-    expect(findings).toBeNull();
+    expect(result.findings).toEqual([]);
+    expect(result.degraded).toBe(true);
+    expect(result.reason).toContain('binary not found');
     log.mockRestore();
   });
 
-  it('returns null for unparsable output', async () => {
+  it('reports a degraded run for unparsable output', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const findings = await runSemgrep({
+    const result = await runSemgrep({
       files: new Map([['src/app.js', 'const x = 1;']]),
       runner: runnerReturning('not json at all'),
     });
-    expect(findings).toBeNull();
+    expect(result.findings).toEqual([]);
+    expect(result.degraded).toBe(true);
     warn.mockRestore();
   });
 
   it('recovers JSON printed after a banner', async () => {
-    const findings = await runSemgrep({
+    const result = await runSemgrep({
       files: new Map([['src/app.js', 'const x = 1;']]),
       runner: runnerReturning(`Scanning...\n${VALID_OUTPUT}\nDone.`),
     });
-    expect(findings).toHaveLength(2);
+    expect(result.findings).toHaveLength(2);
   });
 
-  it('returns an empty array for a clean run', async () => {
-    const findings = await runSemgrep({
+  it('returns a clean, non-degraded result for a clean run', async () => {
+    const result = await runSemgrep({
       files: new Map([['src/app.js', 'const x = 1;']]),
       runner: runnerReturning('{"results":[]}'),
     });
-    expect(findings).toEqual([]);
+    expect(result.findings).toEqual([]);
+    expect(result.degraded).toBe(false);
   });
 
-  it('returns null when there are no files to scan', async () => {
-    const findings = await runSemgrep({ files: new Map(), runner: runnerReturning(VALID_OUTPUT) });
-    expect(findings).toBeNull();
+  it('reports a degraded run when there are no files to scan', async () => {
+    const result = await runSemgrep({ files: new Map(), runner: runnerReturning(VALID_OUTPUT) });
+    expect(result.findings).toEqual([]);
+    expect(result.degraded).toBe(true);
+    expect(result.reason).toContain('no scannable');
   });
 
   it('refuses to materialise unsafe paths', async () => {
@@ -133,15 +139,17 @@ describe('runSemgrep', () => {
     expect(seen).toBe('const secret = 42;');
   });
 
-  it('returns null when the runner throws instead of failing the review', async () => {
+  it('reports a degraded run when the runner throws instead of failing the review', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const findings = await runSemgrep({
+    const result = await runSemgrep({
       files: new Map([['src/app.js', 'const x = 1;']]),
       runner: async () => {
         throw new Error('spawn failed');
       },
     });
-    expect(findings).toBeNull();
+    expect(result.findings).toEqual([]);
+    expect(result.degraded).toBe(true);
+    expect(result.reason).toContain('spawn failed');
     warn.mockRestore();
   });
 });

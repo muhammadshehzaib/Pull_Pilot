@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions } from './base.provider';
+import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 import { CLAUDE_MODEL } from '../../../utils/constants';
 
@@ -45,5 +45,21 @@ export class ClaudeProvider extends BaseAiProvider {
       console.error('🔴 Claude Provider Error:', error);
       throw new Error(`Claude API request failed: ${(error as Error).message}`);
     }
+  }
+
+  protected async completeJson(request: JsonCompletionRequest): Promise<unknown> {
+    const response = await this.aiClient.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      system: request.systemPrompt,
+      messages: [{ role: 'user', content: request.userPrompt }],
+    }, { signal: request.signal });
+
+    const textBlock = response.content.find((b) => b.type === 'text');
+    const raw = textBlock && 'text' in textBlock ? textBlock.text : '';
+    // Anthropic has no native JSON-mode toggle — strip stray code fences.
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+
+    return JSON.parse(cleaned);
   }
 }

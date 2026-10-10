@@ -226,6 +226,16 @@ const SAST_RULES: SastRule[] = [
     remediation: 'Derive identity and roles from the authenticated session, never from client-supplied headers.',
   },
 
+  {
+    key: 'sast-jwt-decode-without-verify',
+    name: 'JWT decoded without signature verification',
+    filePattern: JS,
+    pattern: /\b(?:jwt|jsonwebtoken|jose)\.decode\s*\(/i,
+    severity: 'HIGH',
+    description: 'jsonwebtoken/jose decode() parses the token payload WITHOUT verifying its signature or claims. Authenticating a caller from a decoded-only token trusts forged tokens.',
+    remediation: 'Use jwt.verify(token, key, { algorithms: [...] }) and act only on the verified payload; never treat decode() output as authenticated.',
+  },
+
   /* ── Weak cryptography / transport ────────────────────────────────────── */
   {
     key: 'sast-jwt-alg-none',
@@ -282,6 +292,15 @@ const SAST_RULES: SastRule[] = [
     severity: 'MEDIUM',
     description: 'The page navigates to a URL taken from request input — client-side open redirect and a potential XSS vector (`javascript:` URLs).',
     remediation: 'Validate the target against an allow-list and reject `javascript:`/`data:` schemes.',
+  },
+  {
+    key: 'sast-authz-request-role',
+    name: 'Authorization decision from client-supplied role',
+    filePattern: JS,
+    pattern: /\b(?:if|while|return|\?|&&|\|\|)\s*\(?\s*(?:req|request)\.(?:body|query|params|headers)[^\n;)]*\b(?:admin|isAdmin|is_admin|role|permission|scope|privilege)\b/i,
+    severity: 'HIGH',
+    description: 'A control-flow decision (authorization) reads a role/admin field directly from the request. A client can set that field and grant itself privileges.',
+    remediation: 'Derive the caller role from the authenticated session or a server-side store, and enforce authorization there — never from request parameters or headers.',
   },
 
   /* ── Unsafe file handling / path traversal ────────────────────────────── */

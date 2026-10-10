@@ -16,6 +16,8 @@ import { buildReviewContext } from '../services/context-builder';
 import type { ReviewContext } from '../services/ai/context-prompt';
 import { sortBySeverity } from '../services/ai/finding-taxonomy';
 import { deduplicate } from '../services/ai/finding-dedup.service';
+import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
+import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import {
   renderFindingListItem,
   renderInlineComment,
@@ -331,6 +333,37 @@ export const analysisWorker = new Worker(
         'GENERATING',
       );
 
+      // 6e. TEST-GAP ANALYSIS. Best-effort and additive: it never runs tests,
+      //     never blocks the review, and simply goes missing if the provider
+      //     cannot do it. Optional-call via the guard inside runTestGapAnalysis
+      //     keeps providers (and test doubles) that only implement analyzeCode
+      //     working unchanged.
+      let testGaps: TestGapReport | null = null;
+      try {
+        testGaps = await guard(
+          runTestGapAnalysis({
+            ghService,
+            owner,
+            repo,
+            ref: headSha,
+            changedPaths: includedFiles,
+            provider: aiDriver,
+            signal: abort.signal,
+          }),
+        );
+        if (testGaps && testGaps.scenarios.length > 0) {
+          SocketService.emitStatus(
+            userId,
+            jobId,
+            `🧪 ${testGaps.scenarios.length} missing test scenario(s) suggested`,
+            'ANALYZING',
+          );
+        }
+      } catch (err) {
+        if (superseded || err instanceof UnrecoverableError) throw err;
+        console.warn('⚠️ Test-gap analysis skipped:', (err as Error).message);
+      }
+
       // One record per rule per job: the durable pass/fail trail a model
       // finding could never provide. skipDuplicates keeps a retried job from
       // double-writing rows against the (job, rule) unique index.
@@ -362,6 +395,7 @@ export const analysisWorker = new Worker(
               ruleName: check.ruleName,
               status: check.status,
               findingCount: check.findingCount,
+              detail: check.detail ?? null,
             })),
             skipDuplicates: true,
           }),
@@ -382,6 +416,7 @@ export const analysisWorker = new Worker(
             ruleChecks: ruleEvaluation.checks,
             securityChecks: securityScan.checks,
             risk,
+            testGaps,
           } as any,
         },
       });
@@ -487,6 +522,9 @@ export const analysisWorker = new Worker(
                 ]
               : []),
             `- **Security Risk**: ${risk.score}/100 — ${risk.verdict}${risk.blockingCount > 0 ? ` (${risk.blockingCount} blocking)` : ''}`,
+            ...(testGaps && testGaps.scenarios.length > 0
+              ? [`- **Test Gaps**: ${testGaps.scenarios.length} missing test scenario(s) suggested (see dashboard)`]
+              : []),
             ...(risk.verdict === 'BLOCK'
               ? [`> 🚫 **This review is blocked**: ${risk.reasons.join('; ')}.`]
               : []),
@@ -522,6 +560,7 @@ export const analysisWorker = new Worker(
             ruleChecks: ruleEvaluation.checks,
             securityChecks: securityScan.checks,
             risk,
+            testGaps,
             commentFailures,
             summaryPosted,
           } as any,

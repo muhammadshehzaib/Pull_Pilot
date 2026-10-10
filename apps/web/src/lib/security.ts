@@ -10,7 +10,7 @@
 
 export type SecurityProbe = 'SAST' | 'SECRETS' | 'DEPENDENCIES';
 
-export type SecurityCheckStatus = 'PASS' | 'FAIL' | 'SKIPPED';
+export type SecurityCheckStatus = 'PASS' | 'FAIL' | 'SKIPPED' | 'DEGRADED';
 
 export type RiskVerdict = 'BLOCK' | 'REVIEW' | 'SAFE';
 
@@ -22,6 +22,8 @@ export interface SecurityCheck {
   ruleName: string;
   status: SecurityCheckStatus;
   findingCount: number;
+  /** Present for DEGRADED (why coverage was reduced) or SKIPPED (why nothing ran). */
+  detail?: string | null;
   createdAt: string;
 }
 
@@ -48,19 +50,22 @@ export const PROBE_LABELS: Record<SecurityProbe, string> = {
 
 /*
  * Unlike the rules engine, a security probe can be SKIPPED because there was
- * nothing to scan (the diff had no package manifests, say), so the row labels
- * describe the probe's own outcome, not the model's.
+ * nothing to scan (the diff had no package manifests, say), or DEGRADED because
+ * an optional input (Semgrep, live OSV.dev) was unavailable. The row labels
+ * describe the probe's own coverage, not the model's opinion.
  */
 export const SECURITY_CHECK_STATUS_LABELS: Record<SecurityCheckStatus, string> = {
   PASS: 'Passed',
   FAIL: 'Failed',
   SKIPPED: 'Skipped',
+  DEGRADED: 'Partial',
 };
 
 export const SECURITY_CHECK_STATUS_COLORS: Record<SecurityCheckStatus, string> = {
   PASS: 'var(--success)',
   FAIL: 'var(--danger)',
   SKIPPED: 'var(--text-secondary)',
+  DEGRADED: 'var(--warning)',
 };
 
 export const PROBE_COLORS: Record<SecurityProbe, string> = {

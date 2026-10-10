@@ -5,6 +5,8 @@ import {
   riskTone,
   isBlockingVerdict,
   probeTally,
+  SECURITY_CHECK_STATUS_LABELS,
+  SECURITY_CHECK_STATUS_COLORS,
   type RiskReport,
   type SecurityCheck,
 } from './security';
@@ -107,5 +109,21 @@ describe('check row shape', () => {
     };
     expect(row.status).toBe('FAIL');
     expect(row.probe).toBe('SAST');
+  });
+
+  it('supports the DEGRADED status and an explanatory detail', () => {
+    const row: SecurityCheck = {
+      id: 'ck-2',
+      probe: 'DEPENDENCIES',
+      ruleKey: 'dependencies',
+      ruleName: 'Vulnerable dependency scan',
+      status: 'DEGRADED',
+      findingCount: 0,
+      detail: 'The live OSV database was unavailable.',
+      createdAt: '2026-10-08T00:00:00.000Z',
+    };
+    expect(SECURITY_CHECK_STATUS_LABELS[row.status]).toBe('Partial');
+    expect(SECURITY_CHECK_STATUS_COLORS[row.status]).toBe('var(--warning)');
+    expect(row.detail).toContain('OSV');
   });
 });

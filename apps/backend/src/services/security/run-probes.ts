@@ -1,5 +1,5 @@
 import type { SecurityConfig } from '../config.service';
-import { SecurityProbeResult, SecurityCheckRecord, SecurityProbe, checkForProbe } from './probe-types';
+import { SecurityProbeResult, SecurityCheckRecord, SecurityProbe, checkForProbe, checkForProbeWithStatus } from './probe-types';
 import { scanSast } from './probes/sast';
 import { scanSecrets } from './probes/secrets';
 import { scanDependencies } from './probes/deps';
@@ -64,19 +64,37 @@ export async function runSecurityProbes(
 /**
  * Built-in regex SAST, plus an optional Semgrep pass folded into the same
  * check row so the durable per-probe trail stays at one SAST record.
+ *
+ * When the optional pass was requested but could not run, the row becomes
+ * DEGRADED (or FAIL if the built-in rules still flagged something) with the
+ * Semgrep reason in `detail` — an unavailable scanner must never read as a
+ * clean, full-coverage scan.
  */
 async function runSast(diff: string, semgrep?: SemgrepOptions): Promise<SecurityProbeResult> {
   const builtIn = scanSast(diff);
 
   if (semgrep && semgrep.files.size > 0) {
     const extra = await runSemgrep(semgrep);
-    if (extra && extra.length > 0) {
-      const findings = [...builtIn.findings, ...extra];
+    if (extra.degraded) {
       return {
-        findings,
-        checks: [checkForProbe('SAST', 'sast', 'Static code security scan', findings.length)],
+        findings: builtIn.findings,
+        checks: [
+          checkForProbeWithStatus(
+            'SAST',
+            'sast',
+            'Static code security scan',
+            'DEGRADED',
+            builtIn.findings.length,
+            `Semgrep extra pass skipped: ${extra.reason}. Built-in SAST rules still ran.`,
+          ),
+        ],
       };
     }
+    const findings = [...builtIn.findings, ...extra.findings];
+    return {
+      findings,
+      checks: [checkForProbe('SAST', 'sast', 'Static code security scan', findings.length)],
+    };
   }
 
   return builtIn;
