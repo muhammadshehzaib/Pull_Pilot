@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 const { mockApi, authUser } = vi.hoisted(() => ({ mockApi: vi.fn(), authUser: { id: 'owner', username: 'owner' } }));
 vi.mock('../../lib/api', () => ({ api: mockApi }));
@@ -56,8 +56,7 @@ describe('Phase 8 history page integration', () => {
       expect(within(highCard).getByRole('button', { name })).toBeTruthy();
     }
     expect(screen.queryByText('Issue low-occ')).toBeNull();
-    const details = screen.getByText(/Show deprioritized advisories/).closest('details')!;
-    details.open = true; fireEvent.toggle(details);
+    await user.click(screen.getByText(/Show deprioritized advisories/));
     expect(await screen.findByText('Issue low-occ')).toBeTruthy();
     await user.click(within(highCard).getByRole('button', { name: /^Dismiss$/ }));
     await waitFor(() => expect(screen.queryByText('Issue high-occ')).toBeNull());
