@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 const { mockApi, authUser } = vi.hoisted(() => ({ mockApi: vi.fn(), authUser: { id: 'owner', username: 'owner' } }));
 vi.mock('../../lib/api', () => ({ api: mockApi }));
@@ -25,10 +25,16 @@ beforeEach(() => {
       const body = JSON.parse(init!.body as string);
       return { feedback: { disposition: body.disposition, rejectionReason: body.rejectionReason ?? null, note: body.note ?? null, revision: body.expectedRevision + 1 } };
     }
+    if (path.endsWith('/workflow')) {
+      const body = JSON.parse(init!.body as string);
+      return { workflow: { status: body.status, revision: body.expectedRevision + 1 } };
+    }
     if (path.endsWith('/findings/backfill')) {
       job = { ...job, results: [f('backfilled-occ', 'HIGH')] }; return { backfilledCount: 1 };
     }
     if (path === '/api/jobs/job-1') return { job };
+    if (path.endsWith('/feedback-insights')) return { enabled: false, revision: 0, partial: false, scannedJobs: 0,
+      policy: { version: 'feedback_v1', minReviewedPrs: 5, rejectionRatio: 0.8 }, recommendations: [] };
     if (path.endsWith('/historical-insights')) return { historicalIntelligenceEnabled: false, insufficientHistory: true, patterns: [], summary: {
       totalOccurrences: 0, distinctPatternsCount: 0, recurringPatternsCount: 0, acceptedTotal: 0, rejectedTotal: 0, falsePositiveTotal: 0, unreviewedTotal: 0 }, recurringPrThreshold: 3, freshness: new Date().toISOString() };
     if (path.endsWith('/historical-intelligence/settings')) return {};
@@ -42,10 +48,29 @@ async function open() {
   return user;
 }
 describe('Phase 8 history page integration', () => {
+  it('shows all five actions, supports dismissal/restore, and keeps deprioritized findings expandable', async () => {
+    job.results[0] = { ...job.results[0], adaptation: { policyVersion: 'feedback_v1', reviewedPrs: 5, rejectedPrs: 4, reason: 'STYLE_PREFERENCE' } };
+    const user = await open();
+    const highCard = screen.getByText('Issue high-occ').closest('.glass-card')! as HTMLElement;
+    for (const name of [/Helpful/, /Not useful/, /^Dismiss$/, /^Fix$/, /^Create rule$/]) {
+      expect(within(highCard).getByRole('button', { name })).toBeTruthy();
+    }
+    expect(screen.queryByText('Issue low-occ')).toBeNull();
+    const details = screen.getByText(/Show deprioritized advisories/).closest('details')!;
+    details.open = true; fireEvent.toggle(details);
+    expect(await screen.findByText('Issue low-occ')).toBeTruthy();
+    await user.click(within(highCard).getByRole('button', { name: /^Dismiss$/ }));
+    await waitFor(() => expect(screen.queryByText('Issue high-occ')).toBeNull());
+    await user.click(screen.getByLabelText(/Show dismissed findings/));
+    const restoredCard = screen.getByText('Issue high-occ').closest('.glass-card')! as HTMLElement;
+    await user.click(within(restoredCard).getByRole('button', { name: /Restore finding/ }));
+    expect(await within(restoredCard).findByRole('button', { name: /^Dismiss$/ })).toBeTruthy();
+    expect(screen.getByText(/Deprioritized by feedback_v1/)).toBeTruthy();
+  });
   it('renders feedback attached to stable IDs after severity sorting', async () => {
     const user = await open();
     const high = screen.getByTestId('finding-feedback-high-occ');
-    await user.click(within(high).getByRole('button', { name: /^Accept$/ }));
+    await user.click(within(high).getByRole('button', { name: /Helpful/ }));
     expect(mockApi).toHaveBeenCalledWith('/api/jobs/job-1/findings/high-occ/feedback', expect.objectContaining({ method: 'PUT' }));
     expect(within(screen.getByTestId('finding-feedback-low-occ')).getByText('Unreviewed')).toBeTruthy();
     expect(screen.getByText(/not independent verification/)).toBeTruthy();

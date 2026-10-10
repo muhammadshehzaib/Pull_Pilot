@@ -262,7 +262,7 @@ export function FindingFeedbackControl({
               gap: '4px',
             }}
           >
-            <Check size={13} color="var(--success, #10b981)" /> Accept
+            <Check size={13} color="var(--success, #10b981)" /> 👍 Helpful
           </button>
 
           <button
@@ -285,7 +285,7 @@ export function FindingFeedbackControl({
               gap: '4px',
             }}
           >
-            <X size={13} color="var(--danger, #ef4444)" /> Reject…
+            <X size={13} color="var(--danger, #ef4444)" /> 👎 Not useful
           </button>
 
           <button

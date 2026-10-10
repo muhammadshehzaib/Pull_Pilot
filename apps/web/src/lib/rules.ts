@@ -26,6 +26,9 @@ export interface RepositoryRule {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  revision: number;
+  origin?: 'MANUAL' | 'FINDING';
+  sourceOccurrenceId?: string | null;
 }
 
 /** One rule's outcome on one analysis job. */

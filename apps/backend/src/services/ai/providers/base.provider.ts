@@ -31,6 +31,7 @@ export interface AnalyzeOptions {
   signal?: AbortSignal;
   /** Bounded untrusted historical data; never added to binding system rules. */
   historicalContext?: string;
+  feedbackContext?: string;
 }
 
 /** A prompt pair handed to a provider for a JSON-shaped completion. */
@@ -124,8 +125,10 @@ export abstract class BaseAiProvider {
    */
   protected renderContext(context: ReviewContext | undefined, options?: AnalyzeOptions): string {
     const history = options?.historicalContext;
+    const feedback = options?.feedbackContext;
     return formatContextForPrompt(context, MAX_CONTEXT_CHARS) +
-      (history && history.length <= 4000 ? history + '\n\n' : '');
+      (history && history.length <= 4000 ? history + '\n\n' : '') +
+      (feedback && feedback.length <= 4000 ? feedback + '\n\n' : '');
   }
 
   protected getSystemPrompt(customRules: string[] = []): string {

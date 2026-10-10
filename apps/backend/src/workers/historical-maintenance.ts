@@ -4,6 +4,9 @@ import { dirtyHistory, historyCutoff, lockHistoricalRepository, HISTORY_MAX_AGE_
 
 /** One bounded pass. DB revision mismatch is durable pending work, not a fire-and-forget promise. */
 export async function sweepHistoricalOnce() {
+  const oldAudit = await prisma.ruleAuditEvent.findMany({ where: { createdAt: { lt: historyCutoff() } },
+    select: { id: true }, orderBy: { createdAt: 'asc' }, take: 500 });
+  if (oldAudit.length) await prisma.ruleAuditEvent.deleteMany({ where: { id: { in: oldAudit.map(row => row.id) } } });
   const expired = await prisma.findingOccurrence.findMany({
     where: { OR: [ { createdAt: { lt: historyCutoff() } },
       { analysisJob: { createdAt: { lt: historyCutoff() } } }, { repository: { isActive: false } } ] },
@@ -36,7 +39,9 @@ export async function clearRepositoryHistory(repositoryId: string) {
     await lockHistoricalRepository(tx, repositoryId);
     await tx.findingOccurrence.deleteMany({ where: { repositoryId } });
     await dirtyHistory(tx, repositoryId);
-    await tx.repository.update({ where: { id: repositoryId }, data: { historicalIntelligenceEnabled: false } });
+    await tx.ruleAuditEvent.deleteMany({ where: { repositoryId } });
+    await tx.repository.update({ where: { id: repositoryId }, data: { historicalIntelligenceEnabled: false,
+      feedbackAdaptationEnabled: false, feedbackAdaptationRevision: { increment: 1 } } });
   });
 }
 

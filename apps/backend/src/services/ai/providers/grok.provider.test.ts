@@ -40,9 +40,11 @@ describe('GrokProvider', () => {
   describe('constructor', () => {
     it('keeps historical summaries in the user context rather than system rules', async () => {
       mockCreate.mockResolvedValueOnce(chatResponse('[]'));
-      await provider.analyzeCode('CURRENT_DIFF', [], undefined, { historicalContext: 'UNTRUSTED_HISTORY_PAYLOAD' });
+      await provider.analyzeCode('CURRENT_DIFF', [], undefined, { historicalContext: 'UNTRUSTED_HISTORY_PAYLOAD', feedbackContext: 'UNTRUSTED_FEEDBACK_STATS' });
       const request = mockCreate.mock.calls[0][0];
       expect(request.messages[0].content).not.toContain('UNTRUSTED_HISTORY_PAYLOAD');
+      expect(request.messages[0].content).not.toContain('UNTRUSTED_FEEDBACK_STATS');
+      expect(request.messages[1].content).toContain('UNTRUSTED_FEEDBACK_STATS');
       expect(request.messages[1].content).toContain('UNTRUSTED_HISTORY_PAYLOAD');
     });
     it('initializes OpenAI client pointed at the xAI baseURL', () => {

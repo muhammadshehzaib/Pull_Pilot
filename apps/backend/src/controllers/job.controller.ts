@@ -8,6 +8,7 @@ import { behavioralForJob } from '../services/behavioral/behavioral.service';
 import { assessExplainableRisk, type ExplainableRiskReport } from '../services/security/risk-engine';
 import { findingIdentity } from '../services/historical/occurrence.service';
 import { historyCutoff } from '../services/historical/state';
+import { mayDeprioritize, ADAPTATION_POLICY } from '../services/feedback-loop/adaptation-policy';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
@@ -130,7 +131,7 @@ export class JobController {
         securityChecks: { orderBy: { createdAt: 'asc' } },
         behavioralRuns: { where: { expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, take: 5 },
         findingOccurrences: { where: { superseded: false, findingKey: { not: '' },
-          analysisJob: { createdAt: { gte: historyCutoff() } } }, include: { feedback: true } },
+          analysisJob: { createdAt: { gte: historyCutoff() } } }, include: { feedback: true, workflow: true } },
       },
     });
 
@@ -144,7 +145,9 @@ export class JobController {
     const occurrencesByKey = new Map((findingOccurrences ?? []).map(occ => [occ.findingKey, occ]));
     const findingsWithFeedback = normalizedFindings.map(finding => {
       const occurrence = occurrencesByKey.get(findingIdentity(finding));
-      return occurrence ? { ...finding, findingId: occurrence.id, feedback: occurrence.feedback ? {
+      return occurrence ? { ...finding, findingId: occurrence.id,
+        workflow: occurrence.workflow ? { status: occurrence.workflow.status, revision: occurrence.workflow.revision } : { status: 'OPEN', revision: 0 },
+        adaptation: normalizeFindingAdaptation(finding, rawObj.feedbackAdaptation), feedback: occurrence.feedback ? {
         disposition: occurrence.feedback.disposition, rejectionReason: occurrence.feedback.rejectionReason,
         note: occurrence.feedback.note, revision: occurrence.feedback.revision,
       } : { disposition: 'UNREVIEWED', rejectionReason: null, note: null, revision: 0 } } : finding;
@@ -247,6 +250,20 @@ export class JobController {
 
     return res.json({ status: 'CANCELLED', id: job.id });
   }
+}
+
+/** Stored attribution is not permission to hide protected findings. */
+export function normalizeFindingAdaptation(finding: AiSuggestion, raw: unknown) {
+  if (!mayDeprioritize(finding) || !raw || typeof raw !== 'object') return undefined;
+  const report = raw as { version?: unknown; policyVersion?: unknown; entries?: unknown };
+  if (report.version !== 1 || report.policyVersion !== ADAPTATION_POLICY.version || !Array.isArray(report.entries)) return undefined;
+  const entry = report.entries.slice(0, 200).find(e => e && typeof e === 'object' && e.findingKey === findingIdentity(finding));
+  if (!entry || !['FALSE_POSITIVE', 'INTENDED_BEHAVIOR', 'STYLE_PREFERENCE', 'DUPLICATE', 'OUT_OF_SCOPE'].includes(entry.reason) ||
+      !Number.isSafeInteger(entry.reviewedPrs) || entry.reviewedPrs < ADAPTATION_POLICY.minReviewedPrs ||
+      !Number.isSafeInteger(entry.rejectedPrs) || entry.rejectedPrs > entry.reviewedPrs ||
+      entry.rejectedPrs < ADAPTATION_POLICY.minSameReasonPrs || entry.rejectedPrs / entry.reviewedPrs < ADAPTATION_POLICY.rejectionRatio ||
+      typeof entry.expiresAt !== 'string' || !(new Date(entry.expiresAt).getTime() > Date.now())) return undefined;
+  return { policyVersion: report.policyVersion, reviewedPrs: entry.reviewedPrs, rejectedPrs: entry.rejectedPrs, reason: entry.reason };
 }
 
 export function normalizeHistoricalAttribution(value: unknown) {

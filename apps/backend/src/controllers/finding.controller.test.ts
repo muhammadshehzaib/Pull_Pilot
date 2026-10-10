@@ -124,6 +124,7 @@ describe('FindingController', () => {
           ruleKeys: ['no-hardcoded-secret'],
           summary: 'Hardcoded secret detected',
           fingerprint: 'fp_v1_SECURITY:src/auth:123',
+          workflow: { status: 'OPEN', revision: 0 },
           feedback: null,
           createdAt,
         },
@@ -151,6 +152,7 @@ describe('FindingController', () => {
             ruleKeys: ['no-hardcoded-secret'],
             summary: 'Hardcoded secret detected',
             fingerprint: 'fp_v1_SECURITY:src/auth:123',
+            workflow: { status: 'OPEN', revision: 0 },
             feedback: {
               disposition: 'UNREVIEWED',
               rejectionReason: null,

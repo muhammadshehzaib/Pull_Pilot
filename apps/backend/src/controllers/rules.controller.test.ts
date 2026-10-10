@@ -9,18 +9,23 @@ const { mockRepoFindFirst, mockRuleFindMany, mockRuleFindFirst, mockRuleCreate, 
   mockRuleDelete: vi.fn(),
 }));
 
-vi.mock('../config/prisma', () => ({
-  default: {
+vi.mock('../config/prisma', () => {
+  const db: any = {
+    $queryRaw: vi.fn(async () => [{ id: 'repo-1' }]),
+    ruleAuditEvent: { create: vi.fn() },
     repository: { findFirst: mockRepoFindFirst },
     repositoryRule: {
+      count: vi.fn(async () => 0),
       findMany: mockRuleFindMany,
       findFirst: mockRuleFindFirst,
       create: mockRuleCreate,
       update: mockRuleUpdate,
       delete: mockRuleDelete,
     },
-  },
-}));
+  };
+  db.$transaction = vi.fn(async (fn: any) => fn(db));
+  return { default: db };
+});
 
 import { RulesController } from './rules.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
@@ -34,6 +39,8 @@ const authedReq = (overrides: any = {}) => {
 const ownedRepo = { id: 'repo-1', fullName: 'octo/cat' };
 
 const storedRule = {
+  revision: 0,
+  origin: 'MANUAL',
   id: 'rule-1',
   repositoryId: 'repo-1',
   name: 'No eval',
@@ -66,12 +73,13 @@ describe('RulesController.list', () => {
     await RulesController.list(req, res);
 
     expect(mockRepoFindFirst).toHaveBeenCalledWith({
-      where: { id: 'repo-1', userId: 'u-1' },
+      where: { id: 'repo-1', userId: 'u-1', isActive: true },
       select: { id: true, fullName: true },
     });
     expect(mockRuleFindMany).toHaveBeenCalledWith({
       where: { repositoryId: 'repo-1' },
       orderBy: { createdAt: 'asc' },
+      take: 500,
     });
     expect(res.json).toHaveBeenCalledWith({
       rules: [storedRule],
@@ -147,17 +155,17 @@ describe('RulesController.update', () => {
   it('merges a partial body over the stored rule before validating', async () => {
     const req = authedReq({
       params: { repoId: 'repo-1', ruleId: 'rule-1' },
-      body: { enabled: false },
+      body: { enabled: false, expectedRevision: 0 },
     });
     const res = mockRes();
 
     await RulesController.update(req, res);
 
     expect(mockRuleFindFirst).toHaveBeenCalledWith({
-      where: { id: 'rule-1', repositoryId: 'repo-1', repository: { userId: 'u-1' } },
+      where: { id: 'rule-1', repositoryId: 'repo-1' },
     });
     expect(mockRuleUpdate).toHaveBeenCalledWith({
-      where: { id: 'rule-1' },
+      where: { id: 'rule-1', revision: 0 },
       data: {
         name: 'No eval',
         description: 'eval() is forbidden',
@@ -167,6 +175,7 @@ describe('RulesController.update', () => {
         category: 'SECURITY',
         enforcement: 'DETERMINISTIC',
         enabled: false,
+        revision: { increment: 1 },
       },
     });
     expect(res.json).toHaveBeenCalledWith({ rule: expect.objectContaining({ enabled: false }) });
@@ -177,7 +186,7 @@ describe('RulesController.update', () => {
       params: { repoId: 'repo-1', ruleId: 'rule-1' },
       // Stored rule is DETERMINISTIC with a pattern; clearing both leaves an
       // unusable rule, which validation must catch.
-      body: { pattern: null, enforcement: 'DETERMINISTIC' },
+      body: { pattern: null, enforcement: 'DETERMINISTIC', expectedRevision: 0 },
     });
     const res = mockRes();
 
@@ -204,12 +213,12 @@ describe('RulesController.update', () => {
 
 describe('RulesController.remove', () => {
   it('deletes an owned rule', async () => {
-    const req = authedReq({ params: { repoId: 'repo-1', ruleId: 'rule-1' } });
+    const req = authedReq({ params: { repoId: 'repo-1', ruleId: 'rule-1' }, body: { expectedRevision: 0 } });
     const res = mockRes();
 
     await RulesController.remove(req, res);
 
-    expect(mockRuleDelete).toHaveBeenCalledWith({ where: { id: 'rule-1' } });
+    expect(mockRuleDelete).toHaveBeenCalledWith({ where: { id: 'rule-1', revision: 0 } });
     expect(res.json).toHaveBeenCalledWith({ status: 'OK' });
   });
 
@@ -222,5 +231,30 @@ describe('RulesController.remove', () => {
 
     expect(res.status).toHaveBeenCalledWith(404);
     expect(mockRuleDelete).not.toHaveBeenCalled();
+  });
+});
+
+describe('Phase 9 rule integrity', () => {
+  it('requires revisions for edits and rejects stale writes', async () => {
+    const missing = mockRes();
+    await RulesController.update(authedReq({ params: { repoId: 'repo-1', ruleId: 'rule-1' }, body: { enabled: false } }), missing);
+    expect(missing.status).toHaveBeenLastCalledWith(400);
+    const stale = mockRes();
+    await RulesController.update(authedReq({ params: { repoId: 'repo-1', ruleId: 'rule-1' }, body: { expectedRevision: 99 } }), stale);
+    expect(stale.status).toHaveBeenLastCalledWith(409);
+    expect(mockRuleUpdate).not.toHaveBeenCalled();
+  });
+  it('does not allow finding-derived rules to become executable patterns', async () => {
+    mockRuleFindFirst.mockResolvedValueOnce({ ...storedRule, origin: 'FINDING' });
+    const res = mockRes();
+    await RulesController.update(authedReq({ params: { repoId: 'repo-1', ruleId: 'rule-1' }, body: { expectedRevision: 0 } }), res);
+    expect(res.status).toHaveBeenLastCalledWith(400);
+    expect(mockRuleUpdate).not.toHaveBeenCalled();
+  });
+  it('returns a sanitized error on database failure', async () => {
+    mockRepoFindFirst.mockRejectedValueOnce(new Error('sensitive database details'));
+    const res = mockRes(); await RulesController.list(authedReq({ params: { repoId: 'repo-1' } }), res);
+    expect(res.status).toHaveBeenLastCalledWith(503);
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('sensitive');
   });
 });

@@ -63,6 +63,7 @@ export default function EngineeringRulesPage() {
   const [rulesRepoId, setRulesRepoId] = useState<string | null>(null);
   const [form, setForm] = useState<RuleForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingRevision, setEditingRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
 
@@ -149,7 +150,7 @@ export default function EngineeringRulesPage() {
       if (editingId) {
         await api(`/api/repositories/${repoId}/rules/${editingId}`, {
           method: 'PUT',
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, expectedRevision: editingRevision }),
         });
         setMessage({ kind: 'ok', text: `Rule "${body.name}" updated.` });
       } else {
@@ -174,7 +175,7 @@ export default function EngineeringRulesPage() {
     try {
       await api(`/api/repositories/${repoId}/rules/${rule.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ enabled: !rule.enabled }),
+        body: JSON.stringify({ enabled: !rule.enabled, expectedRevision: rule.revision }),
       });
       setMessage({
         kind: 'ok',
@@ -195,7 +196,7 @@ export default function EngineeringRulesPage() {
     setBusy(true);
     setMessage(null);
     try {
-      await api(`/api/repositories/${repoId}/rules/${rule.id}`, { method: 'DELETE' });
+      await api(`/api/repositories/${repoId}/rules/${rule.id}`, { method: 'DELETE', body: JSON.stringify({ expectedRevision: rule.revision }) });
       if (editingId === rule.id) resetForm();
       setMessage({ kind: 'ok', text: `Rule "${rule.name}" deleted.` });
       await refreshRules();
@@ -207,6 +208,7 @@ export default function EngineeringRulesPage() {
   }
 
   function startEdit(rule: RepositoryRule) {
+    setEditingRevision(rule.revision);
     setEditingId(rule.id);
     setForm({
       name: rule.name,

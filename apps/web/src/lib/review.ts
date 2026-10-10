@@ -49,6 +49,8 @@ export type FindingSource = 'LLM' | 'RULES' | 'SAST' | 'SECRETS' | 'DEPENDENCIES
 
 export interface AiSuggestion {
   findingId?: string;
+  workflow?: { status: 'OPEN' | 'DISMISSED' | 'REPORTED_FIXED'; revision: number };
+  adaptation?: { policyVersion: string; reviewedPrs: number; rejectedPrs: number; reason: string };
   feedback?: {
     disposition: 'UNREVIEWED' | 'ACCEPTED' | 'REJECTED' | 'NEEDS_REVIEW';
     rejectionReason: 'FALSE_POSITIVE' | 'DUPLICATE' | 'INTENDED_BEHAVIOR' | 'OUT_OF_SCOPE' | 'STYLE_PREFERENCE' | 'OTHER' | null;

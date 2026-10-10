@@ -50,7 +50,7 @@ describe('FindingFeedbackControl', () => {
     );
 
     expect(screen.getByText('Unreviewed')).toBeTruthy();
-    const acceptBtn = screen.getByRole('button', { name: /Accept/i });
+    const acceptBtn = screen.getByRole('button', { name: /Helpful/i });
     await user.click(acceptBtn);
 
     expect(mockApi).toHaveBeenCalledWith(
@@ -95,7 +95,7 @@ describe('FindingFeedbackControl', () => {
       />,
     );
 
-    const rejectBtn = screen.getByRole('button', { name: /Reject…/i });
+    const rejectBtn = screen.getByRole('button', { name: /Not useful/i });
     await user.click(rejectBtn);
 
     expect(screen.getByText('Select Rejection Reason:')).toBeTruthy();
@@ -178,7 +178,7 @@ describe('FindingFeedbackControl', () => {
       />,
     );
 
-    const acceptBtn = screen.getByRole('button', { name: /Accept/i });
+    const acceptBtn = screen.getByRole('button', { name: /Helpful/i });
     await user.click(acceptBtn);
 
     await waitFor(() => {

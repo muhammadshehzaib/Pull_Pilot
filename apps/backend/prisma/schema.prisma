@@ -139,6 +139,9 @@ model Repository {
   historicalAggregatedAt        DateTime?
   findingOccurrences             FindingOccurrence[]
   historicalPatterns             HistoricalPattern[]
+  feedbackAdaptationEnabled      Boolean @default(false)
+  feedbackAdaptationRevision     Int @default(0)
+  ruleAuditEvents                RuleAuditEvent[]
 
   @@map("repositories")
   @@unique([installationId, githubRepoId])
@@ -201,7 +204,14 @@ model RepositoryRule {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   checks       RuleCheck[]
+  origin       String @default("MANUAL")
+  sourceOccurrenceId String?
+  sourceOccurrence FindingOccurrence? @relation(fields: [sourceOccurrenceId], references: [id], onDelete: SetNull)
+  creationKey String?
+  revision Int @default(0)
+  auditEvents RuleAuditEvent[]
 
+  @@unique([repositoryId, creationKey])
   @@index([repositoryId])
   @@map("repository_rules")
 }
@@ -532,6 +542,8 @@ model FindingOccurrence {
   superseded     Boolean        @default(false)
   createdAt      DateTime       @default(now())
   feedback       FindingFeedback?
+  workflow       FindingWorkflow?
+  createdRules   RepositoryRule[]
 
   @@index([repositoryId, fingerprint])
   @@index([analysisJobId])
@@ -576,6 +588,53 @@ model FindingFeedbackEvent {
 
   @@index([feedbackId])
   @@map("finding_feedback_events")
+}
+
+enum FindingWorkflowStatus {
+  OPEN
+  DISMISSED
+  REPORTED_FIXED
+}
+
+model FindingWorkflow {
+  id String @id @default(uuid())
+  occurrenceId String @unique
+  occurrence FindingOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  status FindingWorkflowStatus @default(OPEN)
+  actorId String
+  revision Int @default(0)
+  updatedAt DateTime @updatedAt
+  events FindingWorkflowEvent[]
+  @@map("finding_workflows")
+}
+
+model FindingWorkflowEvent {
+  id String @id @default(uuid())
+  workflowId String
+  workflow FindingWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  actorId String
+  fromStatus FindingWorkflowStatus
+  status FindingWorkflowStatus
+  revision Int
+  createdAt DateTime @default(now())
+  @@index([workflowId, createdAt])
+  @@map("finding_workflow_events")
+}
+
+model RuleAuditEvent {
+  id String @id @default(uuid())
+  repositoryId String
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  ruleId String?
+  rule RepositoryRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  actorId String
+  action String
+  revision Int
+  creationKey String?
+  createdAt DateTime @default(now())
+  @@index([repositoryId, createdAt])
+  @@unique([repositoryId, creationKey])
+  @@map("rule_audit_events")
 }
 
 /// Repository-scoped aggregated pattern, rebuilt from finding occurrences.

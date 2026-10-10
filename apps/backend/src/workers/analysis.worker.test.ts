@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../services/historical/occurrence.service', () => ({
+vi.mock('../services/historical/occurrence.service', async importOriginal => ({
+  ...await importOriginal<typeof import('../services/historical/occurrence.service')>(),
   recordJobFindings: vi.fn(async (jobId: string, _repositoryId: string, _findings: unknown, results: unknown) => {
     await mockJobUpdate({ where: { id: jobId }, data: { status: 'COMPLETED', results } });
   }),
 }));
 vi.mock('../services/historical/review-memory.service', () => ({ retrieveHistoricalMemory: vi.fn() }));
+vi.mock('../services/feedback-loop/adaptation.service', async importOriginal => ({
+  ...await importOriginal<typeof import('../services/feedback-loop/adaptation.service')>(), retrieveFeedbackAdaptation: vi.fn(),
+}));
 
 /**
  * The worker module does `new Worker(QUEUE_NAME, handler, opts)` at import time.
@@ -163,6 +167,28 @@ describe('analysis worker — module wiring', () => {
 });
 
 describe('analysis worker — happy path', () => {
+  it('supplies feedback statistics separately and persists adaptation without changing findings or risk', async () => {
+    const { retrieveFeedbackAdaptation } = await import('../services/feedback-loop/adaptation.service');
+    const { generateFingerprint } = await import('../services/historical/fingerprint.service');
+    const { assessRisk } = await import('../services/security/risk-engine');
+    const advisory: any = { filePath: 'src/a.ts', lineNumber: 10, agentType: 'STYLE', priority: 'LOW', issue: 'Naming mismatch', suggestion: 'Use team conventions' };
+    const fingerprint = generateFingerprint(advisory);
+    vi.mocked(retrieveFeedbackAdaptation).mockResolvedValueOnce({ enabled: true, partial: false, revision: 1, scannedJobs: 5,
+      policy: { version: 'feedback_v1' } as any, suppliedFingerprints: [fingerprint], serializedContext: 'UNTRUSTED_FEEDBACK_STATS',
+      recommendations: [{ fingerprint, reviewedPrs: 5, rejectedPrs: 4, reason: 'STYLE_PREFERENCE', reasons: { STYLE_PREFERENCE: 4 },
+        recommendation: 'Propose a guideline', expiresAt: new Date(Date.now() + 86400000).toISOString(), summary: 'Naming' }],
+    });
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff --git a/foo b/foo\n+ x'); mockAnalyzeCode.mockResolvedValueOnce([advisory]);
+    await capturedHandler.fn!(makeJobPayload());
+    expect(mockAnalyzeCode.mock.calls[0][1]).not.toContain('UNTRUSTED_FEEDBACK_STATS');
+    expect(mockAnalyzeCode.mock.calls[0][3]).toMatchObject({ feedbackContext: 'UNTRUSTED_FEEDBACK_STATS' });
+    const result = mockJobUpdate.mock.calls.at(-1)![0].data.results;
+    expect(result.suggestions).toEqual(assessRisk([advisory]).findings);
+    expect(result.risk).toEqual(assessRisk([advisory]).report);
+    expect(result.feedbackAdaptation.entries).toHaveLength(1);
+    expect(result.feedbackAdaptation.suppliedFingerprints).toEqual([fingerprint]);
+  });
   it('keeps historical context out of binding rules and persists accurate attribution', async () => {
     const { retrieveHistoricalMemory } = await import('../services/historical/review-memory.service');
     vi.mocked(retrieveHistoricalMemory).mockResolvedValueOnce({ version: 1, algorithmVersion: 'fp_v2',

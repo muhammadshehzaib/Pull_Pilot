@@ -20,6 +20,7 @@ import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import { recordJobFindings } from '../services/historical/occurrence.service';
+import { retrieveFeedbackAdaptation, adaptationAttribution } from '../services/feedback-loop/adaptation.service';
 import { retrieveHistoricalMemory, type HistoricalReviewContext } from '../services/historical/review-memory.service';
 import {
   renderFindingListItem,
@@ -292,6 +293,7 @@ export const analysisWorker = new Worker(
       // 6d. OPT-IN HISTORICAL REVIEW MEMORY (Phase 8).
       //     Retrieves bounded cross-PR historical patterns for the repo.
       //     Safety boundaries: guidance only, never suppresses security checks.
+      const feedbackAdaptation = await guard(retrieveFeedbackAdaptation(dbRepo.id));
       let historicalMemory: HistoricalReviewContext | null = null;
       try {
         historicalMemory = await guard(retrieveHistoricalMemory(dbRepo.id, includedFiles));
@@ -310,7 +312,8 @@ export const analysisWorker = new Worker(
           filteredDiff,
           promptGuidelines,
           context,
-          { signal: abort.signal, historicalContext: historicalMemory?.serializedContext },
+          { signal: abort.signal, historicalContext: historicalMemory?.serializedContext,
+            feedbackContext: feedbackAdaptation?.serializedContext },
         ),
       );
 
@@ -341,6 +344,7 @@ export const analysisWorker = new Worker(
       const { findings: suggestions, report: risk } = assessRisk(mergedFindings, {
         blockOnCriticalSecret: repoConfig.security.block_on_critical_secret,
       });
+      const feedbackAttribution = adaptationAttribution(suggestions, feedbackAdaptation);
 
       console.log(
         `🎯 AI Analysis Finished! Found ${rawSuggestions.length} model finding(s) + ${ruleEvaluation.violations.length} rule violation(s) + ${securityScan.findings.length} security finding(s); ${suggestions.length} total after dedupe (${repoConfig.min_severity} threshold applies to model findings only).`,
@@ -591,6 +595,7 @@ export const analysisWorker = new Worker(
             testGaps,
             behavioral,
             commentFailures,
+            feedbackAdaptation: feedbackAttribution,
             summaryPosted,
             historicalMemory: historicalMemory
               ? {

@@ -28,7 +28,7 @@ vi.mock('../config/socket', () => ({
   SocketService: { emitStatus: mockEmitStatus },
 }));
 
-import { JobController, parseJobStatus } from './job.controller';
+import { JobController, parseJobStatus, normalizeFindingAdaptation } from './job.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
 
 const authedReq = (overrides = {}) => {
@@ -367,6 +367,19 @@ describe('parseJobStatus', () => {
 });
 
 describe('JobController.get', () => {
+  it('normalizes versioned adaptation conservatively, preserving protected and legacy findings', async () => {
+    const { findingIdentity } = await import('../services/historical/occurrence.service');
+    const finding = { filePath: 'src/a.ts', lineNumber: 1, agentType: 'STYLE' as const, priority: 'LOW' as const, issue: 'Naming', suggestion: 'Use conventions' };
+    const entry = { findingKey: findingIdentity(finding), reviewedPrs: 5, rejectedPrs: 4, reason: 'STYLE_PREFERENCE', expiresAt: new Date(Date.now() + 86400000).toISOString() };
+    const report = { version: 1, policyVersion: 'feedback_v1', entries: [entry] };
+    expect(normalizeFindingAdaptation(finding, report)).toMatchObject({ policyVersion: 'feedback_v1', reviewedPrs: 5, rejectedPrs: 4 });
+    expect(normalizeFindingAdaptation(finding, undefined)).toBeUndefined();
+    expect(normalizeFindingAdaptation(finding, { ...report, version: 99 })).toBeUndefined();
+    expect(normalizeFindingAdaptation(finding, { ...report, entries: [{ ...entry, expiresAt: new Date(0).toISOString() }] })).toBeUndefined();
+    expect(normalizeFindingAdaptation(finding, { ...report, entries: [{ ...entry, rejectedPrs: 1 }] })).toBeUndefined();
+    expect(normalizeFindingAdaptation({ ...finding, agentType: 'SECURITY' }, report)).toBeUndefined();
+    expect(normalizeFindingAdaptation({ ...finding, corroborated: true }, report)).toBeUndefined();
+  });
   it('attaches feedback by exact artifact identity rather than order or location', async () => {
     const { findingIdentity } = await import('../services/historical/occurrence.service');
     const finding = { filePath: 'src/a.ts', lineNumber: 1, agentType: 'BUG' as const, priority: 'HIGH' as const, issue: 'First defect', suggestion: 'Fix it' };

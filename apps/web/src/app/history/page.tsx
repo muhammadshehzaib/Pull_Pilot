@@ -55,6 +55,8 @@ import { BehavioralVerification } from '../../components/BehavioralVerification'
 import { ExplainableRiskCard } from '../../components/ExplainableRiskCard';
 import { FindingFeedbackControl } from '../../components/FindingFeedbackControl';
 import { RepositoryInsightsPanel } from '../../components/RepositoryInsightsPanel';
+import { FindingWorkflowActions } from '../../components/FindingWorkflowActions';
+import { FeedbackAdaptationPanel } from '../../components/FeedbackAdaptationPanel';
 
 export interface JobSummary {
   id: string;
@@ -409,6 +411,8 @@ function JobDetailView({ job }: { job: JobDetail }) {
   const [feedbackFindings, setFeedbackFindings] = useState(job.results ?? []);
   const [backfilling, setBackfilling] = useState(false);
   const [feedbackError, setFeedbackError] = useState('');
+  const [showDismissed, setShowDismissed] = useState(false);
+  const [showDeprioritized, setShowDeprioritized] = useState(false);
   useEffect(() => { setFeedbackFindings(job.results ?? []); setFeedbackError(''); }, [job.id, job.results]);
   useEffect(() => { setLiveRisk(job.metadata?.riskV2); }, [job.id, job.metadata?.riskV2]);
 
@@ -419,6 +423,14 @@ function JobDetailView({ job }: { job: JobDetail }) {
   // CRITICAL + HIGH. Surfaced separately because a reviewer deciding whether to
   // approve only needs this number, not the full breakdown.
   const blockingCount = sortedSuggestions.filter((s) => isBlocking(s.priority)).length;
+  const visibleSuggestions = sortedSuggestions.filter(s =>
+    (showDismissed || s.workflow?.status !== 'DISMISSED') && (showDeprioritized || !s.adaptation));
+  async function reloadFeedback() {
+    try {
+      const result = await api<{ job: JobDetail }>(`/api/jobs/${job.id}`);
+      setFeedbackFindings(result.job.results ?? []); setFeedbackError('');
+    } catch { setFeedbackError('Could not reload this review. Your draft has not been discarded.'); }
+  }
 
   async function backfillFeedback() {
     if (backfilling) return;
@@ -657,7 +669,16 @@ function JobDetailView({ job }: { job: JobDetail }) {
           )}
         </div>
       ) : (
-        sortedSuggestions.map((s, i) => (
+        <>
+        <div className="glass-card">
+          <label><input type="checkbox" checked={showDismissed} onChange={e => setShowDismissed(e.target.checked)} />Show dismissed findings ({sortedSuggestions.filter(s => s.workflow?.status === 'DISMISSED').length})</label>
+          <details onToggle={e => setShowDeprioritized(e.currentTarget.open)}>
+            <summary>Show deprioritized advisories ({sortedSuggestions.filter(s => s.adaptation).length})</summary>
+            <p>These findings remain available below. Feedback changes presentation only, not severity, evidence or risk scores.</p>
+          </details>
+          {visibleSuggestions.length === 0 && <p>No findings in the active worklist. Expand advisories or show dismissed findings to inspect all results.</p>}
+        </div>
+        {visibleSuggestions.map((s, i) => (
           <div key={s.findingId ?? `${s.filePath}:${s.lineNumber}:${i}`} className="glass-card">
             <div className="finding-card-header">
               <span
@@ -715,14 +736,21 @@ function JobDetailView({ job }: { job: JobDetail }) {
             <pre className="mono finding-code-container">
               {s.suggestion}
             </pre>
+            {s.adaptation && <p>Deprioritized by {s.adaptation.policyVersion}: {s.adaptation.rejectedPrs}/{s.adaptation.reviewedPrs} reviewed PRs marked a similar pattern {s.adaptation.reason.replace(/_/g, ' ').toLowerCase()}. Not evidence that this finding is incorrect.</p>}
             {job.status === 'COMPLETED' && <FindingFeedbackControl
               jobId={job.id} findingId={s.findingId} initialFeedback={s.feedback}
               onFeedbackChanged={feedback => setFeedbackFindings(current => current.map(finding =>
                 finding.findingId === s.findingId ? { ...finding, feedback } : finding))}
             />}
+            {job.status === 'COMPLETED' && <FindingWorkflowActions jobId={job.id} finding={s}
+              onReload={() => void reloadFeedback()}
+              onChanged={workflow => setFeedbackFindings(current => current.map(finding =>
+                finding.findingId === s.findingId ? { ...finding, workflow } : finding))} />}
           </div>
-        ))
+        ))}
+        </>
       )}
+      <FeedbackAdaptationPanel key={job.repository.id} repositoryId={job.repository.id} />
     </div>
   );
 }

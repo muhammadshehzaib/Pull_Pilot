@@ -87,6 +87,7 @@ export class FindingController {
         summary: occ.summary,
         findingKey: occ.findingKey,
         fingerprint: occ.fingerprint,
+        workflow: occ.workflow ? { status: occ.workflow.status, revision: occ.workflow.revision } : { status: 'OPEN', revision: 0 },
         feedback: occ.feedback
           ? {
               id: occ.feedback.id,

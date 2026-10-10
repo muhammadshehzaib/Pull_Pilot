@@ -64,6 +64,6 @@ export async function recordJobFindings(
 export async function getOccurrencesForJob(jobId: string) {
   return prisma.findingOccurrence.findMany({
     where: { analysisJobId: jobId, superseded: false, analysisJob: { createdAt: { gte: historyCutoff() } } },
-    include: { feedback: true }, orderBy: { snapshotKey: 'asc' },
+    include: { feedback: true, workflow: true }, orderBy: { snapshotKey: 'asc' },
   });
 }
