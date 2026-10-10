@@ -833,6 +833,12 @@ describe('analysis worker — test-gap analysis', () => {
       .pop();
     expect(finalResults.testGaps).toMatchObject({ analyzed: true });
     expect(finalResults.testGaps.scenarios).toHaveLength(1);
+    expect(finalResults.behavioral.scenarios[0]).toMatchObject({ stage: 'GENERATED', status: 'NOT_RUN' });
+    expect(finalResults.riskV2).toMatchObject({ version: 2, direction: 'HIGHER_IS_RISKIER', enforcement: 'ADVISORY' });
+    expect(finalResults.riskV2.coverage.behavioral.executed).toBe(0);
+    // Generating a scenario does not become an executed test or a legacy finding.
+    expect(finalResults.suggestions).toEqual([]);
+    expect(finalResults.risk.score).toBe(0);
 
     const messages = mockEmitStatus.mock.calls.map((c) => String(c[2]));
     expect(messages.some((m) => m.includes('missing test scenario'))).toBe(true);
