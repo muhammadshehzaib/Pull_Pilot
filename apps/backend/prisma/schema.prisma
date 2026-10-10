@@ -129,6 +129,8 @@ model Repository {
   cachedFiles    CachedFile[]
   rules          RepositoryRule[]
   testDrafts     TestDraft[]
+  behavioralConfig Json?
+  behavioralRuns BehavioralRun[]
 
   @@map("repositories")
   @@unique([installationId, githubRepoId])
@@ -337,10 +339,52 @@ model AnalysisJob {
   ruleChecks      RuleCheck[]
   securityChecks  SecurityCheck[]
   testDrafts      TestDraft[]
+  behavioralRuns  BehavioralRun[]
 
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])
   @@map("analysis_jobs")
+}
+
+enum BehavioralRunStatus {
+  NOT_RUN
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  TIMED_OUT
+  ERROR
+}
+
+/// Plans and bounded step outcomes only; never screenshots, DOM, console or credentials.
+model BehavioralRun {
+  id String @id @default(uuid())
+  analysisJobId String
+  analysisJob AnalysisJob @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+  repositoryId String
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  requestKey String
+  status BehavioralRunStatus @default(NOT_RUN)
+  headSha String
+  deploymentId Int?
+  previewUrl String?
+  workflowSha String
+  workflowRef String
+  dispatchHash String
+  ciRunId String?
+  plan Json
+  evidence Json?
+  reason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deadlineAt DateTime
+  expiresAt DateTime
+
+  @@unique([analysisJobId, requestKey])
+  @@index([repositoryId, createdAt])
+  @@index([status, deadlineAt])
+  @@index([expiresAt])
+  @@map("behavioral_runs")
 }
 
 /// Lifecycle of an AI-drafted test.

@@ -51,6 +51,7 @@ import {
   type TestGapReport,
 } from '../../lib/testGap';
 import { TestDraftFlow } from '../../components/TestDraftFlow';
+import { BehavioralVerification } from '../../components/BehavioralVerification';
 
 export interface JobSummary {
   id: string;
@@ -72,7 +73,7 @@ interface JobDetail extends JobSummary {
   /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
   securityChecks?: SecurityCheck[];
   /** Risk engine output, rehydrated from the results blob by the controller. */
-  metadata?: { risk?: RiskReport; testGaps?: TestGapReport | null };
+  metadata?: { risk?: RiskReport; testGaps?: TestGapReport | null; behavioral?: unknown };
 }
 
 export default function HistoryPage() {
@@ -556,6 +557,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
       {job.metadata?.testGaps && hasTestGaps(job.metadata.testGaps) && (
         <TestGapCard report={job.metadata.testGaps} jobId={job.id} />
       )}
+      <BehavioralVerification jobId={job.id} initialReport={job.metadata?.behavioral} />
 
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>

@@ -16,6 +16,7 @@ import { buildReviewContext } from '../services/context-builder';
 import type { ReviewContext } from '../services/ai/context-prompt';
 import { sortBySeverity } from '../services/ai/finding-taxonomy';
 import { deduplicate } from '../services/ai/finding-dedup.service';
+import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import {
@@ -417,6 +418,7 @@ export const analysisWorker = new Worker(
             securityChecks: securityScan.checks,
             risk,
             testGaps,
+            behavioral: baselineBehavioral(testGaps),
           } as any,
         },
       });
@@ -561,6 +563,7 @@ export const analysisWorker = new Worker(
             securityChecks: securityScan.checks,
             risk,
             testGaps,
+            behavioral: baselineBehavioral(testGaps),
             commentFailures,
             summaryPosted,
           } as any,

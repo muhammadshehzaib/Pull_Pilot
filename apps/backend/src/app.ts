@@ -11,6 +11,7 @@ import rulesRoutes from './routes/rules.routes';
 import jobRoutes from './routes/job.routes';
 import testDraftRoutes from './routes/test-draft.routes';
 import billingRoutes from './routes/billing.routes';
+import behavioralRoutes from './routes/behavioral.routes';
 
 const app: Application = express();
 
@@ -48,6 +49,7 @@ app.use('/api/repositories', repositoryRoutes);
 app.use('/api/repositories', rulesRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/test-drafts', testDraftRoutes);
+app.use('/api/behavioral', behavioralRoutes);
 app.use('/api/billing', billingRoutes);
 
 export default app;

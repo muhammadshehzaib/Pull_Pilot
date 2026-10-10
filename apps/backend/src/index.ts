@@ -65,6 +65,8 @@ async function startServer() {
     // policy; with a finite policy it deletes expired context. Either way this
     // is what keeps cached review context from outliving its setting.
     startContextRetentionSweep();
+    const { startBehavioralRetentionSweep } = await import('./workers/behavioral-retention');
+    startBehavioralRetentionSweep();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);

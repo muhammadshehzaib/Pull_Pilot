@@ -1,0 +1,42 @@
+name: AI PR behavioral verification
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        required: true
+        type: string
+      dispatch_token:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  verify:
+    # GitHub-hosted only. Do not change this to a self-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Set these repository variables to a REVIEWED release of AI PR
+          # Reviewer, not the application PR's repository/ref.
+          repository: ${{ vars.AIPR_RUNNER_REPOSITORY }}
+          ref: ${{ vars.AIPR_RUNNER_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm run prisma:generate --workspace=apps/backend
+      - run: npm run build --workspace=apps/backend
+      - run: docker build -t aipr-behavioral:local -f packages/behavioral-runner/Dockerfile .
+      - name: Execute approved scenarios
+        run: node packages/behavioral-runner/cli.cjs
+        env:
+          AIPR_RUN_ID: ${{ inputs.run_id }}
+          AIPR_DISPATCH_TOKEN: ${{ inputs.dispatch_token }}
+          AIPR_BACKEND_URL: ${{ vars.AIPR_BACKEND_URL }}
+          AIPR_OIDC_AUDIENCE: ${{ vars.AIPR_OIDC_AUDIENCE }}

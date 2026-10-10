@@ -4,6 +4,7 @@ import { analysisQueue } from '../config/queue';
 import { isInProgressStatus, markReviewTerminal } from '../workers/job-state';
 import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxonomy';
 import { paginationMeta, parsePagination } from '../utils/pagination';
+import { behavioralForJob } from '../services/behavioral/behavioral.service';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
@@ -124,6 +125,7 @@ export class JobController {
         ruleChecks: { orderBy: { createdAt: 'asc' } },
         // Per-probe pass/fail records for the deterministic security layer.
         securityChecks: { orderBy: { createdAt: 'asc' } },
+        behavioralRuns: { where: { expiresAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, take: 5 },
       },
     });
 
@@ -133,10 +135,11 @@ export class JobController {
     const rawObj = (job.results && typeof job.results === 'object' && !Array.isArray(job.results))
       ? (job.results as Record<string, unknown>)
       : {};
+    const { behavioralRuns, ...publicJob } = job;
 
     return res.json({
       job: {
-        ...job,
+        ...publicJob,
         results: normalizedFindings,
         metadata: {
           ignoredFiles: Array.isArray(rawObj.ignoredFiles) ? (rawObj.ignoredFiles as string[]) : [],
@@ -148,6 +151,7 @@ export class JobController {
           // Best-effort test-gap report (missing test scenarios + discovery
           // evidence), or undefined when the provider did not support it.
           testGaps: rawObj.testGaps,
+          behavioral: behavioralForJob(rawObj, behavioralRuns),
           error: typeof rawObj.error === 'string' ? rawObj.error : undefined,
         },
       },

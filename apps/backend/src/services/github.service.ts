@@ -140,6 +140,22 @@ export class GitHubService {
     return data;
   }
 
+  async getDeploymentPreview(owner: string, repo: string, deploymentId: number) {
+    const [{ data: deployment }, { data: statuses }] = await Promise.all([
+      this.octokit.repos.getDeployment({ owner, repo, deployment_id: deploymentId }),
+      this.octokit.repos.listDeploymentStatuses({ owner, repo, deployment_id: deploymentId, per_page: 1 }),
+    ]);
+    const status = statuses[0];
+    return { sha: deployment.sha, environment: deployment.environment, state: status?.state,
+      url: status?.environment_url, publisher: status?.creator?.login };
+  }
+
+  async dispatchBehavioralWorkflow(owner: string, repo: string, ref: string, runId: string, dispatchToken: string) {
+    await this.octokit.actions.createWorkflowDispatch({ owner, repo,
+      workflow_id: 'aipr-behavioral.yml', ref,
+      inputs: { run_id: runId, dispatch_token: dispatchToken } });
+  }
+
   /**
    * Head commit SHA of the default branch — used by the repo poller to detect
    * pushes on webhook-less repos.
