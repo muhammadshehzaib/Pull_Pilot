@@ -167,7 +167,7 @@ describe('buildTestPrBody', () => {
   it('labels the code AI-generated and unverified and links the source PR', () => {
     const body = buildTestPrBody('octo', draft);
     expect(body).toMatch(/AI-drafted tests/);
-    expect(body).toMatch(/this service has not executed it/i);
+    expect(body).toMatch(/this service has \*\*not executed it\*\*/i);
     expect(body).toMatch(/Checks tab for the current CI result/i);
     expect(body).toContain('src/a.ts');
     expect(body).toContain('#42');
