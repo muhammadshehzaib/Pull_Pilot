@@ -15,7 +15,7 @@ export interface ScenarioResult { id: string; status: Outcome; steps: { index: n
 export interface BehavioralReport {
   version: 1;
   executor: 'OWNER_CI';
-  scenarios: { id: string; filePath: string; description: string; stage: 'GENERATED' | 'EXECUTED' | 'VERIFIED'; status: Outcome }[];
+  scenarios: { id: string; filePath: string; description: string; stage: 'GENERATED' | 'EXECUTED' | 'VERIFIED'; status: Outcome; lastAssertionStatus?: 'PASSED' | 'FAILED'; lastAssertionRunId?: string; runId?: string }[];
   reason?: string;
   runId?: string;
   headSha?: string;
@@ -78,6 +78,8 @@ export function parseEvidence(value: unknown, plan: Scenario[]): ScenarioResult[
       return { index, status: step.status as Outcome };
     });
     const status = item.status as Outcome;
+    if (status === 'NOT_RUN' && steps.length) throw new Error('NOT_RUN cannot contain executed steps');
+    if (steps.slice(0, -1).some(s => s.status !== 'PASSED')) throw new Error('Execution must stop on the first failing step');
     if (status === 'PASSED' && (steps.length !== scenario.steps.length || steps.some(s => s.status !== 'PASSED'))) throw new Error('PASS requires every step and assertion to execute');
     if (status === 'FAILED' && !steps.some(s => s.status === 'FAILED' && scenario.steps[s.index].action.startsWith('assert'))) throw new Error('FAIL requires an executed assertion failure');
     if (status !== 'PASSED' && status !== 'ERROR' && steps.length === scenario.steps.length && steps.every(s => s.status === 'PASSED')) throw new Error('Inconsistent evidence');
@@ -93,6 +95,7 @@ export function outcome(results: ScenarioResult[]): Outcome {
 export function withExecution(baseline: BehavioralReport, results: ScenarioResult[], run: { id: string; headSha: string; ciRunId: string | null; reason?: string | null }): BehavioralReport {
   return { ...baseline, runId: run.id, headSha: run.headSha, ...(run.ciRunId ? { ciRunId: run.ciRunId } : {}), reason: run.reason || undefined, scenarios: baseline.scenarios.map(s => {
     const result = results.find(r => r.id === s.id);
-    return result ? { ...s, status: result.status, stage: result.status === 'PASSED' ? 'VERIFIED' : result.steps.length > 0 ? 'EXECUTED' : 'GENERATED' } : s;
+    return result ? { ...s, status: result.status, stage: result.status === 'PASSED' ? 'VERIFIED' : result.steps.length > 0 ? 'EXECUTED' : 'GENERATED', runId: run.id,
+      ...(['PASSED', 'FAILED'].includes(result.status) ? { lastAssertionStatus: result.status as 'PASSED' | 'FAILED', lastAssertionRunId: run.id } : {}) } : s;
   }) };
 }

@@ -244,5 +244,6 @@ function toViolation(
     // Rules are a deterministic source, like the security probes — the risk
     // engine and UI use this to explain where a finding came from.
     source: 'RULES',
+    ruleKeys: [rule.id],
   };
 }

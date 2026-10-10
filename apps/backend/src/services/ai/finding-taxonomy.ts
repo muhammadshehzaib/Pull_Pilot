@@ -41,6 +41,9 @@ export interface AiSuggestion {
   priority: FindingSeverity;
   /** Which engine produced this finding. Optional for backward compatibility. */
   source?: FindingSource;
+  /** All detectors of the same deduplicated defect; corroboration adds no points. */
+  sources?: FindingSource[];
+  ruleKeys?: string[];
   /** Filled in by the risk engine after a deterministic finding lines up with a model finding. */
   corroborated?: boolean;
 }
@@ -172,4 +175,21 @@ export function normalizeSuggestions(raw: unknown): AiSuggestion[] {
     });
   }
   return out;
+}
+
+/** Only for trusted persisted results; providers still use normalizeSuggestions. */
+export function normalizeStoredSuggestions(raw: unknown): AiSuggestion[] {
+  if (!Array.isArray(raw)) return [];
+  const allowed: FindingSource[] = ['LLM', 'RULES', 'SAST', 'SECRETS', 'DEPENDENCIES'];
+  return raw.flatMap(value => {
+    const normalized = normalizeSuggestions([value])[0];
+    if (!normalized) return [];
+    const stored = value as Record<string, unknown>;
+    if (allowed.includes(stored.source as FindingSource)) normalized.source = stored.source as FindingSource;
+    if (Array.isArray(stored.sources)) normalized.sources = [...new Set(stored.sources.filter((s): s is FindingSource => allowed.includes(s as FindingSource)))];
+    if (stored.corroborated === true) normalized.corroborated = true;
+    if (Array.isArray(stored.ruleKeys)) normalized.ruleKeys = stored.ruleKeys.filter((s): s is string => typeof s === 'string' && s.length <= 120).slice(0, 20);
+    if (typeof stored.ruleKey === 'string') normalized.ruleKeys = [...new Set([...(normalized.ruleKeys ?? []), stored.ruleKey.slice(0, 120)])];
+    return [normalized];
+  });
 }

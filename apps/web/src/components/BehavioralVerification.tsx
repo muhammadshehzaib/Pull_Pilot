@@ -74,7 +74,7 @@ export function BehavioralVerification({ jobId, initialReport, onUpdated }: { jo
       <p>Opt-in execution in repository-owner CI against an approved preview. Generated scenarios remain unverified until executed assertions pass. Results apply only to the recorded commit and scenarios.</p>
       {report.headSha && <p>Reviewed commit: <code>{report.headSha}</code></p>}
       {report.reason && <p role="status">{report.reason}</p>}
-      <ul>{report.scenarios.map(s => <li key={s.id}><strong>{s.status}</strong> · {s.stage} · {s.description} <code>{s.filePath}</code></li>)}</ul>
+      <ul>{report.scenarios.map(s => <li key={s.id}><strong>{s.status}</strong> · {s.stage} · {s.description} <code>{s.filePath}</code>{s.lastAssertionStatus === 'FAILED' && s.status !== 'FAILED' ? ' · Prior executed failure remains evidence until a new assertion run passes.' : ''}</li>)}</ul>
       <details>
         <summary>Owner CI and preview settings</summary>
         <p>Install the documented workflow on your default branch, pin its reviewed commit SHA, and approve one exact preview host, environment and deployment-status publisher. Changes to that branch require reviewing and updating the pin.</p>

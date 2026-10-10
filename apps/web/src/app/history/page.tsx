@@ -52,6 +52,7 @@ import {
 } from '../../lib/testGap';
 import { TestDraftFlow } from '../../components/TestDraftFlow';
 import { BehavioralVerification } from '../../components/BehavioralVerification';
+import { ExplainableRiskCard } from '../../components/ExplainableRiskCard';
 
 export interface JobSummary {
   id: string;
@@ -73,7 +74,7 @@ interface JobDetail extends JobSummary {
   /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
   securityChecks?: SecurityCheck[];
   /** Risk engine output, rehydrated from the results blob by the controller. */
-  metadata?: { risk?: RiskReport; testGaps?: TestGapReport | null; behavioral?: unknown };
+  metadata?: { risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown };
 }
 
 export default function HistoryPage() {
@@ -399,6 +400,8 @@ function StatusIcon({ status }: { status: JobStatus }) {
 function JobDetailView({ job }: { job: JobDetail }) {
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [liveRisk, setLiveRisk] = useState(job.metadata?.riskV2);
+  useEffect(() => { setLiveRisk(job.metadata?.riskV2); }, [job.id, job.metadata?.riskV2]);
 
   const sortedSuggestions = (job.results || []).slice().sort(
     (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority],
@@ -557,7 +560,10 @@ function JobDetailView({ job }: { job: JobDetail }) {
       {job.metadata?.testGaps && hasTestGaps(job.metadata.testGaps) && (
         <TestGapCard report={job.metadata.testGaps} jobId={job.id} />
       )}
-      <BehavioralVerification jobId={job.id} initialReport={job.metadata?.behavioral} />
+      <ExplainableRiskCard report={liveRisk} />
+      <BehavioralVerification jobId={job.id} initialReport={job.metadata?.behavioral} onUpdated={() => {
+        api<{ job: JobDetail }>(`/api/jobs/${job.id}`).then(data => setLiveRisk(data.job.metadata?.riskV2)).catch(() => {});
+      }} />
 
       {sortedSuggestions.length === 0 ? (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>

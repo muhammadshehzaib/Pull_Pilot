@@ -2,9 +2,10 @@ import { Request, Response } from 'express';
 import prisma from '../config/prisma';
 import { analysisQueue } from '../config/queue';
 import { isInProgressStatus, markReviewTerminal } from '../workers/job-state';
-import { AiSuggestion, normalizeSuggestions } from '../services/ai/finding-taxonomy';
+import { AiSuggestion, normalizeStoredSuggestions } from '../services/ai/finding-taxonomy';
 import { paginationMeta, parsePagination } from '../utils/pagination';
 import { behavioralForJob } from '../services/behavioral/behavioral.service';
+import { assessExplainableRisk, type ExplainableRiskReport } from '../services/security/risk-engine';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
@@ -42,11 +43,11 @@ export type { AiSuggestion };
 export function extractNormalizedFindings(results: unknown): AiSuggestion[] {
   if (!results || typeof results !== 'object') return [];
   if (Array.isArray(results)) {
-    return normalizeSuggestions(results);
+    return normalizeStoredSuggestions(results);
   }
   const obj = results as Record<string, unknown>;
   if (Array.isArray(obj.suggestions)) {
-    return normalizeSuggestions(obj.suggestions);
+    return normalizeStoredSuggestions(obj.suggestions);
   }
   return [];
 }
@@ -136,6 +137,18 @@ export class JobController {
       ? (job.results as Record<string, unknown>)
       : {};
     const { behavioralRuns, ...publicJob } = job;
+    const behavioral = behavioralForJob(rawObj, behavioralRuns);
+    const storedRiskV2 = rawObj.riskV2 as ExplainableRiskReport | undefined;
+    // Do not retroactively invent scan coverage or upgrade legacy risk reports.
+    const riskV2 = storedRiskV2?.version === 2 ? assessExplainableRisk(normalizedFindings, {
+      blockOnCriticalSecret: (rawObj.config as any)?.security?.block_on_critical_secret,
+      includedFiles: Array.isArray(rawObj.includedFiles) ? rawObj.includedFiles : [],
+      ignoredFiles: Array.isArray(rawObj.ignoredFiles) ? rawObj.ignoredFiles : [],
+      securityChecks: Array.isArray(rawObj.securityChecks) ? rawObj.securityChecks : job.securityChecks,
+      ruleChecks: Array.isArray(rawObj.ruleChecks) ? rawObj.ruleChecks : job.ruleChecks,
+      testGaps: rawObj.testGaps as any, behavioral,
+      context: storedRiskV2.coverage?.context ?? 'NOT_RUN',
+    }) : undefined;
 
     return res.json({
       job: {
@@ -148,10 +161,11 @@ export class JobController {
           // results blob so the history page can render the risk card without
           // re-parsing the whole findings array.
           risk: rawObj.risk,
+          riskV2,
           // Best-effort test-gap report (missing test scenarios + discovery
           // evidence), or undefined when the provider did not support it.
           testGaps: rawObj.testGaps,
-          behavioral: behavioralForJob(rawObj, behavioralRuns),
+          behavioral,
           error: typeof rawObj.error === 'string' ? rawObj.error : undefined,
         },
       },

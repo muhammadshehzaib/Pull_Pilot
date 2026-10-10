@@ -3,9 +3,9 @@
  *
  * A test-gap report is advisory and additive: it names the tests a change is
  * missing so a reviewer can decide, in seconds, whether the author forgot an
- * edge case. It never runs tests, never edits the repository, and never affects
- * the risk verdict — the worst outcome of a wrong suggestion is a slightly
- * longer review, which is why the whole pipeline is best-effort and bounded.
+ * edge case. Analysis never runs tests or edits the repository. The v2 risk
+ * report gives advisory gaps small, explicit weights, separate from executed
+ * behavioral failures. The legacy risk report remains unchanged.
  */
 
 export type TestGapConfidence = 'HIGH' | 'MEDIUM' | 'LOW';

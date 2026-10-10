@@ -1,5 +1,6 @@
-import { createPublicKey, type JsonWebKey } from 'node:crypto';
+import { createPublicKey, type JsonWebKeyInput } from 'node:crypto';
 import jwt from 'jsonwebtoken';
+type JsonWebKey = JsonWebKeyInput['key'] & { kid?: string };
 
 const ISSUER = 'https://token.actions.githubusercontent.com';
 let cache: { expires: number; keys: JsonWebKey[] } | undefined;

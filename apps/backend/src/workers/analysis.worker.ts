@@ -10,7 +10,7 @@ import { RulesService } from '../services/rules.service';
 import { runSecurityProbes, countByProbe } from '../services/security/run-probes';
 import { OsvClient } from '../services/security/osv-client';
 import { fetchChangedFileContents } from '../services/changed-files.service';
-import { assessRisk } from '../services/security/risk-engine';
+import { assessRisk, assessExplainableRisk } from '../services/security/risk-engine';
 import { DiffFilterService } from '../services/diff-filter.service';
 import { buildReviewContext } from '../services/context-builder';
 import type { ReviewContext } from '../services/ai/context-prompt';
@@ -365,6 +365,14 @@ export const analysisWorker = new Worker(
         console.warn('⚠️ Test-gap analysis skipped:', (err as Error).message);
       }
 
+      const behavioral = baselineBehavioral(testGaps);
+      const riskV2 = assessExplainableRisk(suggestions, {
+        blockOnCriticalSecret: repoConfig.security.block_on_critical_secret,
+        includedFiles, ignoredFiles, securityChecks: securityScan.checks,
+        ruleChecks: ruleEvaluation.checks, testGaps, behavioral,
+        context: context ? context.incomplete || context.treeTruncated || context.droppedPaths.length > 0 ? 'PARTIAL' : 'AVAILABLE' : 'NOT_RUN',
+      });
+
       // One record per rule per job: the durable pass/fail trail a model
       // finding could never provide. skipDuplicates keeps a retried job from
       // double-writing rows against the (job, rule) unique index.
@@ -417,8 +425,9 @@ export const analysisWorker = new Worker(
             ruleChecks: ruleEvaluation.checks,
             securityChecks: securityScan.checks,
             risk,
+            riskV2,
             testGaps,
-            behavioral: baselineBehavioral(testGaps),
+            behavioral,
           } as any,
         },
       });
@@ -524,11 +533,12 @@ export const analysisWorker = new Worker(
                 ]
               : []),
             `- **Security Risk**: ${risk.score}/100 — ${risk.verdict}${risk.blockingCount > 0 ? ` (${risk.blockingCount} blocking)` : ''}`,
+            `- **PR Risk v2 (advisory)**: ${riskV2.score}/100 — ${riskV2.verdict}; 0 = lower indicated risk, 100 = higher. Evidence confidence: ${riskV2.coverage.confidence}.`,
             ...(testGaps && testGaps.scenarios.length > 0
               ? [`- **Test Gaps**: ${testGaps.scenarios.length} missing test scenario(s) suggested (see dashboard)`]
               : []),
-            ...(risk.verdict === 'BLOCK'
-              ? [`> 🚫 **This review is blocked**: ${risk.reasons.join('; ')}.`]
+            ...(riskV2.verdict === 'BLOCK'
+              ? [`> **Advisory BLOCK verdict**: ${riskV2.reasons.join(' ')} GitHub merge protection is not enforced by this report.`]
               : []),
             `- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}`,
             '',
@@ -562,8 +572,9 @@ export const analysisWorker = new Worker(
             ruleChecks: ruleEvaluation.checks,
             securityChecks: securityScan.checks,
             risk,
+            riskV2,
             testGaps,
-            behavioral: baselineBehavioral(testGaps),
+            behavioral,
             commentFailures,
             summaryPosted,
           } as any,

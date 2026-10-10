@@ -3,7 +3,7 @@
  *
  * Mirrors `apps/backend/src/services/test-gap/test-gap-types.ts`. A test-gap
  * report is advisory: it lists tests the worker believes the change is missing.
- * Nothing is executed and the report never affects the risk verdict, so the UI
+ * Nothing is executed by this analysis. V2 risk gives gaps advisory weights; the UI
  * presents it as suggestions rather than failures.
  */
 

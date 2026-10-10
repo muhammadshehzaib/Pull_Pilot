@@ -18,6 +18,12 @@ export function parseBehavioralConfig(value: unknown): BehavioralConfig {
 export function resultsObject(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
 }
+function priorReport(results: Record<string, any>, headSha: string): BehavioralReport {
+  const baseline = baselineBehavioral(results.testGaps);
+  const prior = results.behavioral as BehavioralReport | undefined;
+  if (prior?.version !== 1 || prior.headSha !== headSha || !Array.isArray(prior.scenarios)) return baseline;
+  return { ...baseline, ...prior, scenarios: baseline.scenarios.map(s => prior.scenarios.find(p => p.id === s.id) ?? s) };
+}
 const digest = (token: string) => createHash('sha256').update(token).digest('hex');
 export function authenticDispatch(token: unknown, hash: string): boolean {
   return typeof token === 'string' && /^[a-f0-9]{64}$/.test(token) && digest(token) === hash;
@@ -107,7 +113,7 @@ export async function completeBehavioralRun(run: BehavioralRun, ciRunId: string,
     }
     const job = await tx.analysisJob.findUniqueOrThrow({ where: { id: run.analysisJobId } });
     const results = resultsObject(job.results);
-    const baseline = baselineBehavioral(results.testGaps);
+    const baseline = priorReport(results, run.headSha);
     const report = withExecution(baseline, evidence, { ...run, ciRunId });
     // No observed content is retained in the job summary. Plans and step
     // outcomes expire separately after seven days.
@@ -118,8 +124,8 @@ export async function completeBehavioralRun(run: BehavioralRun, ciRunId: string,
 
 export function behavioralForJob(results: Record<string, any>, runs: BehavioralRun[] = []): BehavioralReport | undefined {
   if (!results.testGaps && !results.behavioral) return undefined;
-  const baseline = baselineBehavioral(results.testGaps);
   const latest = runs[0];
+  const baseline = latest ? priorReport(results, latest.headSha) : baselineBehavioral(results.testGaps);
   if (!latest) return results.behavioral ?? baseline;
   const plan = latest.plan as unknown as Scenario[];
   const expired = ['QUEUED', 'RUNNING'].includes(latest.status) && latest.deadlineAt.getTime() <= Date.now();

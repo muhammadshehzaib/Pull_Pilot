@@ -6,7 +6,7 @@ export interface BehavioralReport {
   runId?: string;
   headSha?: string;
   ciRunId?: string;
-  scenarios: { id: string; filePath: string; description: string; stage: 'GENERATED' | 'EXECUTED' | 'VERIFIED'; status: BehavioralStatus }[];
+  scenarios: { id: string; filePath: string; description: string; stage: 'GENERATED' | 'EXECUTED' | 'VERIFIED'; status: BehavioralStatus; lastAssertionStatus?: 'PASSED' | 'FAILED'; lastAssertionRunId?: string; runId?: string }[];
 }
 export function normalizeBehavioral(raw: unknown): BehavioralReport | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -20,7 +20,7 @@ export function normalizeBehavioral(raw: unknown): BehavioralReport | null {
     const status = ['PASSED', 'FAILED', 'NOT_RUN', 'TIMED_OUT', 'ERROR'].includes(String(s.status)) ? s.status as BehavioralStatus : 'NOT_RUN';
     // A legacy/malformed stage never upgrades NOT_RUN to verified.
     const stage = status === 'PASSED' && s.stage === 'VERIFIED' ? 'VERIFIED' : s.stage === 'EXECUTED' && status !== 'NOT_RUN' ? 'EXECUTED' : 'GENERATED';
-    scenarios.push({ id: s.id.slice(0, 24), filePath: s.filePath.slice(0, 300), description: s.description.slice(0, 300), stage, status });
+    scenarios.push({ id: s.id.slice(0, 24), filePath: s.filePath.slice(0, 300), description: s.description.slice(0, 300), stage, status, ...(s.lastAssertionStatus === 'PASSED' || s.lastAssertionStatus === 'FAILED' ? { lastAssertionStatus: s.lastAssertionStatus } : {}), ...(typeof s.lastAssertionRunId === 'string' ? { lastAssertionRunId: s.lastAssertionRunId.slice(0, 80) } : {}) });
   }
   return { version: 1, executor: 'OWNER_CI', scenarios, ...(typeof r.reason === 'string' ? { reason: r.reason.slice(0, 200) } : {}), ...(typeof r.headSha === 'string' ? { headSha: r.headSha.slice(0, 40) } : {}), ...(typeof r.ciRunId === 'string' && /^\d+$/.test(r.ciRunId) ? { ciRunId: r.ciRunId } : {}) };
 }

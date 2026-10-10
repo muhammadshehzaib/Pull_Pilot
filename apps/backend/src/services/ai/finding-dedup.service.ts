@@ -186,5 +186,7 @@ function merge(existing: AiSuggestion, incoming: AiSuggestion): AiSuggestion {
     // A deterministic report of the same defect stays deterministically sourced
     // even if the model mentioned it first.
     source: strongerSource(existing.source, incoming.source),
+    sources: Array.from(new Set([...(existing.sources ?? [existing.source ?? 'LLM']), ...(incoming.sources ?? [incoming.source ?? 'LLM'])])),
+    ruleKeys: Array.from(new Set([...(existing.ruleKeys ?? []), ...(incoming.ruleKeys ?? []), ...('ruleKey' in existing && typeof existing.ruleKey === 'string' ? [existing.ruleKey] : []), ...('ruleKey' in incoming && typeof incoming.ruleKey === 'string' ? [incoming.ruleKey] : [])])),
   };
 }
