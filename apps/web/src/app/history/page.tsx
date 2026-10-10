@@ -50,6 +50,7 @@ import {
   testGapSummary,
   type TestGapReport,
 } from '../../lib/testGap';
+import { TestDraftFlow } from '../../components/TestDraftFlow';
 
 export interface JobSummary {
   id: string;
@@ -553,7 +554,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
       )}
 
       {job.metadata?.testGaps && hasTestGaps(job.metadata.testGaps) && (
-        <TestGapCard report={job.metadata.testGaps} />
+        <TestGapCard report={job.metadata.testGaps} jobId={job.id} />
       )}
 
       {sortedSuggestions.length === 0 ? (
@@ -834,7 +835,7 @@ function SecurityCard({ risk, checks }: { risk?: RiskReport; checks?: SecurityCh
  * here is executed and nothing affects the verdict, so the card is styled with
  * a neutral accent rather than the danger language used for findings.
  */
-function TestGapCard({ report }: { report: TestGapReport }) {
+function TestGapCard({ report, jobId }: { report: TestGapReport; jobId: string }) {
   const scenarios = report.scenarios ?? [];
 
   return (
@@ -856,9 +857,9 @@ function TestGapCard({ report }: { report: TestGapReport }) {
       </div>
 
       {scenarios.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
           {scenarios.map((scenario, i) => (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', fontSize: '0.82rem' }}>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.82rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
                 <span
                   style={{
@@ -880,6 +881,7 @@ function TestGapCard({ report }: { report: TestGapReport }) {
                   Edge case: {scenario.edgeCase}
                 </span>
               )}
+              <TestDraftFlow jobId={jobId} scenario={scenario} />
             </div>
           ))}
         </div>

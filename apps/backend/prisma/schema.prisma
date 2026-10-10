@@ -128,6 +128,7 @@ model Repository {
   analysisJobs   AnalysisJob[]
   cachedFiles    CachedFile[]
   rules          RepositoryRule[]
+  testDrafts     TestDraft[]
 
   @@map("repositories")
   @@unique([installationId, githubRepoId])
@@ -335,10 +336,67 @@ model AnalysisJob {
   updatedAt       DateTime        @updatedAt
   ruleChecks      RuleCheck[]
   securityChecks  SecurityCheck[]
+  testDrafts      TestDraft[]
 
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])
   @@map("analysis_jobs")
+}
+
+/// Lifecycle of an AI-drafted test.
+///
+/// DRAFT          — generated/edited, awaiting an explicit "create PR".
+/// PR_CREATED     — a PR was opened (or reused) for this draft.
+/// DISCARDED      — the developer threw it away; the row is kept so a stale
+///                  link or a retried request resolves cleanly.
+enum TestDraftStatus {
+  DRAFT
+  PR_CREATED
+  DISCARDED
+}
+
+/// One AI-drafted test, produced from a single test-gap scenario.
+///
+/// Persisted (rather than kept client-side) so the draft survives a reload, a
+/// failed GitHub call can be retried without regenerating, and every read is
+/// scoped to the owning repository's user. `targetContent` is the accepted
+/// (possibly edited) test body; `baseSha` is the commit the draft was written
+/// against and is re-checked before any write.
+model TestDraft {
+  id              String          @id @default(uuid())
+  repositoryId    String
+  repository      Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  analysisJobId   String?
+  analysisJob     AnalysisJob?    @relation(fields: [analysisJobId], references: [id], onDelete: SetNull)
+  /// Denormalized owner for cheap cross-repo listing; authority is still the
+  /// repository relation, which every query also filters on.
+  userId          String
+  /// Snapshot of the gap scenario this draft covers.
+  scenario        Json
+  sourcePath      String
+  targetPath      String
+  targetContent   String
+  framework       String?
+  notes           String?
+  /// Best-effort structural note (heuristic delimiter balance, etc). Null when
+  /// the cheap check passed cleanly.
+  structuralNote  String?
+  baseBranch      String
+  baseSha         String
+  sourcePrNumber  Int?
+  status          TestDraftStatus @default(DRAFT)
+  branchName      String?
+  commitSha       String?
+  prNumber        Int?
+  prUrl           String?
+  error           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([repositoryId])
+  @@index([analysisJobId])
+  @@index([userId])
+  @@map("test_drafts")
 }
 
 model UsageLedger {

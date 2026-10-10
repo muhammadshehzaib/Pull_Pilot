@@ -1,0 +1,126 @@
+import type { TestGapScenario } from './testGap';
+
+/**
+ * Test-draft vocabulary for the web app.
+ *
+ * Mirrors the backend shape. A draft is AI-generated and unverified until a CI
+ * run says otherwise, so every presentation of it carries that caveat.
+ */
+
+export type TestDraftStatus = 'DRAFT' | 'PR_CREATED' | 'DISCARDED';
+
+export interface TestDraft {
+  id: string;
+  repositoryId: string;
+  analysisJobId: string | null;
+  scenario: TestGapScenario;
+  sourcePath: string;
+  targetPath: string;
+  targetContent: string;
+  framework: string | null;
+  notes: string | null;
+  structuralNote: string | null;
+  baseBranch: string;
+  baseSha: string;
+  sourcePrNumber: number | null;
+  status: TestDraftStatus;
+  branchName: string | null;
+  commitSha: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Shown wherever a draft is displayed or a PR is described. */
+export const AI_DRAFT_DISCLAIMER =
+  'AI-generated and unverified. The tests have not been run and CI has not reported a result.';
+
+const TEST_DIR_SEGMENTS = new Set(['test', 'tests', '__tests__', 'spec', 'specs', '__specs__']);
+const EXCLUDED_SEGMENTS = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  'coverage',
+  '.next',
+  'vendor',
+  '__pycache__',
+  '.venv',
+  'venv',
+  'target',
+]);
+const TEST_FILE_PATTERNS: RegExp[] = [
+  /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/i,
+  /_test\.(?:py|go|rb)$/i,
+  /^test_.*\.py$/i,
+  /_spec\.rb$/i,
+  /Test\.(?:java|kt|kts|cs|scala|swift)$/,
+];
+
+export interface PathCheck {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * Client-side mirror of the backend path guard, so unsafe paths are blocked
+ * before a request is even sent. The backend re-validates — this is UX, not the
+ * security boundary.
+ */
+export function validateProposedTestPath(rawPath: string): PathCheck {
+  if (typeof rawPath !== 'string' || rawPath.trim().length === 0) {
+    return { ok: false, reason: 'A test file path is required.' };
+  }
+  const path = rawPath.trim();
+  if (path.includes('\\')) return { ok: false, reason: 'Use forward slashes in the path.' };
+  if (path.startsWith('/') || /^[a-zA-Z]:/.test(path)) {
+    return { ok: false, reason: 'The path must be relative to the repository root.' };
+  }
+  if (path.length > 400) return { ok: false, reason: 'The path is too long.' };
+
+  const segments = path.split('/');
+  if (segments.some((segment) => segment === '..')) {
+    return { ok: false, reason: 'The path must not contain ".." segments.' };
+  }
+  if (segments.some((segment) => segment === '')) {
+    return { ok: false, reason: 'The path must not contain empty segments.' };
+  }
+  if (segments.some((segment) => EXCLUDED_SEGMENTS.has(segment.toLowerCase()))) {
+    return { ok: false, reason: 'The path points into an excluded directory.' };
+  }
+
+  const base = path.split('/').pop() ?? '';
+  const inTestDir = path
+    .split('/')
+    .slice(0, -1)
+    .some((segment) => TEST_DIR_SEGMENTS.has(segment.toLowerCase()));
+  if (!inTestDir && !TEST_FILE_PATTERNS.some((re) => re.test(base))) {
+    return { ok: false, reason: 'This does not look like a test file path.' };
+  }
+  return { ok: true };
+}
+
+/** A draft can only be edited while it is still pending. */
+export function isDraftEditable(draft: TestDraft | null): boolean {
+  return Boolean(draft && draft.status === 'DRAFT');
+}
+
+/**
+ * The single gate for the "Create test PR" button: the draft must be pending
+ * AND the developer must have ticked the explicit confirmation.
+ */
+export function canCreateTestPr(draft: TestDraft | null, confirmed: boolean): boolean {
+  return Boolean(draft && draft.status === 'DRAFT' && confirmed);
+}
+
+export const DRAFT_STATUS_LABELS: Record<TestDraftStatus, string> = {
+  DRAFT: 'Pending review',
+  PR_CREATED: 'PR created',
+  DISCARDED: 'Discarded',
+};
+
+export function draftStatusLabel(status: TestDraftStatus): string {
+  return DRAFT_STATUS_LABELS[status] ?? status;
+}
