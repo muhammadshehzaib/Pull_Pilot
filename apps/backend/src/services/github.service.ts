@@ -352,5 +352,124 @@ export class GitHubService {
       return { ok: false, error: message };
     }
   }
+
+  /* ---------------------------------------------------------------------- */
+  /* Test-draft PR plumbing                                                   */
+  /*                                                                          */
+  /* These back the "create a test PR" flow. They are deliberately explicit   */
+  /* and few: a branch, a file write, a PR lookup and a PR create. Each is    */
+  /* idempotent-friendly so a retried request cannot create duplicates.       */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Head commit SHA of a branch, or null when the branch does not exist.
+   *
+   * Used both to read the current base (for staleness detection) and to test
+   * whether our draft branch already exists on retry.
+   */
+  async getBranchHeadSha(owner: string, repo: string, branch: string): Promise<string | null> {
+    try {
+      const { data } = await this.octokit.git.getRef({
+        owner,
+        repo,
+        ref: `heads/${branch}`,
+      });
+      return data.object.sha;
+    } catch (err: any) {
+      const status = err.status ?? err?.response?.status;
+      if (status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** Creates a branch pointing at `sha`. Assumes it does not already exist. */
+  async createBranch(owner: string, repo: string, branch: string, sha: string): Promise<void> {
+    await this.octokit.git.createRef({
+      owner,
+      repo,
+      ref: `refs/heads/${branch}`,
+      sha,
+    });
+  }
+
+  /**
+   * Creates or updates a file on `branch` and returns the resulting commit SHA.
+   *
+   * Existing files need their blob SHA in the update payload, so the current
+   * file is looked up first. A 404 simply means "create".
+   */
+  async upsertFile(
+    owner: string,
+    repo: string,
+    path: string,
+    content: string,
+    message: string,
+    branch: string,
+  ): Promise<string> {
+    let existingSha: string | undefined;
+    try {
+      const { data } = await this.octokit.repos.getContent({ owner, repo, path, ref: branch });
+      if (!Array.isArray(data) && 'sha' in data) existingSha = data.sha;
+    } catch (err: any) {
+      const status = err.status ?? err?.response?.status;
+      if (status !== 404) throw err;
+    }
+
+    const { data } = await this.octokit.repos.createOrUpdateFileContents({
+      owner,
+      repo,
+      path,
+      message,
+      content: Buffer.from(content, 'utf-8').toString('base64'),
+      branch,
+      ...(existingSha ? { sha: existingSha } : {}),
+    });
+
+    return data.commit.sha ?? '';
+  }
+
+  /**
+   * Finds an open PR whose head is `owner:branch`, or null.
+   *
+   * This is the idempotency guard: before opening a PR we check whether a
+   * previous attempt already opened one for the same draft branch.
+   */
+  async findPullRequestByHead(
+    owner: string,
+    repo: string,
+    head: string,
+    base?: string,
+  ): Promise<{ number: number; htmlUrl: string } | null> {
+    const { data } = await this.octokit.pulls.list({
+      owner,
+      repo,
+      head,
+      state: 'open',
+      per_page: 10,
+      ...(base ? { base } : {}),
+    });
+    const pr = data[0];
+    return pr ? { number: pr.number, htmlUrl: pr.html_url } : null;
+  }
+
+  /** Opens a pull request and returns its number and URL. */
+  async createPullRequest(
+    owner: string,
+    repo: string,
+    title: string,
+    head: string,
+    base: string,
+    body: string,
+  ): Promise<{ number: number; htmlUrl: string }> {
+    const { data } = await this.octokit.pulls.create({
+      owner,
+      repo,
+      title,
+      head,
+      base,
+      body,
+    });
+    return { number: data.number, htmlUrl: data.html_url };
+  }
 }
 

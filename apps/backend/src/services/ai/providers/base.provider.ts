@@ -10,6 +10,12 @@ import {
   normalizeTestGapScenarios,
 } from '../../test-gap/test-gap-types';
 import { buildTestGapPrompt, TEST_GAP_SYSTEM_PROMPT } from '../../test-gap/test-gap-prompt';
+import {
+  type TestDraftInput,
+  type TestDraftResult,
+  normalizeTestDraft,
+} from '../../test-gap/test-draft-types';
+import { buildTestDraftPrompt, TEST_DRAFT_SYSTEM_PROMPT } from '../../test-gap/test-draft-prompt';
 
 export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
@@ -87,6 +93,23 @@ export abstract class BaseAiProvider {
       signal: options?.signal,
     });
     return normalizeTestGapScenarios(raw);
+  }
+
+  /**
+   * Drafts the actual test body for one missing scenario.
+   *
+   * The model is instructed to return `{ insufficientContext: true, reason }`
+   * rather than guess when it cannot write a test against the real APIs; the
+   * normalized result carries that signal through so the caller never opens an
+   * empty editor or commits invented code.
+   */
+  async generateTestDraft(input: TestDraftInput, options?: AnalyzeOptions): Promise<TestDraftResult> {
+    const raw = await this.completeJson({
+      systemPrompt: TEST_DRAFT_SYSTEM_PROMPT,
+      userPrompt: buildTestDraftPrompt(input),
+      signal: options?.signal,
+    });
+    return normalizeTestDraft(raw);
   }
 
   /**
