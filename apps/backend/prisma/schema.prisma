@@ -142,6 +142,8 @@ model Repository {
   feedbackAdaptationEnabled      Boolean @default(false)
   feedbackAdaptationRevision     Int @default(0)
   ruleAuditEvents                RuleAuditEvent[]
+  analyticsStartedAt             DateTime @default(now())
+  reviewAnalyticsFacts           ReviewAnalyticsFact[]
 
   @@map("repositories")
   @@unique([installationId, githubRepoId])
@@ -344,6 +346,10 @@ enum JobStatus {
 }
 
 model AnalysisJob {
+  completedAt                   DateTime?
+  analyticsRevision             Int @default(0)
+  analyticsHash                 String?
+  analyticsFacts                ReviewAnalyticsFact[]
   findingSnapshot               Int      @default(0)
   findingSnapshotHash           String?
   id              String          @id @default(uuid())
@@ -364,7 +370,42 @@ model AnalysisJob {
 
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])
+  @@index([repositoryId, status, createdAt])
   @@map("analysis_jobs")
+}
+
+/// Immutable, bounded numeric snapshot. No source, notes or generated code.
+model ReviewAnalyticsFact {
+  id String @id @default(uuid())
+  repositoryId String
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  analysisJobId String
+  analysisJob AnalysisJob @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+  artifactRevision Int
+  findingSnapshot Int
+  referenceId String
+  eventType EventType
+  completedAt DateTime
+  jobCreatedAt DateTime
+  expiresAt DateTime
+  timestampQuality String
+  metricsVersion String
+  riskAlgorithmVersion String
+  configurationSignature String
+  riskScore Float?
+  criticalCount Int
+  highCount Int
+  mediumCount Int
+  lowCount Int
+  infoCount Int
+  securityCount Int
+  testGapCount Int?
+  coverage Json
+  @@unique([analysisJobId, artifactRevision])
+  @@index([repositoryId, completedAt])
+  @@index([repositoryId, referenceId, completedAt])
+  @@index([expiresAt])
+  @@map("review_analytics_facts")
 }
 
 enum BehavioralRunStatus {

@@ -40,6 +40,7 @@ export async function clearRepositoryHistory(repositoryId: string) {
     await tx.findingOccurrence.deleteMany({ where: { repositoryId } });
     await dirtyHistory(tx, repositoryId);
     await tx.ruleAuditEvent.deleteMany({ where: { repositoryId } });
+    await tx.reviewAnalyticsFact.deleteMany({ where: { repositoryId } });
     await tx.repository.update({ where: { id: repositoryId }, data: { historicalIntelligenceEnabled: false,
       feedbackAdaptationEnabled: false, feedbackAdaptationRevision: { increment: 1 } } });
   });

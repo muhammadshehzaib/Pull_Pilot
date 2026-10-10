@@ -12,6 +12,7 @@ import jobRoutes from './routes/job.routes';
 import testDraftRoutes from './routes/test-draft.routes';
 import billingRoutes from './routes/billing.routes';
 import behavioralRoutes from './routes/behavioral.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 
 const app: Application = express();
 
@@ -51,6 +52,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/test-drafts', testDraftRoutes);
 app.use('/api/behavioral', behavioralRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 export default app;
 

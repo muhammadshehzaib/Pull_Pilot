@@ -20,6 +20,7 @@ import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import { recordJobFindings } from '../services/historical/occurrence.service';
+import { RISK_ALGORITHM_VERSION } from '../services/analytics/facts';
 import { retrieveFeedbackAdaptation, adaptationAttribution } from '../services/feedback-loop/adaptation.service';
 import { retrieveHistoricalMemory, type HistoricalReviewContext } from '../services/historical/review-memory.service';
 import {
@@ -584,6 +585,8 @@ export const analysisWorker = new Worker(
       await assertNotSuperseded();
 
       await recordJobFindings(jobId, repositoryId, suggestions, {
+            analyticsConfiguration: { riskAlgorithmVersion: RISK_ALGORITHM_VERSION, repoConfig,
+              provider: vault.provider, rules: dbRules.map(r => ({ id: r.id, updatedAt: r.updatedAt })) },
             suggestions,
             ignoredFiles,
             includedFiles,

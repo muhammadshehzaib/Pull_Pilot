@@ -69,6 +69,8 @@ async function startServer() {
     startBehavioralRetentionSweep();
     const { startHistoricalMaintenance } = await import('./workers/historical-maintenance');
     startHistoricalMaintenance();
+    const { startAnalyticsRetentionSweep } = await import('./workers/analytics-retention');
+    startAnalyticsRetentionSweep();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);

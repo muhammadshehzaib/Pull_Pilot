@@ -8,6 +8,7 @@ vi.mock('../config/prisma', () => {
     findingOccurrence: { findMany: vi.fn(), deleteMany: vi.fn() },
     repository: { update: vi.fn() }, historicalPattern: { deleteMany: vi.fn() },
     ruleAuditEvent: { findMany: vi.fn(), deleteMany: vi.fn() },
+    reviewAnalyticsFact: { deleteMany: vi.fn() },
   };
   db.$transaction = vi.fn(async (fn: any) => fn(db)); return { default: db };
 });
@@ -39,6 +40,7 @@ describe('bounded historical maintenance', () => {
     db.$queryRaw.mockResolvedValueOnce([{ id: 'repo' }]);
     await clearRepositoryHistory('repo');
     expect(db.findingOccurrence.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'repo' } });
+    expect(db.reviewAnalyticsFact.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'repo' } });
     expect(db.historicalPattern.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'repo' } });
     expect(db.repository.update).toHaveBeenLastCalledWith({ where: { id: 'repo' }, data: { historicalIntelligenceEnabled: false,
       feedbackAdaptationEnabled: false, feedbackAdaptationRevision: { increment: 1 } } });

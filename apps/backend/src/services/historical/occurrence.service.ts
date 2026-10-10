@@ -4,6 +4,7 @@ import prisma from '../../config/prisma';
 import { normalizeStoredSuggestions, type AiSuggestion } from '../ai/finding-taxonomy';
 import { generateFingerprint, buildFindingSummary } from './fingerprint.service';
 import { dirtyHistory, historyCutoff, lockHistoricalRepository } from './state';
+import { publishReviewAnalytics } from '../analytics/facts';
 
 /** Exact artifact identity, not a fuzzy cross-review pattern or array position. */
 export function findingIdentity(f: AiSuggestion): string {
@@ -43,7 +44,10 @@ export async function recordJobFindings(
     if (completedResults !== undefined) {
       await tx.analysisJob.update({ where: { id: jobId }, data: { status: 'COMPLETED', results: completedResults } });
     }
-    if (job.findingSnapshotHash === hash) return;
+    if (job.findingSnapshotHash === hash) {
+      if (completedResults !== undefined) await publishReviewAnalytics(tx, job, completedResults, job.findingSnapshot);
+      return;
+    }
     const revision = job.findingSnapshot + 1;
     await tx.findingOccurrence.updateMany({ where: { analysisJobId: jobId, superseded: false }, data: { superseded: true } });
     const unique = new Map(normalized.map(f => [findingIdentity(f), f]));
@@ -58,6 +62,7 @@ export async function recordJobFindings(
     });
     await tx.analysisJob.update({ where: { id: jobId }, data: { findingSnapshot: revision, findingSnapshotHash: hash } });
     await dirtyHistory(tx, repositoryId);
+    if (completedResults !== undefined) await publishReviewAnalytics(tx, job, completedResults, revision);
   }, { timeout: 15000 });
 }
 

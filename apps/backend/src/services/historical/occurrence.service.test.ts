@@ -10,6 +10,7 @@ vi.mock('../../config/prisma', () => {
     analysisJob: { findFirst: vi.fn(), update: vi.fn() },
     findingOccurrence: { updateMany: vi.fn(), createMany: vi.fn() },
     historicalPattern: { deleteMany: vi.fn() },
+    reviewAnalyticsFact: { create: vi.fn() },
   };
   db.$transaction = vi.fn(async (fn: any) => fn(db));
   return { default: db };
