@@ -55,6 +55,8 @@ Behavioral verification (Phase 6) supports owner-approved scenarios against an e
 
 Historical intelligence (Phase 8) adds explicit finding feedback, recurring cross-PR patterns, and opt-in repository memory. History now exposes feedback and insights, with durable finding snapshots, concurrent-edit protection, bounded retention, and untrusted historical context separated from owner rules. Apply the historical integrity migration before deploying; see [setup, safety boundaries, and tests](docs/historical-intelligence.md). Historical context is not independent verification or demonstrated improvement in review accuracy.
 
+The developer feedback loop (Phase 9) adds Helpful / Not useful, independent dismissal and reported-fix workflows, confirmed finding-to-rule conversion, and opt-in explainable presentation adaptation. Original findings, severity, security evidence, and risk scores remain unchanged. Apply the developer-feedback-loop migration and deploy the updated rule editor/API together; see [deployment, behavior, safety, and verification](docs/developer-feedback-loop.md).
+
 ```
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
 │   Next.js Web    │◄──────│  Express API     │──────►│   PostgreSQL     │

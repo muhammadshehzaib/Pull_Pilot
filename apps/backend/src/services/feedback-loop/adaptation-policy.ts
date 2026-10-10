@@ -20,10 +20,10 @@ export interface AdaptationRecommendation {
   fingerprint: string; reviewedPrs: number; rejectedPrs: number; reason: string;
   reasons: Record<string, number>; recommendation: string; expiresAt: string;
 }
-export function deriveRecommendations(rows: FeedbackEvidence[]): AdaptationRecommendation[] {
+export function deriveRecommendations(rows: FeedbackEvidence[], now = new Date()): AdaptationRecommendation[] {
   const latest = new Map<string, FeedbackEvidence>();
   for (const row of rows) {
-    if (!row.feedback) continue;
+    if (!row.feedback || !(row.expiresAt.getTime() > now.getTime())) continue;
     const key = JSON.stringify([row.fingerprint, row.analysisJob.referenceId]);
     const previous = latest.get(key);
     // Ties fail conservatively: acceptance/reset wins over rejection.

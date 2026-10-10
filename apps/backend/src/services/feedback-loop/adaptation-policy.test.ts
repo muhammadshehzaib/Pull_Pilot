@@ -30,8 +30,9 @@ describe('feedback_v1 policy', () => {
     expect(deriveRecommendations([row(0), row(1), row(2), row(3), row(4, 'NEEDS_REVIEW'), { ...row(5), feedback: null }])).toEqual([]);
   });
   it('uses earliest evidence expiry and preserves path case', () => {
-    const rows = Array.from({ length: 5 }, (_, i) => row(i)); rows[0].expiresAt = new Date('2026-02-01');
-    expect(deriveRecommendations(rows)[0].expiresAt).toBe('2026-02-01T00:00:00.000Z');
+    const rows = Array.from({ length: 5 }, (_, i) => row(i)); rows[0].expiresAt = new Date('2098-02-01');
+    expect(deriveRecommendations(rows)[0].expiresAt).toBe('2098-02-01T00:00:00.000Z');
+    expect(deriveRecommendations(rows, new Date('2098-02-01'))).toEqual([]);
     expect(generateFingerprint({ ...finding, filePath: 'src/auth.ts' })).not.toBe(generateFingerprint(finding));
   });
   it.each(['FALSE_POSITIVE', 'INTENDED_BEHAVIOR', 'STYLE_PREFERENCE', 'DUPLICATE', 'OUT_OF_SCOPE', 'OTHER'])('explains reason %s without conflating it with false positives', reason => {
