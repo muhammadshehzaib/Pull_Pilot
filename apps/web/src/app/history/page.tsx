@@ -103,6 +103,13 @@ export default function HistoryPage() {
   // no way to switch to a different one.
   const [knownRepos, setKnownRepos] = useState<{ id: string; fullName: string }[]>([]);
 
+  // Dashboard drilldowns open an exact owned review, independent of list pagination.
+  useEffect(() => {
+    if (!user) return;
+    const id = new URLSearchParams(window.location.search).get('job');
+    if (id && /^[a-zA-Z0-9-]{1,64}$/.test(id)) void openJob(id);
+  }, [user]);
+
   // When scoping to the selected PR, the referenceId drives the request. PUSH
   // reviews key on a commit SHA, so scoping only makes sense for pull requests.
   const scopedReferenceId =

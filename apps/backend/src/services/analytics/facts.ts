@@ -32,7 +32,8 @@ export function extractAnalytics(results: unknown) {
   for (const g of groups.values()) { counts[countKey[g.severity]]++; if (g.security) counts.securityCount++; }
   const gaps = object(raw.testGaps);
   const scenarios = Array.isArray(gaps.scenarios) ? gaps.scenarios : [];
-  const testGapCount = gaps.analyzed === true ? new Set(scenarios.filter(s => s && typeof s.filePath === 'string' &&
+  const gapsAnalyzed = gaps.analyzed === true && Array.isArray(gaps.scenarios);
+  const testGapCount = gapsAnalyzed ? new Set(scenarios.filter(s => s && typeof s.filePath === 'string' &&
     typeof s.scenario === 'string' && Number.isSafeInteger(s.lineNumber)).map(s => JSON.stringify([
       s.filePath.replace(/\\/g, '/'), s.lineNumber, s.scenario.trim().toLowerCase().replace(/\s+/g, ' '),
     ]))).size : null;
@@ -41,7 +42,8 @@ export function extractAnalytics(results: unknown) {
   const security = object(coverage.security);
   const normalizedCoverage = { security: { SAST: scan(security.SAST), SECRETS: scan(security.SECRETS), DEPENDENCIES: scan(security.DEPENDENCIES) },
     context: ['AVAILABLE', 'PARTIAL', 'NOT_RUN'].includes(coverage.context) ? coverage.context as string : 'NOT_RUN',
-    testGaps: gaps.analyzed === true ? gaps.evidence && !gaps.evidence.incomplete && !gaps.evidence.treeTruncated ? 'AVAILABLE' : 'PARTIAL' : 'NOT_RUN',
+    testGaps: gapsAnalyzed ? gaps.evidence && !gaps.evidence.incomplete && !gaps.evidence.treeTruncated ? 'AVAILABLE' : 'PARTIAL' : 'NOT_RUN',
+    confidence: ['LOW', 'MEDIUM', 'HIGH'].includes(coverage.confidence) ? coverage.confidence as string : 'LOW',
     includedFiles: Number.isSafeInteger(coverage.includedFiles) && coverage.includedFiles >= 0 ? coverage.includedFiles as number : 0,
     ignoredFiles: Number.isSafeInteger(coverage.ignoredFiles) && coverage.ignoredFiles >= 0 ? coverage.ignoredFiles as number : 0,
     rulesSkipped: Number.isSafeInteger(coverage.rules?.skipped) && coverage.rules.skipped >= 0 ? coverage.rules.skipped as number : 0,

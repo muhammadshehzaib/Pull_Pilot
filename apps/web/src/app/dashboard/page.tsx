@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Terminal, Activity, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { UsageMeter } from '../../components/UsageMeter';
+import { EngineeringHealth } from '../../components/EngineeringHealth';
 import { useAuth } from '../../lib/useAuth';
 import { BACKEND_URL } from '../../utils/constants';
 import { isInProgress, isTerminalFailure, statusLabel } from '../../lib/review';
@@ -37,10 +38,12 @@ export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [healthRefresh, setHealthRefresh] = useState(0);
 
   useEffect(() => {
     if (!user) return;
     const socket = io(BACKEND_URL, { withCredentials: true });
+    let healthTimer: ReturnType<typeof setTimeout> | undefined;
 
     socket.on('connect', () => setIsConnected(true));
     socket.on('disconnect', () => setIsConnected(false));
@@ -54,10 +57,14 @@ export default function DashboardPage() {
         timestamp: new Date(),
       };
       setLogs((prev) => [newEntry, ...prev].slice(0, 20));
+      if (data.status === 'COMPLETED' && !healthTimer) healthTimer = setTimeout(() => {
+        setHealthRefresh(n => n + 1); healthTimer = undefined;
+      }, 1000);
     });
 
     return () => {
       socket.disconnect();
+      clearTimeout(healthTimer);
     };
   }, [user]);
 
@@ -71,13 +78,14 @@ export default function DashboardPage() {
 
       <main className="main-content">
         <header style={{ marginBottom: '1.75rem' }}>
-          <h1 className="page-title">Activity</h1>
+          <h1 className="page-title">Engineering Health</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-            Live review runs and usage quotas across your connected repositories.
+            Evidence-backed PR trends, review activity, and usage across your connected repositories.
           </p>
         </header>
 
         <UsageMeter />
+        <EngineeringHealth key={user.id} refreshKey={healthRefresh} />
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '2rem' }}>
           <div>
