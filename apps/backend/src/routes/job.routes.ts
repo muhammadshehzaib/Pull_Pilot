@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { JobController } from '../controllers/job.controller';
 import { TestDraftController } from '../controllers/test-draft.controller';
+import { FindingController } from '../controllers/finding.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
 
 const router = Router();
@@ -12,5 +13,11 @@ router.get('/:id', JobController.get);
 // /api/test-drafts). Path does not overlap `/:id`.
 router.get('/:id/test-drafts', TestDraftController.listForJob);
 router.post('/:id/cancel', JobController.cancel);
+
+// Phase 8 Historical Intelligence — Finding occurrences and developer feedback
+router.get('/:id/findings', FindingController.listForJob);
+router.put('/:id/findings/:findingId/feedback', FindingController.updateFeedback);
+router.get('/:id/findings/:findingId/feedback/events', FindingController.getFeedbackEvents);
+router.post('/:id/findings/backfill', FindingController.backfillLegacyFindings);
 
 export default router;

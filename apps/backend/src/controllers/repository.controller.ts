@@ -265,4 +265,50 @@ export class RepositoryController {
 
     return res.status(202).json({ jobId: job.id, status: 'QUEUED' });
   }
+
+  static async updateHistoricalSettings(req: Request, res: Response) {
+    const id = String(req.params.id);
+    const { enabled } = req.body ?? {};
+
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+
+    const repo = await prisma.repository.findFirst({
+      where: { id, userId: req.auth!.userId },
+    });
+
+    if (!repo) {
+      return res.status(404).json({ error: 'Repository not found or access denied' });
+    }
+
+    const updated = await prisma.repository.update({
+      where: { id: repo.id },
+      data: { historicalIntelligenceEnabled: enabled },
+      select: { id: true, historicalIntelligenceEnabled: true },
+    });
+
+    return res.json({
+      repositoryId: updated.id,
+      historicalIntelligenceEnabled: updated.historicalIntelligenceEnabled,
+    });
+  }
+
+  static async getHistoricalSettings(req: Request, res: Response) {
+    const id = String(req.params.id);
+
+    const repo = await prisma.repository.findFirst({
+      where: { id, userId: req.auth!.userId },
+      select: { id: true, historicalIntelligenceEnabled: true },
+    });
+
+    if (!repo) {
+      return res.status(404).json({ error: 'Repository not found or access denied' });
+    }
+
+    return res.json({
+      repositoryId: repo.id,
+      historicalIntelligenceEnabled: repo.historicalIntelligenceEnabled,
+    });
+  }
 }

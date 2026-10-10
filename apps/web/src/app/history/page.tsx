@@ -53,6 +53,7 @@ import {
 import { TestDraftFlow } from '../../components/TestDraftFlow';
 import { BehavioralVerification } from '../../components/BehavioralVerification';
 import { ExplainableRiskCard } from '../../components/ExplainableRiskCard';
+import { FindingFeedbackControl } from '../../components/FindingFeedbackControl';
 
 export interface JobSummary {
   id: string;

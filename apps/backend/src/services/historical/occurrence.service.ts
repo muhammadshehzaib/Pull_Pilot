@@ -81,3 +81,19 @@ export async function recordJobFindings(
     `📝 [Phase8] Recorded ${rows.length} finding occurrence(s) for job ${jobId} (snapshotSeq=${snapshotSeq}).`,
   );
 }
+
+/**
+ * Retrieves non-superseded occurrences for a job, sorted by createdAt.
+ */
+export async function getOccurrencesForJob(jobId: string) {
+  return prisma.findingOccurrence.findMany({
+    where: {
+      analysisJobId: jobId,
+      superseded: false,
+    },
+    include: {
+      feedback: true,
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+}
