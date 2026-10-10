@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'node:path';
 dotenv.config({ path: path.resolve(__dirname, '../../../../.env'), quiet: true });
-dotenv.config({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 async function main() {
   const args = process.argv.slice(2);
   if (args.some(a => !/^--(apply|after=[a-zA-Z0-9-]{1,64}|batch-size=\d{1,3})$/.test(a)))

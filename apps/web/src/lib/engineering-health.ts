@@ -11,7 +11,7 @@ export interface EngineeringHealthReport {
   generatedAt: string;
   metrics: { repositories: number; reviewedPRs: number | null; criticalFindings: number | null; securityFindings: number | null;
     suggestedTestGaps: number | null; developerReportedFixes: number | null; averageRisk: number | null };
-  coverage: { capturedPRs: number; scoredPRs: number; testGapScannedPRs: number; legacyJobsWithoutCompletionDate: number; approximatePRs: number;
+  coverage: { capturedPRs: number; scoredPRs: number; testGapScannedPRs: number; partialEvidencePRs: number; legacyJobsWithoutCompletionDate: number; approximatePRs: number;
     unscoredPRs: number; fixCoverageComplete: boolean; workflowQueryLimited: boolean; queryLimited: boolean; repositoryListLimited: boolean;
     trackingStartedAt: string; partial: boolean };
   comparison: { available: boolean; reason: string | null; currentAverage: number | null; previousAverage: number | null;

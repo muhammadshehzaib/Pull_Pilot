@@ -8,6 +8,7 @@ export const RISK_ALGORITHM_VERSION = 'risk_v2.1';
 export const ANALYTICS_RETENTION_DAYS = 180; // 90 current + 90 comparison, not raw feedback retention.
 const object = (value: unknown): Record<string, any> => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 export function stableJson(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
   if (Array.isArray(value)) return JSON.stringify(value.map(v => JSON.parse(stableJson(v))));
   if (value && typeof value === 'object') return JSON.stringify(Object.fromEntries(Object.entries(value)
     .filter(([, v]) => v !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, JSON.parse(stableJson(v))])));
@@ -48,7 +49,7 @@ export function extractAnalytics(results: unknown) {
     ignoredFiles: Number.isSafeInteger(coverage.ignoredFiles) && coverage.ignoredFiles >= 0 ? coverage.ignoredFiles as number : 0,
     rulesSkipped: Number.isSafeInteger(coverage.rules?.skipped) && coverage.rules.skipped >= 0 ? coverage.rules.skipped as number : 0,
     behavioralExecuted: Number.isSafeInteger(coverage.behavioral?.executed) && coverage.behavioral.executed >= 0 ? coverage.behavioral.executed as number : 0,
-    behavioralIncomplete: !coverage.behavioral || coverage.behavioral.notRun > 0 || coverage.behavioral.timedOut > 0 || coverage.behavioral.errors > 0,
+    behavioralIncomplete: !coverage.behavioral || !coverage.behavioral.generated || coverage.behavioral.notRun > 0 || coverage.behavioral.timedOut > 0 || coverage.behavioral.errors > 0,
   };
   const riskScore = risk.version === 2 && risk.direction === 'HIGHER_IS_RISKIER' && typeof risk.score === 'number' &&
     Number.isFinite(risk.score) && risk.score >= 0 && risk.score <= 100 ? risk.score : null;

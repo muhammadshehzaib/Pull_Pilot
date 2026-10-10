@@ -43,6 +43,6 @@ describe('bounded historical maintenance', () => {
     expect(db.reviewAnalyticsFact.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'repo' } });
     expect(db.historicalPattern.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'repo' } });
     expect(db.repository.update).toHaveBeenLastCalledWith({ where: { id: 'repo' }, data: { historicalIntelligenceEnabled: false,
-      feedbackAdaptationEnabled: false, feedbackAdaptationRevision: { increment: 1 } } });
+      feedbackAdaptationEnabled: false, feedbackAdaptationRevision: { increment: 1 }, analyticsStartedAt: expect.any(Date) } });
   });
 });

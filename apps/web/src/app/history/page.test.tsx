@@ -48,6 +48,22 @@ async function open() {
   return user;
 }
 describe('Phase 8 history page integration', () => {
+  it('reports unavailable dashboard deep links without inventing review data', async () => {
+    window.history.replaceState(null, '', '/history?job=deleted');
+    try {
+      render(<HistoryPage />);
+      expect(await screen.findByRole('alert')).toHaveTextContent('review could not be loaded');
+      expect(screen.queryByText('Issue high-occ')).toBeNull();
+    } finally { window.history.replaceState(null, '', '/history'); }
+  });
+  it('opens an exact dashboard drilldown even when it is not the selected list row', async () => {
+    window.history.replaceState(null, '', '/history?job=job-1');
+    try {
+      render(<HistoryPage />);
+      expect(await screen.findByText('Issue high-occ')).toBeInTheDocument();
+      expect(mockApi).toHaveBeenCalledWith('/api/jobs/job-1');
+    } finally { window.history.replaceState(null, '', '/history'); }
+  });
   it('shows all five actions, supports dismissal/restore, and keeps deprioritized findings expandable', async () => {
     job.results[0] = { ...job.results[0], adaptation: { policyVersion: 'feedback_v1', reviewedPrs: 5, rejectedPrs: 4, reason: 'STYLE_PREFERENCE' } };
     const user = await open();

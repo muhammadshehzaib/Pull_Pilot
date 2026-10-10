@@ -89,6 +89,7 @@ export default function HistoryPage() {
   const [selected, setSelected] = useState<JobDetail | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [detailError, setDetailError] = useState('');
   // 1-based page into the filtered list. Backend clamps out-of-range values,
   // but every navigation still goes through goToPage so the skeleton shows.
   const [page, setPage] = useState(1);
@@ -197,6 +198,7 @@ export default function HistoryPage() {
 
   async function openJob(id: string) {
     setLoadingDetail(true);
+    setDetailError('');
     try {
       const res = await api<{ job: JobDetail }>(`/api/jobs/${id}`);
       setSelected(res.job);
@@ -213,7 +215,7 @@ export default function HistoryPage() {
         )
       );
     } catch {
-      // ignore
+      setDetailError('This review could not be loaded. It may have been deleted or is unavailable.');
     } finally {
       setLoadingDetail(false);
     }
@@ -257,6 +259,7 @@ export default function HistoryPage() {
           </p>
         </header>
 
+        {detailError && <p role="alert">{detailError}</p>}
         <div
           className="history-filter-bar"
           style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}

@@ -93,7 +93,7 @@ export function EngineeringHealth({ refreshKey = 0 }: { refreshKey?: number }) {
       .catch(() => { if (!controller.signal.aborted) setDetailError('Records could not be loaded. Refresh to retry or renew an expired snapshot.'); });
     return () => controller.abort();
   }, [data, metric, reviewPage, repoPage]);
-  return <section className="glass-card" aria-label="Engineering health" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+  return <section className="glass-card engineering-health" aria-label="Engineering health" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
       <label>Period <select aria-label="Reporting period" value={range} onChange={e => setRange(e.target.value)}>
         <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option></select></label>
@@ -109,7 +109,8 @@ export function EngineeringHealth({ refreshKey = 0 }: { refreshKey?: number }) {
       <p>UTC: {data.scope.start} – {data.scope.end} (end exclusive). Updated {new Date(data.generatedAt).toLocaleString()}.</p>
       {data.coverage.partial && <p role="status">Partial evidence: {data.coverage.capturedPRs} captured PRs, {data.coverage.scoredPRs} scored,
         {' '}{data.coverage.testGapScannedPRs} analyzed for test gaps. {data.coverage.legacyJobsWithoutCompletionDate} legacy reviews have unknown completion dates;
-        {' '}{data.coverage.approximatePRs} approximate PRs are excluded. Unavailable is not zero or a passing scan.</p>}
+        {' '}{data.coverage.approximatePRs} approximate PRs are excluded. {data.coverage.partialEvidencePRs} captured PRs have incomplete scan or execution evidence.
+        {' '}Unavailable is not zero or a passing scan.</p>}
       {data.coverage.queryLimited && <p role="alert">Query limit reached. Narrow the reporting period or repository filter; totals are unavailable.</p>}
       {data.coverage.repositoryListLimited && <p role="status">Repository picker and breakdown are limited to the first 500 repositories.</p>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>

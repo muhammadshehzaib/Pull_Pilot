@@ -1365,4 +1365,23 @@ button {
   cursor: pointer;
 }
 
+/* Engineering health is deliberately scoped: review history and the live feed
+   keep their existing layout and controls. */
+.engineering-health { min-width: 0; }
+.engineering-health h2 { font-size: 1rem; margin: 1.5rem 0 0.6rem; }
+.engineering-health p { color: var(--text-secondary); font-size: 0.85rem; line-height: 1.65; overflow-wrap: anywhere; }
+.engineering-health small { display: block; color: var(--text-secondary); font-size: 0.72rem; line-height: 1.6; }
+.engineering-health button, .engineering-health select {
+  color: var(--text-primary); background: var(--bg-subtle); border: 1px solid var(--border);
+  border-radius: 6px; padding: 0.45rem 0.65rem; font-size: 0.8rem;
+}
+.engineering-health button:disabled { opacity: 0.45; cursor: not-allowed; }
+.engineering-health button:focus-visible, .engineering-health select:focus-visible,
+.engineering-health a:focus-visible, .engineering-health summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.engineering-health table { width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left; margin-top: 1rem; }
+.engineering-health th, .engineering-health td { padding: 0.75rem 0.65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.engineering-health th { color: var(--text-secondary); font-size: 0.72rem; }
+.engineering-health td a { color: var(--accent); text-decoration: underline; }
+.engineering-health summary { cursor: pointer; color: var(--text-secondary); font-size: 0.8rem; }
+
 

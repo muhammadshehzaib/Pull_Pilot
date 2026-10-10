@@ -885,6 +885,7 @@ describe('analysis worker — test-gap analysis', () => {
     expect(finalResults.behavioral.scenarios[0]).toMatchObject({ stage: 'GENERATED', status: 'NOT_RUN' });
     expect(finalResults.riskV2).toMatchObject({ version: 2, direction: 'HIGHER_IS_RISKIER', enforcement: 'ADVISORY' });
     expect(finalResults.riskV2.coverage.behavioral.executed).toBe(0);
+    expect(finalResults.analyticsConfiguration).toMatchObject({ riskAlgorithmVersion: 'risk_v2.1', pipelineVersion: 'review_pipeline_1' });
     // Generating a scenario does not become an executed test or a legacy finding.
     expect(finalResults.suggestions).toEqual([]);
     expect(finalResults.risk.score).toBe(0);

@@ -14,7 +14,7 @@ export function parseScope(query: Record<string, unknown>, now = new Date()) {
   if (repositoryId !== undefined && (typeof repositoryId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(repositoryId)))
     throw new DashboardError(400, 'Invalid repository');
   const asOf = query.asOf;
-  const end = asOf === undefined ? now : typeof asOf === 'string' && /^\d{4}-\d\d-\d\dT/.test(asOf) ? new Date(asOf) : new Date(NaN);
+  const end = asOf === undefined ? now : typeof asOf === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(asOf) ? new Date(asOf) : new Date(NaN);
   if (!Number.isFinite(end.getTime()) || end > now || now.getTime() - end.getTime() > DAY)
     throw new DashboardError(400, 'Snapshot expired or invalid; refresh the dashboard');
   const days = Number((range as string).slice(0, -1));
@@ -57,7 +57,8 @@ export function average(facts: ReviewAnalyticsFact[]) {
 const profile = (f: ReviewAnalyticsFact) => {
   const c = f.coverage as Record<string, any>;
   return digest({ config: f.configurationSignature, algorithm: f.riskAlgorithmVersion, security: c.security,
-    context: c.context, testGaps: c.testGaps, hasIgnoredFiles: c.ignoredFiles > 0, hasSkippedRules: c.rulesSkipped > 0,
+    context: c.context, testGaps: c.testGaps, confidence: c.confidence, hasIncludedFiles: c.includedFiles > 0,
+    hasIgnoredFiles: c.ignoredFiles > 0, hasSkippedRules: c.rulesSkipped > 0,
     behavioralExecuted: c.behavioralExecuted > 0, behavioralIncomplete: c.behavioralIncomplete });
 };
 export function compareRisk(current: ReviewAnalyticsFact[], previous: ReviewAnalyticsFact[], trackingStart: Date, previousStart: Date) {

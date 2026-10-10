@@ -30,7 +30,7 @@ import {
 } from '../services/ai/finding-format';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
 import { advanceReview, markReviewTerminal, wasSuperseded } from './job-state';
-import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS } from '../utils/constants';
+import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS, CLAUDE_MODEL, GROK_MODEL } from '../utils/constants';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -586,7 +586,9 @@ export const analysisWorker = new Worker(
 
       await recordJobFindings(jobId, repositoryId, suggestions, {
             analyticsConfiguration: { riskAlgorithmVersion: RISK_ALGORITHM_VERSION, repoConfig,
-              provider: vault.provider, rules: dbRules.map(r => ({ id: r.id, updatedAt: r.updatedAt })) },
+              pipelineVersion: 'review_pipeline_1', provider: vault.provider,
+              models: { openai: 'gpt-4o', claude: CLAUDE_MODEL, grok: GROK_MODEL, gemini: process.env.GEMINI_MODEL || 'gemini-2.5-flash' },
+              rules: dbRules.map(r => ({ id: r.id, updatedAt: r.updatedAt })).sort((a, b) => a.id.localeCompare(b.id)) },
             suggestions,
             ignoredFiles,
             includedFiles,

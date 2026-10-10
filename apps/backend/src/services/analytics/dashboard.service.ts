@@ -48,8 +48,16 @@ export async function engineeringHealth(actorId: string, scope: Scope) {
     }
     const fixCoverageComplete = eventRows.length <= MAX_EVENTS && precise.every(f => f.jobCreatedAt >= cutoff) && !hasUnknownDates && !limited;
     const gapScanned = precise.filter(f => f.testGapCount !== null).length;
+    const partialEvidencePRs = precise.filter(f => {
+      const c = f.coverage as Record<string, any>;
+      return c.context !== 'AVAILABLE' || c.testGaps !== 'AVAILABLE' || !c.includedFiles || c.rulesSkipped > 0 ||
+        c.behavioralIncomplete !== false || ['SAST', 'SECRETS', 'DEPENDENCIES'].some(p => c.security?.[p] !== 'FULL');
+    }).length;
     const trackingStart = repositories.reduce((date, r) => r.analyticsStartedAt > date ? r.analyticsStartedAt : date, new Date(0));
     const comparison = compareRisk(current, previous, trackingStart, scope.previousStart);
+    if (legacyJobs > 0 || repositoryCount > 500) Object.assign(comparison, { available: false,
+      reason: legacyJobs > 0 ? 'Legacy reviews have unknown completion dates; the comparison sample may be incomplete.' :
+        'Tracking metadata is bounded to 500 repositories; select a repository for comparison.', percentageChange: null });
     if (limited) Object.assign(comparison, { available: false, reason: 'Query limit reached; narrow the repository or date filter.', percentageChange: null });
     const names = new Map(repositories.map(r => [r.id, r.fullName]));
     const reviewRows = precise.map(f => ({ jobId: f.analysisJobId, repositoryId: f.repositoryId,
@@ -79,10 +87,11 @@ export async function engineeringHealth(actorId: string, scope: Scope) {
         developerReportedFixes: fixCoverageComplete ? reportedFixes : null,
         averageRisk: average(precise).value },
       coverage: { capturedPRs: precise.length, scoredPRs: scoredFacts.length, testGapScannedPRs: gapScanned,
+        partialEvidencePRs,
         legacyJobsWithoutCompletionDate: legacyJobs, approximatePRs: current.filter(f => !exact(f)).length,
         unscoredPRs: precise.length - scoredFacts.length, fixCoverageComplete, workflowQueryLimited: eventRows.length > MAX_EVENTS,
         queryLimited: limited, repositoryListLimited: repositories.length > 500, trackingStartedAt: trackingStart.toISOString(),
-        partial: limited || hasUnknownDates || gapScanned < precise.length || scoredFacts.length < precise.length || !fixCoverageComplete },
+        partial: limited || hasUnknownDates || partialEvidencePRs > 0 || gapScanned < precise.length || scoredFacts.length < precise.length || !fixCoverageComplete },
       comparison, trend: limited ? [] : riskTrend(facts, scope), repositories: paginate(breakdown),
       repositoryOptions: repositories.slice(0, 500).map(r => ({ id: r.id, fullName: r.fullName })), reviews: paginate(filtered) };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead, timeout: 15_000, maxWait: 5_000 });
