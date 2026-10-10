@@ -46,6 +46,13 @@ describe('behavioral dispatch', () => {
     const run = await startBehavioralRun(job, request, gh as any);
     expect(run.status).toBe('QUEUED'); expect(run.reason).toMatch(/UNCONFIRMED/); expect(JSON.stringify(run)).not.toContain('token and full content');
   });
+  it.each([403, 404, 422, 429])('persists definitive GitHub rejection %s as ERROR without losing the plan', async status => {
+    const gh = github(); gh.dispatchBehavioralWorkflow.mockRejectedValue(Object.assign(new Error('sensitive server body'), { status }));
+    m.update.mockImplementation(async ({ data }) => ({ id: 'run', plan, ...data }));
+    const run = await startBehavioralRun(job, request, gh as any);
+    expect(run.status).toBe('ERROR'); expect(run.plan).toEqual(plan);
+    expect(JSON.stringify(run)).not.toContain('sensitive server body');
+  });
   it('bounds daily and concurrent reservations', async () => {
     m.count.mockResolvedValue(10);
     await expect(startBehavioralRun(job, request, github() as any)).rejects.toMatchObject({ status: 429 });
@@ -76,6 +83,13 @@ describe('behavioral persistence', () => {
     expect(await completeBehavioralRun(run as any, '1', evidence)).toMatchObject({ id: 'run' });
     await expect(completeBehavioralRun(run as any, '2', evidence)).rejects.toMatchObject({ status: 409 });
     expect(m.snapshot).not.toHaveBeenCalled();
+  });
+  it('retains prior failure evidence when a later run has no executed assertions', async () => {
+    m.cas.mockResolvedValue({ count: 1 });
+    m.job.mockResolvedValue({ ...job, results: { ...job.results, behavioral: { ...baselineBehavioral(gaps), headSha: sha, scenarios: [{ ...baselineBehavioral(gaps).scenarios[0], status: 'FAILED', stage: 'EXECUTED', lastAssertionStatus: 'FAILED', lastAssertionRunId: 'prior' }] } } });
+    m.find.mockResolvedValue({ ...run, status: 'ERROR' });
+    await completeBehavioralRun(run as any, '1', [{ id, status: 'ERROR', steps: [] }]);
+    expect(m.snapshot.mock.calls[0][0].data.results.behavioral.scenarios[0]).toMatchObject({ status: 'ERROR', stage: 'GENERATED', lastAssertionStatus: 'FAILED', lastAssertionRunId: 'prior' });
   });
   it('reports expired execution as TIMED_OUT, never PASS, and supports old jobs', () => {
     expect(behavioralForJob({})).toBeUndefined();

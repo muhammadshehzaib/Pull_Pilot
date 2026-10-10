@@ -29,7 +29,7 @@ async function run(message) {
           try {
             const req = route.request();
             const destination = new URL(req.url());
-            if (req.method() !== 'GET' || destination.origin !== origin || ['websocket', 'eventsource', 'manifest'].includes(req.resourceType())) throw new Error('Unsupported resource');
+            if (req.method() !== 'GET' || destination.origin !== origin || ['websocket', 'eventsource', 'manifest'].includes(req.resourceType()) || (req.isNavigationRequest() && req.frame().parentFrame())) throw new Error('Unsupported resource');
             const fetched = await resource(destination.href);
             await route.fulfill({ status: fetched.status, headers: fetched.headers, body: Buffer.from(fetched.body, 'base64') });
           } catch { policyFailure = true; await route.abort().catch(() => {}); }
@@ -37,9 +37,11 @@ async function run(message) {
         context.on('page', p => { if (context.pages().length > 1) { policyFailure = true; p.close().catch(() => {}); } });
         const page = await context.newPage();
         page.on('dialog', dialog => dialog.dismiss().catch(() => {}));
+        page.on('download', download => { policyFailure = true; download.cancel().catch(() => {}); });
+        page.on('framenavigated', frame => { if (frame === page.mainFrame() && new URL(frame.url()).origin !== origin) policyFailure = true; });
         const deadline = Date.now() + LIMITS.scenarioMs;
         const result = await Promise.race([
-          execute(page, scenario, deadline, () => policyFailure),
+          execute(page, scenario, deadline, () => policyFailure, origin),
           new Promise(resolve => { timer = setTimeout(() => resolve({ id: scenario.id, status: 'TIMED_OUT', steps: [] }), LIMITS.scenarioMs); }),
         ]);
         send({ type: 'result', result });
@@ -54,8 +56,9 @@ if (require.main === module) {
     try {
       if (line.length > 3_000_000) throw new Error();
       const message = JSON.parse(line);
-      if (message.type === 'start' && !started) { started = true; run(message).then(() => process.exit(0)).catch(() => process.exit(1)); }
+      if (message.type === 'start' && !started) { started = true; setTimeout(() => process.exit(1), LIMITS.totalMs + 5000); run(message).then(() => process.exit(0)).catch(() => process.exit(1)); }
       else if (message.type === 'resource') { const callback = pending.get(message.id); pending.delete(message.id); callback?.(message); }
     } catch { process.exit(1); }
   });
+  process.stdin.on('end', () => process.exit(1));
 }

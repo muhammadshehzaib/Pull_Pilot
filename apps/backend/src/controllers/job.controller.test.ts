@@ -367,6 +367,25 @@ describe('parseJobStatus', () => {
 });
 
 describe('JobController.get', () => {
+  it('returns updated v2 behavioral risk without exposing internal dispatch records', async () => {
+    const { assessExplainableRisk } = await import('../services/security/risk-engine');
+    const { baselineBehavioral } = await import('../services/behavioral/contracts');
+    const testGaps = { analyzed: true, scenarios: [{ filePath: 'a.ts', lineNumber: 1, scenario: 'opens cart', expected: 'visible', confidence: 'HIGH' as const }], evidence: { changedSources: ['a.ts'], relatedTests: [], incomplete: false, treeTruncated: false } };
+    const initial = baselineBehavioral(testGaps);
+    mockJobFindFirst.mockResolvedValueOnce({
+      id: 'j1', status: 'COMPLETED', securityChecks: [], ruleChecks: [],
+      results: { suggestions: [], testGaps, includedFiles: ['a.ts'], risk: { score: 0, verdict: 'SAFE' }, riskV2: assessExplainableRisk([], { testGaps }) },
+      behavioralRuns: [{ id: 'run', headSha: 'sha', ciRunId: '123', deadlineAt: new Date(Date.now() + 60000), status: 'FAILED', dispatchHash: 'do-not-expose', plan: [{ id: initial.scenarios[0].id, steps: [] }], evidence: [{ id: initial.scenarios[0].id, status: 'FAILED', steps: [{ index: 0, status: 'FAILED' }] }] }],
+    });
+    const response = mockRes();
+    await JobController.get(authedReq({ params: { id: 'j1' } }), response);
+    const data = response.json.mock.calls[0][0];
+    expect(data.job.metadata.risk).toEqual({ score: 0, verdict: 'SAFE' });
+    expect(data.job.metadata.riskV2).toMatchObject({ version: 2, score: 15, verdict: 'REVIEW' });
+    expect(data.job.metadata.behavioral.scenarios[0]).toMatchObject({ status: 'FAILED', stage: 'EXECUTED' });
+    expect(JSON.stringify(data)).not.toContain('do-not-expose');
+    expect(data.job).not.toHaveProperty('behavioralRuns');
+  });
   it('returns the job when it belongs to the user', async () => {
     mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'COMPLETED', results: null });
     const req = authedReq({ params: { id: 'j1' } });

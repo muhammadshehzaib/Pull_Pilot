@@ -1,0 +1,14 @@
+# The root ignore excludes dist. This runner needs exactly one compiled module,
+# plus its trusted scripts; never send secrets or customer code as build context.
+**
+!packages/
+!packages/behavioral-runner/
+!packages/behavioral-runner/package.json
+!packages/behavioral-runner/browser-child.cjs
+!packages/behavioral-runner/actions.cjs
+!apps/
+!apps/backend/
+!apps/backend/dist/
+!apps/backend/dist/services/
+!apps/backend/dist/services/behavioral/
+!apps/backend/dist/services/behavioral/contracts.js

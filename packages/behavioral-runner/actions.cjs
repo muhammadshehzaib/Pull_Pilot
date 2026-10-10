@@ -1,4 +1,4 @@
-async function execute(page, scenario, deadline, policyFailed) {
+async function execute(page, scenario, deadline, policyFailed, approvedOrigin) {
   const steps = [];
   let status = 'PASSED';
   for (const [index, step] of scenario.steps.entries()) {
@@ -6,12 +6,14 @@ async function execute(page, scenario, deadline, policyFailed) {
       if (Date.now() >= deadline) { const error = new Error(); error.name = 'TimeoutError'; throw error; }
       if (step.action === 'navigate') await page.goto(step.path, { waitUntil: 'domcontentloaded', timeout: Math.min(5000, deadline - Date.now()) });
       else {
+        if (new URL(page.url()).origin !== approvedOrigin) throw new Error('OriginBlocked');
         const locator = page.getByTestId(step.testId);
         if (step.action === 'click') await locator.click({ timeout: 2000 });
         else if (step.action === 'fill') await locator.fill({ EMPTY: '', TEXT: 'aipr synthetic input', EMAIL: 'aipr@example.invalid' }[step.fixture], { timeout: 2000 });
         else if (step.action === 'assertVisible' && !(await locator.isVisible())) throw new Error('AssertionFailed');
         else if (step.action === 'assertText' && (await locator.textContent({ timeout: 2000 })) !== step.text) throw new Error('AssertionFailed');
       }
+      if (new URL(page.url()).origin !== approvedOrigin) throw new Error('OriginBlocked');
       steps.push({ index, status: 'PASSED' });
     } catch (error) {
       status = error.name === 'TimeoutError' ? 'TIMED_OUT' : error.message === 'AssertionFailed' ? 'FAILED' : 'ERROR';

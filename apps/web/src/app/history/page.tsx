@@ -554,7 +554,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
       )}
 
       {(job.metadata?.risk || (job.securityChecks && job.securityChecks.length > 0)) && (
-        <SecurityCard risk={job.metadata?.risk} checks={job.securityChecks} />
+        <SecurityCard risk={job.metadata?.risk} checks={job.securityChecks} legacy={Boolean(job.metadata?.riskV2)} />
       )}
 
       {job.metadata?.testGaps && hasTestGaps(job.metadata.testGaps) && (
@@ -745,7 +745,7 @@ function HistoryRowSkeleton() {
  * engine, per-probe finding tallies, and the durable PASS/FAIL rows the worker
  * wrote for SAST / secrets / dependencies.
  */
-function SecurityCard({ risk, checks }: { risk?: RiskReport; checks?: SecurityCheck[] }) {
+function SecurityCard({ risk, checks, legacy }: { risk?: RiskReport; checks?: SecurityCheck[]; legacy?: boolean }) {
   const score = typeof risk?.score === 'number' && Number.isFinite(risk.score) ? risk.score : 0;
   const tone = riskTone(score);
   const toneColor = tone === 'block' ? 'var(--danger)' : tone === 'review' ? 'var(--warning)' : 'var(--success)';
@@ -769,7 +769,7 @@ function SecurityCard({ risk, checks }: { risk?: RiskReport; checks?: SecurityCh
           marginBottom: '0.6rem',
         }}
       >
-        <strong style={{ fontSize: '0.88rem' }}>🛡️ Security risk</strong>
+        <strong style={{ fontSize: '0.88rem' }}>🛡️ Security risk{legacy ? ' (legacy v1)' : ''}</strong>
         {risk && (
           <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
             <span style={{ color: toneColor, fontWeight: 700, fontSize: '1.05rem' }}>{score}/100</span>

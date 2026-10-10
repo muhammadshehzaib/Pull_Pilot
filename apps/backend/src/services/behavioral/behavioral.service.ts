@@ -92,7 +92,10 @@ export async function startBehavioralRun(job: any, body: Record<string, unknown>
   if (run.dispatchHash !== digest(dispatchToken) || !previewUrl) return run;
   try {
     await gh.dispatchBehavioralWorkflow(owner, repo, branch, run.id, dispatchToken);
-  } catch {
+  } catch (error) {
+    const status = Number((error as { status?: number }).status);
+    const code: Record<number, string> = { 400: 'GITHUB_REQUEST_REJECTED', 401: 'GITHUB_AUTHENTICATION_FAILED', 403: 'GITHUB_PERMISSION_OR_RATE_LIMIT', 404: 'GITHUB_REPOSITORY_OR_WORKFLOW_MISSING', 422: 'GITHUB_WORKFLOW_OR_REF_INVALID', 429: 'GITHUB_RATE_LIMITED' };
+    if (code[status]) return prisma.behavioralRun.update({ where: { id: run.id }, data: { status: 'ERROR', reason: code[status] } });
     // A timeout may mean GitHub accepted the dispatch. Leave it claimable;
     // never resend. The deadline sweep makes a lost dispatch TIMED_OUT.
     return prisma.behavioralRun.update({ where: { id: run.id }, data: { reason: 'DISPATCH_UNCONFIRMED: GitHub response unavailable; no automatic retry.' } });
@@ -132,6 +135,6 @@ export function behavioralForJob(results: Record<string, any>, runs: BehavioralR
   const fallback = plan.map(s => ({ id: s.id, status: expired ? 'TIMED_OUT' : ['ERROR', 'TIMED_OUT'].includes(latest.status) ? latest.status : 'NOT_RUN', steps: [] })) as ScenarioResult[];
   const report = withExecution(baseline, latest.evidence ? latest.evidence as unknown as ScenarioResult[] : fallback, latest);
   if (expired) report.reason = 'CI_DEADLINE_EXCEEDED';
-  else if (latest.status === 'QUEUED' || latest.status === 'RUNNING') report.reason = latest.status;
+  else if (latest.status === 'QUEUED' || latest.status === 'RUNNING') report.reason = latest.reason ?? latest.status;
   return report;
 }

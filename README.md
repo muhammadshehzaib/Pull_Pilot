@@ -51,6 +51,8 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 
 ## Architecture
 
+Behavioral verification (Phase 6) supports owner-approved scenarios against an existing trusted public preview, executed in repository-owner CI with a network-disabled browser container. Explainable PR risk (Phase 7) adds a versioned advisory score, per-signal explanations and separate evidence coverage/confidence. Existing reports remain compatible. Enabling execution requires an owner-installed workflow, GitHub App permissions, OIDC configuration and the database migration; see [setup, limits and verification](docs/behavioral-verification.md).
+
 ```
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
 │   Next.js Web    │◄──────│  Express API     │──────►│   PostgreSQL     │

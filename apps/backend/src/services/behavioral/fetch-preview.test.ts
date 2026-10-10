@@ -9,7 +9,7 @@ function reply(headers: Record<string, string> = {}, body = 'hello') {
   m.request.mockImplementation((_url, _options, callback) => {
     const req = new EventEmitter() as any;
     req.destroy = (error: Error) => { req.emit('error', error); req.emit('close'); };
-    req.end = () => { const response = Object.assign(new EventEmitter(), { statusCode: 200, headers }); callback(response); response.emit('data', Buffer.from(body)); response.emit('end'); req.emit('close'); };
+    req.end = () => { const response = Object.assign(new EventEmitter(), { statusCode: 200, headers, destroy() {} }); callback(response); response.emit('data', Buffer.from(body)); response.emit('end'); req.emit('close'); };
     return req;
   });
 }
@@ -19,7 +19,7 @@ describe('public preview transport', () => {
     const result = await fetchPreview('https://preview.example.com', 'preview.example.com', { requests: 0, bytes: 0 });
     const options = m.request.mock.calls[0][1]; const callback = vi.fn(); options.lookup('preview.example.com', {}, callback);
     expect(callback).toHaveBeenCalledWith(null, '8.8.8.8', 4);
-    expect(options.agent).toBe(false); expect(options.autoSelectFamily).toBe(false);
+    expect(options.agent).toBe(false); expect(options.family).toBe(4);
     expect(JSON.stringify(options.headers)).not.toMatch(/Cookie|Authorization/i);
     expect(JSON.stringify(result.headers)).not.toContain('secret');
   });
@@ -35,5 +35,22 @@ describe('public preview transport', () => {
   it('enforces a hard request budget without network access', async () => {
     await expect(fetchPreview('https://preview.example.com', 'preview.example.com', { requests: 100, bytes: 0 })).rejects.toThrow(/budget/);
     expect(m.dns).not.toHaveBeenCalled(); expect(m.request).not.toHaveBeenCalled();
+  });
+  it('bounds large response bodies before forwarding them to the browser', async () => {
+    reply({}, 'x'.repeat(2_000_001));
+    await expect(fetchPreview('https://preview.example.com', 'preview.example.com', { requests: 0, bytes: 0 })).rejects.toThrow(/budget/);
+  });
+  it('terminates a stalled stream on a wall-clock deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      m.request.mockImplementation(() => {
+        const req = new EventEmitter() as any; req.end = () => {};
+        req.destroy = (error: Error) => { req.emit('error', error); req.emit('close'); };
+        return req;
+      });
+      const checked = expect(fetchPreview('https://preview.example.com', 'preview.example.com', { requests: 0, bytes: 0 })).rejects.toThrow(/timed out/);
+      await vi.advanceTimersByTimeAsync(6000);
+      await checked;
+    } finally { vi.useRealTimers(); }
   });
 });

@@ -36,7 +36,7 @@ export async function fetchPreview(value: string, host: string, budget: { reques
   if (++budget.requests > LIMITS.requests || budget.bytes >= LIMITS.totalBytes) throw new Error('Network budget exhausted');
   const pinned = await resolvePublic(host);
   return new Promise((resolve, reject) => {
-    const req = request(url, { method: 'GET', agent: false, autoSelectFamily: false, family: pinned.family, headers: { Accept: '*/*', 'Accept-Encoding': 'identity' }, lookup: (_host, _options, callback: any) => callback(null, pinned.address, pinned.family) }, response => {
+    const req = request(url, { method: 'GET', agent: false, family: pinned.family, headers: { Accept: '*/*', 'Accept-Encoding': 'identity' }, lookup: (_host, _options, callback: any) => callback(null, pinned.address, pinned.family) }, response => {
       const chunks: Buffer[] = []; let size = 0;
       response.on('data', chunk => {
         size += chunk.length; budget.bytes += chunk.length;
