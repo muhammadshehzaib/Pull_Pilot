@@ -38,6 +38,12 @@ describe('validateProposedTestPath', () => {
     expect(result.reason).toMatch(/test file/i);
   });
 
+  it('does not treat arbitrary files inside test directories as test code', () => {
+    expect(validateProposedTestPath('tests/package.json').ok).toBe(false);
+    expect(validateProposedTestPath('tests/install.sh').ok).toBe(false);
+    expect(validateProposedTestPath('tests/payment.ts').ok).toBe(true);
+  });
+
   it('rejects excluded directories', () => {
     expect(validateProposedTestPath('node_modules/foo.test.js').ok).toBe(false);
   });

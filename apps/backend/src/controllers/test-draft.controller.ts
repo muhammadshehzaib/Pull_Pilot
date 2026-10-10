@@ -67,6 +67,7 @@ export function toTestDraftDto(draft: TestDraft) {
     structuralNote: draft.structuralNote,
     baseBranch: draft.baseBranch,
     baseSha: draft.baseSha,
+    sourceHeadSha: draft.sourceHeadSha,
     sourcePrNumber: draft.sourcePrNumber,
     status: draft.status,
     branchName: draft.branchName,
@@ -105,6 +106,35 @@ export class TestDraftController {
     });
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
+    // A client may request a draft only for a scenario actually emitted for
+    // this review, and only for one of the changed source files we reviewed.
+    // Use the stored scenario as the canonical value; never trust the echoed
+    // request body to choose an arbitrary file or rewrite the expected case.
+    const results = job.results && typeof job.results === 'object' && !Array.isArray(job.results)
+      ? (job.results as Record<string, unknown>)
+      : {};
+    const testGaps = results.testGaps && typeof results.testGaps === 'object' && !Array.isArray(results.testGaps)
+      ? (results.testGaps as Record<string, unknown>)
+      : {};
+    const scenarios = Array.isArray(testGaps.scenarios) ? testGaps.scenarios : [];
+    const storedScenario = scenarios.find((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
+      const candidate = item as Record<string, unknown>;
+      return candidate.filePath === parsedScenario.filePath &&
+        candidate.scenario === parsedScenario.scenario &&
+        candidate.lineNumber === parsedScenario.lineNumber;
+    });
+    const includedFiles = Array.isArray(results.includedFiles)
+      ? results.includedFiles.filter((path): path is string => typeof path === 'string')
+      : [];
+    if (!storedScenario || !includedFiles.includes(parsedScenario.filePath)) {
+      return res.status(400).json({ error: 'The selected scenario is not part of this review or its changed source files.' });
+    }
+    const canonicalScenario = parseScenarioInput(storedScenario);
+    if (!canonicalScenario) {
+      return res.status(400).json({ error: 'The stored test-gap scenario is invalid.' });
+    }
+
     const repo = job.repository;
     const vault = await prisma.vault.findUnique({ where: { userId: req.auth!.userId } });
     if (!vault) {
@@ -129,13 +159,20 @@ export class TestDraftController {
     let ref: string;
     let baseBranch: string;
     let baseSha: string;
+    let sourceHeadSha: string | null = null;
     let sourcePrNumber: number | null = null;
     try {
       if (job.eventType === 'PULL_REQUEST') {
         const pr = await ghService.getPullRequest(owner, repoName, Number(job.referenceId));
         ref = pr.head.sha;
+        sourceHeadSha = pr.head.sha;
         baseBranch = pr.base.ref;
-        baseSha = pr.base.sha;
+        // The PR's recorded base.sha can lag behind its target branch when the
+        // PR is behind. Snapshot the current target ref now; create-pr will
+        // require this exact SHA to remain current before writing anything.
+        const currentBaseSha = await ghService.getBranchHeadSha(owner, repoName, baseBranch);
+        if (!currentBaseSha) throw new Error(`Base branch "${baseBranch}" has no current head.`);
+        baseSha = currentBaseSha;
         sourcePrNumber = Number(job.referenceId);
       } else {
         ref = job.referenceId;
@@ -154,7 +191,7 @@ export class TestDraftController {
         repo: repoName,
         ref,
         sourcePath: parsedScenario.filePath,
-        scenario: parsedScenario,
+        scenario: canonicalScenario,
         provider,
       });
     } catch (err) {
@@ -184,8 +221,8 @@ export class TestDraftController {
         repositoryId: repo.id,
         analysisJobId: job.id,
         userId: req.auth!.userId,
-        scenario: parsedScenario as any,
-        sourcePath: parsedScenario.filePath,
+        scenario: canonicalScenario as any,
+        sourcePath: canonicalScenario.filePath,
         targetPath: pathCheck.path!,
         targetContent: generated.content,
         framework: generated.framework ?? null,
@@ -193,6 +230,7 @@ export class TestDraftController {
         structuralNote: contentCheck.note ?? null,
         baseBranch,
         baseSha,
+        sourceHeadSha,
         sourcePrNumber,
         status: TestDraftStatus.DRAFT,
       },
@@ -280,13 +318,12 @@ export class TestDraftController {
     const confirmed = (req.body ?? {}).confirmed === true;
     const repo = draft.repository;
     const [owner, repoName] = repo.fullName.split('/');
-    const ghService = await GitHubAppService.getInstallationService(
-      repo.installation?.githubInstallationId?.toString(),
-    );
-
     const scenario = (draft.scenario ?? {}) as Record<string, unknown>;
 
     try {
+      const ghService = await GitHubAppService.getInstallationService(
+        repo.installation?.githubInstallationId?.toString(),
+      );
       const result = await createTestPullRequest({
         ghService,
         owner,
@@ -299,6 +336,7 @@ export class TestDraftController {
           sourcePath: draft.sourcePath,
           baseBranch: draft.baseBranch,
           baseSha: draft.baseSha,
+          sourceHeadSha: draft.sourceHeadSha,
           sourcePrNumber: draft.sourcePrNumber,
           scenarioLabel: typeof scenario.scenario === 'string' ? scenario.scenario : undefined,
         },
@@ -322,7 +360,7 @@ export class TestDraftController {
         const status =
           err.code === 'confirmation-required'
             ? 400
-            : err.code === 'stale-base' || err.code === 'base-branch-missing' || err.code === 'write-disabled'
+            : err.code === 'stale-base' || err.code === 'stale-source' || err.code === 'base-branch-missing' || err.code === 'write-disabled'
               ? 409
               : 502;
         // Keep the draft (and record why) so the developer can retry without
@@ -334,7 +372,11 @@ export class TestDraftController {
         }
         return res.status(status).json({ error: err.message, code: err.code });
       }
-      return res.status(502).json({ error: (err as Error).message });
+      const message = (err as Error).message || 'GitHub request failed.';
+      await prisma.testDraft
+        .update({ where: { id: draft.id }, data: { error: message } })
+        .catch(() => {});
+      return res.status(502).json({ error: message });
     }
   }
 }

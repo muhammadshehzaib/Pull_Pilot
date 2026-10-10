@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import {
   AI_DRAFT_DISCLAIMER,
@@ -35,8 +35,49 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
   const [content, setContent] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState<'idle' | 'generating' | 'saving' | 'creating'>('idle');
+  const [loadingExisting, setLoadingExisting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  // Drafts are persisted server-side. Restore the latest draft for this exact
+  // scenario so a reload does not discard the developer's review/edit state or
+  // hide an already-created PR.
+  useEffect(() => {
+    let active = true;
+    setLoadingExisting(true);
+    setDraft(null);
+    setTargetPath('');
+    setContent('');
+    setConfirmed(false);
+    setError(null);
+    setNotice(null);
+
+    api<{ drafts: TestDraft[] }>(`/api/jobs/${encodeURIComponent(jobId)}/test-drafts`)
+      .then(({ drafts }) => {
+        if (!active) return;
+        const existing = drafts.find((candidate) => {
+          if (candidate.status === 'DISCARDED') return false;
+          return candidate.sourcePath === scenario.filePath &&
+            candidate.scenario?.scenario === scenario.scenario &&
+            candidate.scenario?.lineNumber === scenario.lineNumber;
+        });
+        if (!existing) return;
+        setDraft(existing);
+        setTargetPath(existing.targetPath);
+        setContent(existing.targetContent);
+        setNotice(existing.error ?? existing.structuralNote);
+      })
+      .catch(() => {
+        if (active) setNotice('Could not restore a saved draft. You can still generate a new one.');
+      })
+      .finally(() => {
+        if (active) setLoadingExisting(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [jobId, scenario.filePath, scenario.scenario, scenario.lineNumber]);
 
   const generate = async () => {
     setBusy('generating');
@@ -81,6 +122,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
       setTargetPath(res.draft.targetPath);
       setContent(res.draft.targetContent);
       setNotice(res.draft.structuralNote);
+      setConfirmed(false);
     } catch (err) {
       setError((err as { error?: string }).error ?? 'Could not save the draft.');
     } finally {
@@ -129,9 +171,9 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
           type="button"
           className="btn-secondary"
           onClick={generate}
-          disabled={busy === 'generating'}
+          disabled={loadingExisting || busy === 'generating'}
         >
-          {busy === 'generating' ? 'Generating draft…' : 'Generate test draft'}
+          {loadingExisting ? 'Loading saved draft…' : busy === 'generating' ? 'Generating draft…' : 'Generate test draft'}
         </button>
       )}
 
@@ -166,7 +208,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
             <input
               type="text"
               value={targetPath}
-              onChange={(e) => setTargetPath(e.target.value)}
+              onChange={(e) => { setTargetPath(e.target.value); setConfirmed(false); }}
               disabled={created || busy !== 'idle'}
               className="mono"
               style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
@@ -177,7 +219,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
             Test contents
             <textarea
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(e) => { setContent(e.target.value); setConfirmed(false); }}
               rows={12}
               disabled={created || busy !== 'idle'}
               className="mono"
@@ -206,7 +248,14 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
               ) : (
                 `#${draft.prNumber}`
               )}
-              . CI has not run.
+              . Tests were not run by this service.{' '}
+              {draft.prUrl ? (
+                <a href={`${draft.prUrl}/checks`} target="_blank" rel="noreferrer">
+                  Check current CI results
+                </a>
+              ) : (
+                'Check GitHub Actions for current CI results.'
+              )}
             </div>
           ) : (
             <>

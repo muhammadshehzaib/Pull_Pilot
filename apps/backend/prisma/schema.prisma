@@ -383,6 +383,9 @@ model TestDraft {
   structuralNote  String?
   baseBranch      String
   baseSha         String
+  /// Head SHA whose changed source and test-gap scenario the draft was based on.
+  /// Null for older records and non-PR jobs.
+  sourceHeadSha   String?
   sourcePrNumber  Int?
   status          TestDraftStatus @default(DRAFT)
   branchName      String?

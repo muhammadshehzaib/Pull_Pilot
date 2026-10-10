@@ -35,7 +35,7 @@ export interface TestDraft {
 
 /** Shown wherever a draft is displayed or a PR is described. */
 export const AI_DRAFT_DISCLAIMER =
-  'AI-generated and unverified. The tests have not been run and CI has not reported a result.';
+  'AI-generated and unverified by this service. Review the draft and check the PR’s CI results before relying on it.';
 
 const TEST_DIR_SEGMENTS = new Set(['test', 'tests', '__tests__', 'spec', 'specs', '__specs__']);
 const EXCLUDED_SEGMENTS = new Set([
@@ -58,6 +58,11 @@ const TEST_FILE_PATTERNS: RegExp[] = [
   /_spec\.rb$/i,
   /Test\.(?:java|kt|kts|cs|scala|swift)$/,
 ];
+const TEST_SOURCE_EXTENSIONS = new Set([
+  '.c', '.cc', '.cpp', '.cs', '.go', '.java', '.js', '.jsx', '.kt', '.kts',
+  '.mjs', '.mts', '.php', '.py', '.rb', '.rs', '.scala', '.swift', '.ts',
+  '.tsx', '.cts', '.cjs',
+]);
 
 export interface PathCheck {
   ok: boolean;
@@ -96,7 +101,9 @@ export function validateProposedTestPath(rawPath: string): PathCheck {
     .split('/')
     .slice(0, -1)
     .some((segment) => TEST_DIR_SEGMENTS.has(segment.toLowerCase()));
-  if (!inTestDir && !TEST_FILE_PATTERNS.some((re) => re.test(base))) {
+  const extension = base.includes('.') ? `.${base.split('.').pop()!.toLowerCase()}` : '';
+  const hasTestName = TEST_FILE_PATTERNS.some((re) => re.test(base));
+  if (!hasTestName && !(inTestDir && TEST_SOURCE_EXTENSIONS.has(extension))) {
     return { ok: false, reason: 'This does not look like a test file path.' };
   }
   return { ok: true };

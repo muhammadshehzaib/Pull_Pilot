@@ -444,7 +444,9 @@ export class GitHubService {
       owner,
       repo,
       head,
-      state: 'open',
+      // Include closed PRs too: a retry after a successful create (but a lost
+      // response/database write) must not open a second PR for this draft.
+      state: 'all',
       per_page: 10,
       ...(base ? { base } : {}),
     });

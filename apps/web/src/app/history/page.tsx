@@ -881,7 +881,7 @@ function TestGapCard({ report, jobId }: { report: TestGapReport; jobId: string }
                   Edge case: {scenario.edgeCase}
                 </span>
               )}
-              <TestDraftFlow jobId={jobId} scenario={scenario} />
+              <TestDraftFlow key={`${scenario.filePath}:${scenario.lineNumber}:${i}`} jobId={jobId} scenario={scenario} />
             </div>
           ))}
         </div>

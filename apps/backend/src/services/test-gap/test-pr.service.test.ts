@@ -14,12 +14,14 @@ const draft: TestPrDraftInput = {
   sourcePath: 'src/a.ts',
   baseBranch: 'main',
   baseSha,
+  sourceHeadSha: 'source-sha-1',
   sourcePrNumber: 42,
   scenarioLabel: 'handles empty input',
 };
 
 function gh(overrides: Record<string, unknown> = {}) {
   return {
+    getPullRequest: vi.fn(async () => ({ head: { sha: 'source-sha-1' } })),
     getBranchHeadSha: vi.fn(async (_o: string, _r: string, branch: string) =>
       branch === 'main' ? baseSha : null,
     ),
@@ -68,7 +70,7 @@ describe('createTestPullRequest', () => {
       expect.stringContaining('AI-drafted'),
       branchName,
       'main',
-      expect.stringContaining('not been executed'),
+      expect.stringContaining('not executed it'),
     );
     expect(result).toMatchObject({ prNumber: 7, prUrl: 'https://gh/pr/7', reused: false });
   });
@@ -127,6 +129,28 @@ describe('createTestPullRequest', () => {
     ).rejects.toMatchObject({ code: 'base-branch-missing' });
   });
 
+  it('stops when the source PR head changed after draft generation', async () => {
+    const service = gh({
+      getPullRequest: vi.fn(async () => ({ head: { sha: 'new-source-sha' } })),
+    });
+    await expect(
+      createTestPullRequest({ ghService: service as any, owner: 'o', repo: 'r', draft, confirmed: true }),
+    ).rejects.toMatchObject({ code: 'stale-source' });
+    expect(service.createBranch).not.toHaveBeenCalled();
+  });
+
+  it('reports base lookup failures instead of mislabeling them as a missing branch', async () => {
+    const service = gh({
+      getBranchHeadSha: vi.fn(async () => {
+        throw new Error('GitHub rate limit');
+      }),
+    });
+    await expect(
+      createTestPullRequest({ ghService: service as any, owner: 'o', repo: 'r', draft, confirmed: true }),
+    ).rejects.toMatchObject({ code: 'github-error', message: 'GitHub rate limit' });
+    expect(service.createBranch).not.toHaveBeenCalled();
+  });
+
   it('surfaces GitHub API failures as a coded error without writing a PR row', async () => {
     const service = gh({
       createPullRequest: vi.fn(async () => {
@@ -143,8 +167,8 @@ describe('buildTestPrBody', () => {
   it('labels the code AI-generated and unverified and links the source PR', () => {
     const body = buildTestPrBody('octo', draft);
     expect(body).toMatch(/AI-drafted tests/);
-    expect(body).toMatch(/not been executed/i);
-    expect(body).toMatch(/CI has not reported/i);
+    expect(body).toMatch(/this service has not executed it/i);
+    expect(body).toMatch(/Checks tab for the current CI result/i);
     expect(body).toContain('src/a.ts');
     expect(body).toContain('#42');
   });

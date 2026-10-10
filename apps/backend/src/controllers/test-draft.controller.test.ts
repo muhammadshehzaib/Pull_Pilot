@@ -89,6 +89,14 @@ const ownedJob = {
   id: 'job-1',
   eventType: 'PULL_REQUEST',
   referenceId: '42',
+  results: {
+    includedFiles: ['src/a.ts'],
+    testGaps: {
+      scenarios: [scenario],
+      evidence: { changedSources: ['src/a.ts'], relatedTests: [], treeTruncated: false, incomplete: false },
+      analyzed: true,
+    },
+  },
   repository: {
     id: 'repo-1',
     fullName: 'octo/cat',
@@ -113,6 +121,7 @@ const draftRow: any = {
   structuralNote: null,
   baseBranch: 'main',
   baseSha: 'base-sha',
+  sourceHeadSha: 'head-sha',
   sourcePrNumber: 42,
   status: 'DRAFT',
   branchName: null,
@@ -209,11 +218,24 @@ describe('TestDraftController.create', () => {
         targetPath: 'tests/a.test.ts',
         baseBranch: 'main',
         baseSha: 'base-sha',
+        sourceHeadSha: 'head-sha',
         sourcePrNumber: 42,
         status: 'DRAFT',
       }),
     });
     expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  it('rejects a scenario not present in this review before calling the provider', async () => {
+    const res = mockRes();
+    await TestDraftController.create(
+      authedReq({ body: { jobId: 'job-1', scenario: { ...scenario, filePath: 'src/other.ts' } } }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockDraftCreate).not.toHaveBeenCalled();
   });
 
   it('returns an insufficiency explanation without persisting', async () => {
@@ -348,6 +370,7 @@ describe('TestDraftController.createPr', () => {
 
   it('409s on a stale base and keeps the draft', async () => {
     mockGetInstallationService.mockResolvedValueOnce({
+      getPullRequest: vi.fn(async () => ({ head: { sha: 'head-sha' } })),
       findPullRequestByHead: vi.fn(async () => null),
       getBranchHeadSha: vi.fn(async () => 'moved-sha'),
     });
@@ -364,6 +387,7 @@ describe('TestDraftController.createPr', () => {
 
   it('502s a GitHub API error without marking the draft as created', async () => {
     mockGetInstallationService.mockResolvedValueOnce({
+      getPullRequest: vi.fn(async () => ({ head: { sha: 'head-sha' } })),
       findPullRequestByHead: vi.fn(async () => null),
       getBranchHeadSha: vi.fn(async (_o: string, _r: string, branch: string) =>
         branch === 'main' ? 'base-sha' : null,
@@ -381,6 +405,21 @@ describe('TestDraftController.createPr', () => {
     expect(mockDraftUpdate).toHaveBeenCalledWith({
       where: { id: 'draft-1' },
       data: { error: expect.stringContaining('rate limited') },
+    });
+  });
+
+  it('preserves the draft and reports installation lookup errors', async () => {
+    mockGetInstallationService.mockRejectedValueOnce(new Error('GitHub App installation unavailable'));
+    const res = mockRes();
+    await TestDraftController.createPr(
+      authedReq({ params: { id: 'draft-1' }, body: { confirmed: true } }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(mockDraftUpdate).toHaveBeenCalledWith({
+      where: { id: 'draft-1' },
+      data: { error: 'GitHub App installation unavailable' },
     });
   });
 });

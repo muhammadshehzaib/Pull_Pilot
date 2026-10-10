@@ -13,6 +13,19 @@ import { CONTEXT_EXCLUDED_SEGMENTS } from '../../utils/constants';
 
 export const MAX_TEST_PATH_LENGTH = 400;
 
+const TEST_SOURCE_EXTENSIONS = new Set([
+  '.c', '.cc', '.cpp', '.cs', '.go', '.java', '.js', '.jsx', '.kt', '.kts',
+  '.mjs', '.mts', '.php', '.py', '.rb', '.rs', '.scala', '.swift', '.ts',
+  '.tsx', '.cts', '.cjs',
+]);
+const TEST_FILE_NAME_PATTERNS = [
+  /\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/i,
+  /_test\.(?:py|go|rb)$/i,
+  /^test_.*\.py$/i,
+  /_spec\.rb$/i,
+  /Test\.(?:java|kt|kts|cs|scala|swift)$/,
+];
+
 export interface PathValidation {
   ok: boolean;
   /** The normalized, safe path when `ok` is true. */
@@ -66,10 +79,18 @@ export function validateProposedTestPath(rawPath: unknown): PathValidation {
     return { ok: false, reason: 'The proposed test path points into an excluded directory.' };
   }
 
-  if (!isTestPath(normalized)) {
+  const base = segments[segments.length - 1];
+  const inTestDirectory = segments
+    .slice(0, -1)
+    .some((segment) => ['test', 'tests', '__tests__', 'spec', 'specs', '__specs__'].includes(segment.toLowerCase()));
+  const extension = base.includes('.') ? `.${base.split('.').pop()!.toLowerCase()}` : '';
+  const hasTestName = TEST_FILE_NAME_PATTERNS.some((pattern) => pattern.test(base));
+  const isTestSource = hasTestName || (inTestDirectory && TEST_SOURCE_EXTENSIONS.has(extension));
+
+  if (!isTestPath(normalized) || !isTestSource) {
     return {
       ok: false,
-      reason: 'The proposed path does not look like a test file (expected e.g. foo.test.ts, test_foo.py, FooTest.java).',
+      reason: 'The proposed path must be a source-code test file (e.g. foo.test.ts, test_foo.py, or FooTest.java).',
     };
   }
 
