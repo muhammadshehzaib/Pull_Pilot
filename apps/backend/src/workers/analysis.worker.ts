@@ -19,6 +19,7 @@ import { deduplicate } from '../services/ai/finding-dedup.service';
 import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
+import { recordJobFindings } from '../services/historical/occurrence.service';
 import {
   renderFindingListItem,
   renderInlineComment,
@@ -580,6 +581,16 @@ export const analysisWorker = new Worker(
           } as any,
         },
       });
+
+      // Phase 8: record findings as stable occurrences (best-effort).
+      // A failure here must never abort a review that already posted comments.
+      try {
+        if (dbRepo.historicalIntelligenceEnabled && suggestions.length > 0) {
+          await recordJobFindings(jobId, repositoryId, suggestions);
+        }
+      } catch (occErr) {
+        console.warn(`⚠️ [Phase8] Occurrence recording failed for job ${jobId}:`, (occErr as Error).message);
+      }
 
       if (commentFailures.length > 0) {
         SocketService.emitStatus(

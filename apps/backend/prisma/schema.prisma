@@ -132,6 +132,11 @@ model Repository {
   behavioralConfig Json?
   behavioralRuns BehavioralRun[]
 
+  /// Phase 8: opt-in historical intelligence (default off).
+  historicalIntelligenceEnabled Boolean  @default(false)
+  findingOccurrences             FindingOccurrence[]
+  historicalPatterns             HistoricalPattern[]
+
   @@map("repositories")
   @@unique([installationId, githubRepoId])
 }
@@ -336,10 +341,11 @@ model AnalysisJob {
   commitSha       String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
-  ruleChecks      RuleCheck[]
-  securityChecks  SecurityCheck[]
-  testDrafts      TestDraft[]
-  behavioralRuns  BehavioralRun[]
+  ruleChecks         RuleCheck[]
+  securityChecks     SecurityCheck[]
+  testDrafts         TestDraft[]
+  behavioralRuns     BehavioralRun[]
+  findingOccurrences FindingOccurrence[]
 
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])
@@ -461,4 +467,145 @@ model UsageLedger {
   @@unique([installationId, billingMonth])
   @@unique([userId, billingMonth])
   @@map("usage_ledgers")
+}
+
+// ─────────────────────────────────────────────
+// Phase 8 — Historical Intelligence
+// ─────────────────────────────────────────────
+
+/// Developer disposition on one finding.
+enum FeedbackDisposition {
+  UNREVIEWED
+  ACCEPTED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+/// Why a finding was rejected (only meaningful when disposition=REJECTED).
+enum RejectionReason {
+  FALSE_POSITIVE
+  DUPLICATE
+  INTENDED_BEHAVIOR
+  OUT_OF_SCOPE
+  STYLE_PREFERENCE
+  OTHER
+}
+
+/// Stable, immutable record of one finding in one review snapshot.
+///
+/// Occurrence identity is separate from pattern identity:
+///   - FindingOccurrence.id  → identifies this finding in this review.
+///   - FindingOccurrence.fingerprint → groups related findings across reviews.
+///
+/// The `snapshotKey` is a composite of (jobId + arrayIndex) written once and
+/// never changed; it prevents duplicate rows on worker retries.
+model FindingOccurrence {
+  id             String         @id @default(uuid())
+  repositoryId   String
+  repository     Repository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  analysisJobId  String
+  analysisJob    AnalysisJob    @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+  /// Idempotency key: jobId + ":" + arrayIndex; retries reuse the same row.
+  snapshotKey    String         @unique
+  /// Exact file path as reported; case-preserved.
+  filePath       String
+  lineNumber     Int
+  category       FindingCategory
+  severity       FindingSeverity
+  /// Primary source engine.
+  source         String         // 'LLM' | 'SAST' | 'SECRETS' | 'DEPENDENCIES' | 'RULES'
+  /// All contributing source engines (JSON array of FindingSource).
+  sources        Json           @default("[]")
+  /// Rule keys from deterministic engines (JSON array of strings).
+  ruleKeys       Json           @default("[]")
+  /// Bounded (≤ 500 chars) human-readable summary of the finding.
+  summary        String         @db.VarChar(500)
+  /// Versioned cross-review grouping key, e.g. "fp_v1_SECURITY:src/auth:abc123".
+  fingerprint    String
+  /// True when this occurrence is superseded by a newer snapshot for the same job.
+  superseded     Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  feedback       FindingFeedback?
+
+  @@index([repositoryId, fingerprint])
+  @@index([analysisJobId])
+  @@index([repositoryId, createdAt])
+  @@map("finding_occurrences")
+}
+
+/// Current developer feedback state for one finding occurrence.
+///
+/// ACCEPTED: considered useful/actionable. Does NOT mean fixed or verified.
+/// REJECTED: considered not actionable (see rejectionReason for why).
+/// NEEDS_REVIEW: flagged for later human review.
+/// UNREVIEWED: default; silence is never acceptance.
+model FindingFeedback {
+  id                String              @id @default(uuid())
+  occurrenceId      String              @unique
+  occurrence        FindingOccurrence   @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+  actorId           String              // the authenticated userId who last updated
+  disposition       FeedbackDisposition @default(UNREVIEWED)
+  rejectionReason   RejectionReason?
+  /// Optional bounded developer note (≤ 1000 chars). Never logged or sent to model.
+  note              String?             @db.VarChar(1000)
+  /// Monotonic revision for optimistic concurrency. Incremented on every update.
+  revision          Int                 @default(0)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  events            FindingFeedbackEvent[]
+
+  @@map("finding_feedbacks")
+}
+
+/// Append-only audit trail of every feedback change.
+model FindingFeedbackEvent {
+  id              String              @id @default(uuid())
+  feedbackId      String
+  feedback        FindingFeedback     @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  actorId         String
+  disposition     FeedbackDisposition
+  rejectionReason RejectionReason?
+  revision        Int
+  createdAt       DateTime            @default(now())
+
+  @@index([feedbackId])
+  @@map("finding_feedback_events")
+}
+
+/// Repository-scoped aggregated pattern, rebuilt from finding occurrences.
+///
+/// One row per (repositoryId, fingerprint, algorithmVersion).
+/// Rebuilt idempotently by the aggregation service — never mutated in place
+/// in a way that mixes data from two different algorithm versions.
+model HistoricalPattern {
+  id                String     @id @default(uuid())
+  repositoryId      String
+  repository        Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  fingerprint       String
+  /// Version string of the fingerprinting algorithm that produced this grouping.
+  algorithmVersion  String     @default("fp_v1")
+  category          FindingCategory
+  /// Primary source engine of the grouped findings.
+  source            String
+  /// Bounded (≤ 300 chars) representative summary for prompt injection.
+  summary           String     @db.VarChar(300)
+  /// Count of distinct non-superseded occurrences in the window.
+  occurrenceCount   Int        @default(0)
+  /// Count of distinct PR referenceIds that contributed (retries excluded).
+  distinctPrCount   Int        @default(0)
+  acceptedCount     Int        @default(0)
+  rejectedCount     Int        @default(0)
+  /// Breakdown of rejection reasons as JSON: { FALSE_POSITIVE: n, DUPLICATE: n, … }
+  rejectionReasons  Json       @default("{}")
+  unreviewedCount   Int        @default(0)
+  /// Representative file paths (JSON array of strings, ≤ 10).
+  representativePaths Json     @default("[]")
+  firstObservedAt   DateTime
+  lastObservedAt    DateTime
+  /// Freshness timestamp of the last aggregation run.
+  aggregatedAt      DateTime   @default(now())
+
+  @@unique([repositoryId, fingerprint, algorithmVersion])
+  @@index([repositoryId, distinctPrCount])
+  @@map("historical_patterns")
 }
