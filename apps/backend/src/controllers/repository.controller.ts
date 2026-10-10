@@ -311,4 +311,26 @@ export class RepositoryController {
       historicalIntelligenceEnabled: repo.historicalIntelligenceEnabled,
     });
   }
+
+  static async getHistoricalInsights(req: Request, res: Response) {
+    const id = String(req.params.id);
+
+    const repo = await prisma.repository.findFirst({
+      where: { id, userId: req.auth!.userId },
+    });
+
+    if (!repo) {
+      return res.status(404).json({ error: 'Repository not found or access denied' });
+    }
+
+    try {
+      const { getRepositoryInsights } = await import('../services/historical/aggregation.service');
+      const insights = await getRepositoryInsights(repo.id, {
+        forceRefresh: req.query.refresh === 'true',
+      });
+      return res.json(insights);
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
 }

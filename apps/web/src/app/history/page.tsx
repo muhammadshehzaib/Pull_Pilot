@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { History, GitPullRequest, GitCommit, CheckCircle2, XCircle, Loader2, ChevronRight, Copy, Check, Sparkles } from 'lucide-react';
+import { History, GitPullRequest, GitCommit, Brain, CheckCircle2, XCircle, Loader2, ChevronRight, Copy, Check, Sparkles } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
@@ -54,6 +54,7 @@ import { TestDraftFlow } from '../../components/TestDraftFlow';
 import { BehavioralVerification } from '../../components/BehavioralVerification';
 import { ExplainableRiskCard } from '../../components/ExplainableRiskCard';
 import { FindingFeedbackControl } from '../../components/FindingFeedbackControl';
+import { RepositoryInsightsPanel } from '../../components/RepositoryInsightsPanel';
 
 export interface JobSummary {
   id: string;
@@ -402,6 +403,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
   const [copiedAll, setCopiedAll] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [liveRisk, setLiveRisk] = useState(job.metadata?.riskV2);
+  const [showInsights, setShowInsights] = useState(false);
   useEffect(() => { setLiveRisk(job.metadata?.riskV2); }, [job.id, job.metadata?.riskV2]);
 
   const sortedSuggestions = (job.results || []).slice().sort(
@@ -562,6 +564,34 @@ function JobDetailView({ job }: { job: JobDetail }) {
         <TestGapCard report={job.metadata.testGaps} jobId={job.id} />
       )}
       <ExplainableRiskCard report={liveRisk} />
+      {Boolean((job.metadata as any)?.historicalMemory?.patternCount) && (
+        <div
+          className="historical-memory-attribution-card"
+          style={{
+            padding: '0.75rem 1rem',
+            borderRadius: '10px',
+            backgroundColor: 'var(--accent-soft, #eff6ff)',
+            border: '1px solid var(--border-accent, rgba(37,99,235,0.25))',
+            fontSize: '0.8rem',
+            color: 'var(--text-primary)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Brain size={16} color="var(--accent, #2563eb)" />
+          <span>
+            <strong>Historical Review Memory Active:</strong> {(job.metadata as any)?.historicalMemory?.patternCount} recurring pattern(s) guided this review as background context. Every finding was independently verified against the current diff.
+          </span>
+        </div>
+      )}
+      {showInsights && (
+        <RepositoryInsightsPanel
+          repositoryId={job.repository.id}
+          repositoryName={job.repository.fullName}
+          onClose={() => setShowInsights(false)}
+        />
+      )}
       <BehavioralVerification jobId={job.id} initialReport={job.metadata?.behavioral} onUpdated={() => {
         api<{ job: JobDetail }>(`/api/jobs/${job.id}`).then(data => setLiveRisk(data.job.metadata?.riskV2)).catch(() => {});
       }} />

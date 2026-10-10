@@ -20,6 +20,8 @@ import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import { recordJobFindings } from '../services/historical/occurrence.service';
+import { retrieveHistoricalMemory, type HistoricalReviewContext } from '../services/historical/review-memory.service';
+import { aggregateRepositoryPatterns } from '../services/historical/aggregation.service';
 import {
   renderFindingListItem,
   renderInlineComment,
@@ -286,11 +288,30 @@ export const analysisWorker = new Worker(
 
       await advanceReview(jobId, userId, 'ANALYZING', `🧠 AI Dispatching to ${vault.provider} Models`);
 
+      // 6d. OPT-IN HISTORICAL REVIEW MEMORY (Phase 8).
+      //     Retrieves bounded cross-PR historical patterns for the repo.
+      //     Safety boundaries: guidance only, never suppresses security checks.
+      let historicalMemory: HistoricalReviewContext | null = null;
+      try {
+        historicalMemory = await retrieveHistoricalMemory(dbRepo.id, includedFiles);
+        if (historicalMemory?.patterns.length) {
+          console.log(
+            `📜 [Phase8] Supplied ${historicalMemory.patterns.length} historical pattern(s) to review prompt (IDs: ${historicalMemory.suppliedPatternIds.join(', ')}).`,
+          );
+        }
+      } catch (memErr) {
+        console.warn('⚠️ [Phase8] Historical memory retrieval error (proceeding without memory):', memErr);
+      }
+
+      const activeGuidelines = historicalMemory?.serializedContext
+        ? [...promptGuidelines, historicalMemory.serializedContext]
+        : promptGuidelines;
+
       const aiDriver = AiProviderFactory.getProvider(vault.provider, rawApiKey);
       const rawSuggestions = await guard(
         aiDriver.analyzeCode(
           filteredDiff,
-          promptGuidelines,
+          activeGuidelines,
           context,
           { signal: abort.signal },
         ),
@@ -578,6 +599,12 @@ export const analysisWorker = new Worker(
             behavioral,
             commentFailures,
             summaryPosted,
+            historicalMemory: historicalMemory
+              ? {
+                  suppliedPatternIds: historicalMemory.suppliedPatternIds,
+                  patternCount: historicalMemory.patterns.length,
+                }
+              : undefined,
           } as any,
         },
       });
@@ -587,6 +614,10 @@ export const analysisWorker = new Worker(
       try {
         if (dbRepo.historicalIntelligenceEnabled && suggestions.length > 0) {
           await recordJobFindings(jobId, repositoryId, suggestions);
+          // Refresh aggregated patterns in background (best-effort)
+          aggregateRepositoryPatterns(repositoryId).catch((aggErr) =>
+            console.warn(`⚠️ [Phase8] Post-review pattern aggregation warning:`, (aggErr as Error).message),
+          );
         }
       } catch (occErr) {
         console.warn(`⚠️ [Phase8] Occurrence recording failed for job ${jobId}:`, (occErr as Error).message);

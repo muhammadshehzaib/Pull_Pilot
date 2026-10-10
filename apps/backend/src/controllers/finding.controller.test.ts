@@ -464,5 +464,41 @@ describe('FindingController', () => {
         historicalIntelligenceEnabled: true,
       });
     });
+
+    it('returns 404 for historical insights if repository not found or not owned', async () => {
+      (prisma.repository.findFirst as any).mockResolvedValueOnce(null);
+
+      const req = mockReq({ params: { id: 'repo-missing' } });
+      const res = mockRes();
+
+      await RepositoryController.getHistoricalInsights(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('returns historical insights for owned repository', async () => {
+      (prisma.repository.findFirst as any).mockResolvedValueOnce({ id: 'repo-1' });
+
+      // Mock aggregation.service getRepositoryInsights
+      vi.doMock('../services/historical/aggregation.service', () => ({
+        getRepositoryInsights: vi.fn().mockResolvedValue({
+          repositoryId: 'repo-1',
+          historicalIntelligenceEnabled: true,
+          patterns: [],
+          summary: { totalOccurrences: 0 },
+        }),
+      }));
+
+      const req = mockReq({ params: { id: 'repo-1' } });
+      const res = mockRes();
+
+      await RepositoryController.getHistoricalInsights(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repositoryId: 'repo-1',
+        }),
+      );
+    });
   });
 });

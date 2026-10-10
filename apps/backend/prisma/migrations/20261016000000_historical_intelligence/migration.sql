@@ -1,4 +1,4 @@
-﻿-- Phase 8: Historical Intelligence
+-- Phase 8: Historical Intelligence
 -- Migration: 20261016000000_historical_intelligence
 
 -- 1. Opt-in flag on repositories
