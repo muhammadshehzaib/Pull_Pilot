@@ -106,27 +106,32 @@ export class RepositoryContextCache {
 
     const sealed = EncryptionService.encrypt(content);
 
-    await prisma.cachedFile.upsert({
-      where: { repositoryId_blobSha: { repositoryId, blobSha } },
-      create: {
-        repositoryId,
-        blobSha,
-        path,
-        sizeBytes: Buffer.byteLength(content, 'utf-8'),
-        encryptedData: sealed.encryptedData,
-        iv: sealed.iv,
-        authTag: sealed.authTag,
-        salt: sealed.salt,
-        expiresAt,
-      },
-      update: {
-        path,
-        encryptedData: sealed.encryptedData,
-        iv: sealed.iv,
-        authTag: sealed.authTag,
-        salt: sealed.salt,
-        expiresAt,
-      },
+    await prisma.$transaction(async tx => {
+      const active = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "repositories" WHERE "id" = ${repositoryId} AND "isActive" = true FOR UPDATE`;
+      if (!active.length) return;
+      await tx.cachedFile.upsert({
+        where: { repositoryId_blobSha: { repositoryId, blobSha } },
+        create: {
+          repositoryId,
+          blobSha,
+          path,
+          sizeBytes: Buffer.byteLength(content, 'utf-8'),
+          encryptedData: sealed.encryptedData,
+          iv: sealed.iv,
+          authTag: sealed.authTag,
+          salt: sealed.salt,
+          expiresAt,
+        },
+        update: {
+          path,
+          encryptedData: sealed.encryptedData,
+          iv: sealed.iv,
+          authTag: sealed.authTag,
+          salt: sealed.salt,
+          expiresAt,
+        },
+      });
     });
   }
 
@@ -160,6 +165,7 @@ export class RepositoryContextCache {
    * and app uninstall) since indefinite retention means nothing else expires.
    */
   async clearRepository(repositoryId: string): Promise<void> {
+    await prisma.cachedImport.deleteMany({ where: { repositoryId } });
     await prisma.cachedFile.deleteMany({ where: { repositoryId } });
   }
 }

@@ -319,6 +319,7 @@ export class WebhookController {
           select: { id: true },
         });
         const cache = new RepositoryContextCache();
+        await prisma.repository.updateMany({ where: { installation: { githubInstallationId } }, data: { isActive: false } });
         for (const repo of repos) {
           await cache.clearRepository(repo.id);
         }
@@ -396,13 +397,13 @@ export class WebhookController {
             where: { githubRepoId: BigInt(repo.id) },
             select: { id: true },
           });
-          for (const row of affected) {
-            await cache.clearRepository(row.id);
-          }
           await prisma.repository.updateMany({
             where: { githubRepoId: BigInt(repo.id) },
             data: { isActive: false },
           });
+          for (const row of affected) {
+            await cache.clearRepository(row.id);
+          }
         }
       }
     }

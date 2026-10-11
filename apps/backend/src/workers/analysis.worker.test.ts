@@ -167,6 +167,29 @@ describe('analysis worker — module wiring', () => {
 });
 
 describe('analysis worker — happy path', () => {
+  it('supplies unchanged caller evidence to the provider and persists partial discovery metadata', async () => {
+    GitHubServiceCtor.mockImplementationOnce(function (this: any) {
+      this.fetchDiff = mockFetchDiff;
+      this.createReviewComment = mockCreateReviewComment;
+      this.createIssueComment = vi.fn();
+      this.getFileContent = vi.fn(async () => null);
+      this.getTree = vi.fn(async () => ({ files: [
+        { path: 'src/payment.ts', blobSha: 'payment', size: 30, mode: '100644' },
+        { path: 'src/webhook.ts', blobSha: 'webhook', size: 40, mode: '100644' },
+      ], truncated: false }));
+      this.getBlob = vi.fn(async (_o: string, _r: string, sha: string) => sha === 'payment' ? 'export const pay = 1;' : "import { pay } from './payment'; pay();");
+    });
+    mockRepoFindUnique.mockResolvedValueOnce({ ...fullRepoWithVault, id: 'r-1' });
+    mockFetchDiff.mockResolvedValueOnce('diff --git a/src/payment.ts b/src/payment.ts\n@@ -1 +1 @@\n-export const pay = 0;\n+export const pay = 1;');
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    await capturedHandler.fn!(makeJobPayload());
+    expect(mockAnalyzeCode.mock.calls[0][2].files.map((file: any) => file.path)).toContain('src/webhook.ts');
+    const final = mockJobUpdate.mock.calls.at(-1)![0].data.results;
+    // This fixture intentionally has unavailable DB caches: discovery still
+    // supplies current code and must disclose partial evidence, not claim full coverage.
+    expect(final.contextDiscovery).toMatchObject({ status: 'PARTIAL', indexedFiles: 2, selectedFiles: 1 });
+    expect(final.riskV2.coverage.context).toBe('PARTIAL');
+  });
   it('supplies feedback statistics separately and persists adaptation without changing findings or risk', async () => {
     const { retrieveFeedbackAdaptation } = await import('../services/feedback-loop/adaptation.service');
     const { generateFingerprint } = await import('../services/historical/fingerprint.service');
@@ -885,7 +908,7 @@ describe('analysis worker — test-gap analysis', () => {
     expect(finalResults.behavioral.scenarios[0]).toMatchObject({ stage: 'GENERATED', status: 'NOT_RUN' });
     expect(finalResults.riskV2).toMatchObject({ version: 2, direction: 'HIGHER_IS_RISKIER', enforcement: 'ADVISORY' });
     expect(finalResults.riskV2.coverage.behavioral.executed).toBe(0);
-    expect(finalResults.analyticsConfiguration).toMatchObject({ riskAlgorithmVersion: 'risk_v2.1', pipelineVersion: 'review_pipeline_1' });
+    expect(finalResults.analyticsConfiguration).toMatchObject({ riskAlgorithmVersion: 'risk_v2.1', pipelineVersion: 'review_pipeline_2' });
     // Generating a scenario does not become an executed test or a legacy finding.
     expect(finalResults.suggestions).toEqual([]);
     expect(finalResults.risk.score).toBe(0);

@@ -436,6 +436,7 @@ describe('JobController.get', () => {
   });
 
   it('surfaces the persisted test-gap report via metadata', async () => {
+    const contextDiscovery = { version: 1, status: 'PARTIAL', indexedFiles: 100, eligibleFiles: 200, selectedFiles: 0, reasons: ['DOWNLOAD_LIMIT'] };
     const testGaps = {
       analyzed: true,
       scenarios: [{ filePath: 'src/db.ts', scenario: 'missing edge case' }],
@@ -449,7 +450,7 @@ describe('JobController.get', () => {
     mockJobFindFirst.mockResolvedValueOnce({
       id: 'j3',
       status: 'COMPLETED',
-      results: { testGaps },
+      results: { testGaps, contextDiscovery },
     });
     const req = authedReq({ params: { id: 'j3' } });
     const res = mockRes();
@@ -458,6 +459,7 @@ describe('JobController.get', () => {
 
     const out = (res.json as any).mock.calls[0][0];
     expect(out.job.metadata.testGaps).toEqual(testGaps);
+    expect(out.job.metadata.contextDiscovery).toEqual(contextDiscovery);
     // Test gaps stay out of the findings array.
     expect(out.job.results).toEqual([]);
   });

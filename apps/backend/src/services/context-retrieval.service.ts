@@ -5,6 +5,8 @@ import {
   parsePathAliases,
   type PathAliases,
 } from './import-graph.service';
+import { isTestPath, matchesRelated } from './test-gap/test-discovery.service';
+import type { IndexedImports } from './repository-import-index.service';
 
 /** A file selected as context, with why it was selected and where it sits. */
 export interface ContextCandidate {
@@ -19,6 +21,7 @@ export interface ContextCandidate {
   inDegree: number;
   /** True when the file only re-exports other modules and holds no logic. */
   isBarrel: boolean;
+  relation?: 'TEST' | 'CALLER' | 'DEPENDENCY' | 'TRANSITIVE' | 'LIKELY_TEST';
 }
 
 /** Inputs needed to walk out from the changed files. */
@@ -33,6 +36,8 @@ export interface NeighbourWalkInput {
   aliases: PathAliases | null;
   maxHops: number;
   maxFiles: number;
+  /** Imports from the inventory, independent of selected source bodies. */
+  indexedImports?: Map<string, IndexedImports>;
 }
 
 export interface NeighbourWalkResult {
@@ -69,18 +74,17 @@ export function selectContextFiles(input: NeighbourWalkInput): NeighbourWalkResu
   const fileIndex = buildFileIndex(allPaths);
   const changed = new Set(changedPaths.filter((p) => fileIndex.has(p)));
 
-  // Only files we can read contribute edges. A path we have no content for
-  // cannot tell us what it imports, and guessing would invent dependencies.
-  const readable = allPaths.filter((p) => contents.has(p));
+  // Indexed imports contribute edges even when the source body has not been
+  // selected. Legacy callers can still provide a map of readable contents.
+  const readable = allPaths.filter((p) => input.indexedImports ? input.indexedImports.has(p) : contents.has(p));
 
   const forward = new Map<string, string[]>(); // file -> files it imports
   const reverse = new Map<string, Set<string>>(); // file -> files importing it
 
   for (const path of readable) {
-    const source = contents.get(path)!;
     const imports = new Set<string>();
 
-    for (const specifier of extractImports(source)) {
+    for (const specifier of input.indexedImports?.get(path)?.specifiers ?? extractImports(contents.get(path) ?? '')) {
       const resolved = resolveImportSpecifier(specifier, path, fileIndex, aliases);
       // A file importing itself is a cycle artefact, not a dependency.
       if (!resolved || resolved === path) continue;
@@ -99,6 +103,21 @@ export function selectContextFiles(input: NeighbourWalkInput): NeighbourWalkResu
   }
 
   const hops = walkBfs(changed, forward, reverse, maxHops);
+  const nameMatched = new Set<string>();
+  if (input.indexedImports && maxHops > 0) {
+    const tests = allPaths.filter(isTestPath);
+    // Name matching is weaker evidence. Keep it local to a package and pick
+    // the closest two matches per affected source; never manufacture graph edges.
+    for (const [source, hop] of [...hops]) {
+      if (hop >= maxHops || isTestPath(source)) continue;
+      const matches = tests.filter(test => !changed.has(test) && matchesRelated(source, test)
+        && packageScope(source) === packageScope(test))
+        .sort((a, b) => sharedDirectoryDepth(source, b) - sharedDirectoryDepth(source, a) || a.localeCompare(b)).slice(0, 2);
+      for (const test of matches) {
+        if (!hops.has(test)) { hops.set(test, hop + 1); nameMatched.add(test); }
+      }
+    }
+  }
 
   const candidates: ContextCandidate[] = [];
   for (const [path, hop] of hops) {
@@ -106,14 +125,17 @@ export function selectContextFiles(input: NeighbourWalkInput): NeighbourWalkResu
     candidates.push({
       path,
       hops: hop,
-      reasons: describeRelations(path, changed, forward, reverse),
+      reasons: nameMatched.has(path) ? ['likely related test by filename and package (coverage not verified)'] : describeRelations(path, changed, forward, reverse),
       changedReach: countChangedReach(path, changed, forward, reverse),
       inDegree: reverse.get(path)?.size ?? 0,
-      isBarrel: isBarrelFile(contents.get(path) ?? ''),
+      isBarrel: input.indexedImports?.get(path)?.barrel ?? isBarrelFile(contents.get(path) ?? ''),
+      relation: nameMatched.has(path) ? 'LIKELY_TEST' : isTestPath(path) ? 'TEST'
+        : (forward.get(path) ?? []).some(target => changed.has(target)) ? 'CALLER'
+        : [...(reverse.get(path) ?? [])].some(from => changed.has(from)) ? 'DEPENDENCY' : 'TRANSITIVE',
     });
   }
 
-  const ranked = rankCandidates(candidates, maxFiles);
+  const ranked = rankCandidates(candidates, maxFiles, Boolean(input.indexedImports));
 
   return {
     candidates: ranked.kept,
@@ -190,7 +212,7 @@ function describeRelations(
   }
 
   if (isTestLike(path)) {
-    reasons.push('test file covering this area');
+    reasons.push('test file connected by imports (coverage not verified)');
   }
 
   if (reasons.length === 0) {
@@ -248,6 +270,7 @@ function countChangedReach(
 function rankCandidates(
   candidates: ContextCandidate[],
   maxFiles: number,
+  balance = false,
 ): { kept: ContextCandidate[]; dropped: ContextCandidate[] } {
   const sorted = [...candidates].sort((a, b) => {
     // A pure re-export barrel is ranked below real code at the same distance.
@@ -261,10 +284,29 @@ function rankCandidates(
     return a.path.localeCompare(b.path);
   });
 
-  return {
-    kept: sorted.slice(0, maxFiles),
-    dropped: sorted.slice(maxFiles),
-  };
+  const kept: ContextCandidate[] = [];
+  if (balance) {
+    // Reserve useful representatives before redistributing remaining slots.
+    for (const group of [['CALLER'], ['TEST', 'LIKELY_TEST'], ['DEPENDENCY']]) {
+      if (kept.length >= maxFiles) break;
+      const item = sorted.find(c => c.relation && group.includes(c.relation));
+      if (item) kept.push(item);
+    }
+  }
+  for (const item of sorted) if (kept.length < maxFiles && !kept.includes(item)) kept.push(item);
+  return { kept, dropped: sorted.filter(item => !kept.includes(item)) };
+}
+
+function packageScope(path: string): string {
+  const parts = path.split('/');
+  return ['apps', 'packages'].includes(parts[0]) ? parts.slice(0, 2).join('/') : '';
+}
+
+function sharedDirectoryDepth(a: string, b: string): number {
+  const left = a.split('/').slice(0, -1), right = b.split('/').slice(0, -1);
+  let depth = 0;
+  while (depth < left.length && left[depth] === right[depth]) depth++;
+  return depth;
 }
 
 /**
@@ -305,13 +347,7 @@ export function isBarrelFile(source: string): boolean {
 
 /** True for paths that look like tests, which are strong context when present. */
 function isTestLike(path: string): boolean {
-  const lower = path.toLowerCase();
-  return (
-    /\.(test|spec)\.[cm]?[jt]sx?$/.test(lower) ||
-    /(^|\/)(__tests__|tests?)\//.test(lower) ||
-    /(^|\/)test_[^/]+\.py$/.test(lower) ||
-    /_test\.[cm]?[jt]sx?$/.test(lower)
-  );
+  return isTestPath(path);
 }
 
 /** Joins paths for a prompt, capped so one file cannot flood a reason. */

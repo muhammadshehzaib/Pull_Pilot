@@ -164,6 +164,18 @@ export const CONTEXT_MAX_FILES = parseInt(process.env.CONTEXT_MAX_FILES || '25',
 export const CONTEXT_MAX_TOKENS = parseInt(process.env.CONTEXT_MAX_TOKENS || '30000', 10);
 export const CONTEXT_MAX_CHARS = CONTEXT_MAX_TOKENS * 4;
 
+// Indexing inspects more files than the prompt includes. Only deployment owners
+// can raise these ceilings; untrusted repository configuration cannot.
+function contextLimit(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+}
+export const CONTEXT_INDEX_MAX_FILES = contextLimit('CONTEXT_INDEX_MAX_FILES', 1000);
+export const CONTEXT_INDEX_MAX_DOWNLOADS = contextLimit('CONTEXT_INDEX_MAX_DOWNLOADS', 100);
+export const CONTEXT_INDEX_MAX_BYTES = contextLimit('CONTEXT_INDEX_MAX_BYTES', 10 * 1024 * 1024);
+export const CONTEXT_INDEX_TIMEOUT_MS = contextLimit('CONTEXT_INDEX_TIMEOUT_MS', 20_000);
+export const CONTEXT_INDEX_CONCURRENCY = Math.min(8, contextLimit('CONTEXT_INDEX_CONCURRENCY', 4));
+
 /**
  * Retention for cached source blobs (customer code).
  *

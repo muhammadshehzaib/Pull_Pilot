@@ -1,3 +1,5 @@
+import { inspectImports } from './import-extraction';
+export { inspectImports } from './import-extraction';
 import { CONTEXT_SOURCE_EXTENSIONS } from '../utils/constants';
 
 /** A resolved import: the raw specifier plus the repo path it points at. */
@@ -19,7 +21,7 @@ export type ImportKind = 'static' | 'dynamic' | 'export-from' | 'type-only' | 'r
 export interface PathAliases {
   baseUrl: string;
   /** Alias without the trailing `/*`, e.g. '@' or '@shared'. */
-  entries: Array<{ prefix: string; targets: string[] }>;
+  entries: Array<{ prefix: string; targets: string[]; wildcard?: boolean }>;
 }
 
 /**
@@ -32,162 +34,7 @@ export interface PathAliases {
  * all three and only reports specifiers that appear in real code positions.
  */
 export function extractImports(source: string): string[] {
-  const specifiers: string[] = [];
-  let i = 0;
-  const n = source.length;
-
-  while (i < n) {
-    const ch = source[i];
-    const next = source[i + 1];
-
-    // Line comment
-    if (ch === '/' && next === '/') {
-      i = source.indexOf('\n', i);
-      if (i === -1) break;
-      continue;
-    }
-
-    // Block comment
-    if (ch === '/' && next === '*') {
-      const end = source.indexOf('*/', i + 2);
-      i = end === -1 ? n : end + 2;
-      continue;
-    }
-
-    // String / template literal: skip so a path inside it is not read as code.
-    if (ch === "'" || ch === '"' || ch === '`') {
-      i = skipString(source, i);
-      continue;
-    }
-
-    // import ... from 'x'  |  export ... from 'x'
-    if ((ch === 'i' || ch === 'e') && source.startsWith('import', i) && isWordStart(source, i - 1)) {
-      const consumed = readFromSpecifier(source, i + 6);
-      if (consumed) {
-        specifiers.push(consumed.specifier);
-        i = consumed.next;
-        continue;
-      }
-    }
-
-    if (ch === 'e' && source.startsWith('export', i) && isWordStart(source, i - 1)) {
-      const consumed = readFromSpecifier(source, i + 6);
-      if (consumed) {
-        specifiers.push(consumed.specifier);
-        i = consumed.next;
-        continue;
-      }
-    }
-
-    // Bare side-effect import: import 'polyfill'
-    if (ch === 'i' && source.startsWith('import', i) && isWordStart(source, i - 1)) {
-      const rest = source.slice(i + 6);
-      const quote = rest.search(/['"]/);
-      if (quote !== -1 && /^\s*;?\s*$/.test(rest.slice(0, quote))) {
-        const q = rest[quote];
-        const end = rest.indexOf(q, quote + 1);
-        if (end !== -1) {
-          specifiers.push(rest.slice(quote + 1, end));
-          i = i + 6 + end + 1;
-          continue;
-        }
-      }
-    }
-
-    // Dynamic import( 'x' )
-    if (ch === 'i' && source.startsWith('import', i) && isWordStart(source, i - 1)) {
-      const after = source.slice(i + 6);
-      const open = after.search(/\s*\(/);
-      if (open !== -1) {
-        const quoteAt = after.slice(open).search(/['"`]/);
-        if (quoteAt !== -1) {
-          const abs = i + 6 + open + quoteAt;
-          const q = source[abs];
-          const end = source.indexOf(q, abs + 1);
-          if (end !== -1) {
-            specifiers.push(source.slice(abs + 1, end));
-            i = end + 1;
-            continue;
-          }
-        }
-      }
-    }
-
-    // require('x')
-    if (ch === 'r' && source.startsWith('require', i) && isWordStart(source, i - 1)) {
-      const after = source.slice(i + 7);
-      const open = after.search(/\s*\(/);
-      if (open !== -1) {
-        const quoteAt = after.slice(open).search(/['"`]/);
-        if (quoteAt !== -1) {
-          const abs = i + 7 + open + quoteAt;
-          const q = source[abs];
-          const end = source.indexOf(q, abs + 1);
-          if (end !== -1) {
-            specifiers.push(source.slice(abs + 1, end));
-            i = end + 1;
-            continue;
-          }
-        }
-      }
-    }
-
-    i++;
-  }
-
-  return specifiers;
-}
-
-/** True when the index at `at` is not part of a longer identifier. */
-function isWordStart(source: string, at: number): boolean {
-  if (at < 0) return true;
-  const prev = source[at];
-  return !/[A-Za-z0-9_$]/.test(prev);
-}
-
-/** Returns the index just past the closing quote of a string starting at `at`. */
-function skipString(source: string, at: number): number {
-  const quote = source[at];
-  let i = at + 1;
-  while (i < source.length) {
-    const ch = source[i];
-    if (ch === '\\') {
-      i += 2;
-      continue;
-    }
-    if (quote === '`' && ch === '$' && source[i + 1] === '{') {
-      // Template substitution can contain real code; treat it as skipped.
-      i += 2;
-      continue;
-    }
-    if (ch === quote) return i + 1;
-    if (quote !== '`' && ch === '\n') return i;
-    i++;
-  }
-  return source.length;
-}
-
-/**
- * Reads `from '<specifier>'` or `import '<specifier>'` starting at `at`
- * (just past the keyword). Returns null when the statement has no module.
- */
-function readFromSpecifier(source: string, at: number): { specifier: string; next: number } | null {
-  const rest = source.slice(at, at + 400);
-  const fromIdx = rest.search(/\bfrom\b/);
-  const semiIdx = rest.indexOf(';');
-
-  if (fromIdx === -1) return null;
-  if (semiIdx !== -1 && semiIdx < fromIdx) return null;
-
-  const afterFrom = at + fromIdx + 4;
-  const quoteAt = source.slice(afterFrom, afterFrom + 8).search(/['"]/);
-  if (quoteAt === -1) return null;
-
-  const q = source[afterFrom + quoteAt];
-  const end = source.indexOf(q, afterFrom + quoteAt + 1);
-  if (end === -1) return null;
-
-  return { specifier: source.slice(afterFrom + quoteAt + 1, end), next: end + 1 };
+  return inspectImports(source).specifiers;
 }
 
 /**
@@ -235,28 +82,16 @@ export function resolveImportSpecifier(
   return null;
 }
 
-/** True when the specifier names a package or builtin, not a repo file. */
-function isExternal(specifier: string): boolean {
-  return !specifier.startsWith('.') && !specifier.startsWith('/');
-}
-
 /** Expands a tsconfig alias into the paths it could resolve to. */
 function aliasCandidates(specifier: string, aliases: PathAliases): string[] {
   const out: string[] = [];
 
   for (const entry of aliases.entries) {
-    if (!specifier.startsWith(entry.prefix)) continue;
+    if (entry.wildcard === false ? specifier !== entry.prefix
+      : specifier !== entry.prefix && !specifier.startsWith(`${entry.prefix}/`)) continue;
     const rest = specifier.slice(entry.prefix.length).replace(/^\//, '');
-    const wildcard = rest.includes('*') ? rest : null;
-
     for (const target of entry.targets) {
-      const base = target.replace(/\*$/, '');
-      if (wildcard !== null) {
-        const star = wildcard.indexOf('*');
-        out.push(joinPath(aliases.baseUrl, `${base}${wildcard.slice(0, star)}${wildcard.slice(star + 1)}`));
-      } else {
-        out.push(rest ? joinPath(aliases.baseUrl, `${base}${rest}`) : joinPath(aliases.baseUrl, base));
-      }
+      out.push(joinPath(aliases.baseUrl, target.includes('*') ? target.replace('*', rest) : target));
     }
   }
 
@@ -349,13 +184,13 @@ export function parsePathAliases(
   const paths = opts.paths;
   if (!paths || typeof paths !== 'object') return null;
 
-  const entries: Array<{ prefix: string; targets: string[] }> = [];
+  const entries: PathAliases['entries'] = [];
   for (const [key, value] of Object.entries(paths as Record<string, unknown>)) {
     if (!Array.isArray(value)) continue;
     const targets = value.filter((t): t is string => typeof t === 'string');
     if (targets.length === 0) continue;
     // Longest prefix wins, so '@shared/*' beats '@/*' for the same specifier.
-    entries.push({ prefix: key.replace(/\/\*$/, '').replace(/\*$/, ''), targets });
+    entries.push({ prefix: key.replace(/\/\*$/, '').replace(/\*$/, ''), targets, wildcard: key.endsWith('/*') });
   }
   if (entries.length === 0) return null;
 

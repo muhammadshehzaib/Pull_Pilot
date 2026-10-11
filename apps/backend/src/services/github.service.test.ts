@@ -362,6 +362,18 @@ describe('GitHubService', () => {
   });
 
   describe('getBlob()', () => {
+    it('accepts a genuinely empty source file and enforces the actual decoded byte limit', async () => {
+      mockGetBlob.mockResolvedValueOnce({ data: { size: 0, content: '', encoding: 'base64' } });
+      await expect(svc.getBlob('o', 'r', 'empty', undefined, 5)).resolves.toBe('');
+      mockGetBlob.mockResolvedValueOnce({ data: { content: Buffer.from('123456').toString('base64'), encoding: 'base64' } });
+      await expect(svc.getBlob('o', 'r', 'six', undefined, 5)).resolves.toBeNull();
+    });
+    it('forwards cancellation and refuses decoded payloads above the requested size', async () => {
+      const signal = new AbortController().signal;
+      mockGetBlob.mockResolvedValueOnce({ data: { size: 10, content: Buffer.from('1234567890').toString('base64'), encoding: 'base64' } });
+      await expect(svc.getBlob('o', 'r', 'large', signal, 5)).resolves.toBeNull();
+      expect(mockGetBlob).toHaveBeenCalledWith({ owner: 'o', repo: 'r', file_sha: 'large', request: { signal, timeout: 10_000 } });
+    });
     it('decodes base64 content by sha', async () => {
       mockGetBlob.mockResolvedValueOnce({
         data: { content: Buffer.from('const x = 1;').toString('base64'), encoding: 'base64' },

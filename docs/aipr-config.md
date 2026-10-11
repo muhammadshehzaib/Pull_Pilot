@@ -95,6 +95,14 @@ env vars) — a repository may reduce its budget or disable context, but cannot
 raise it above what the deployment allows. Malformed values fall back to
 defaults.
 
+Import discovery now inspects eligible unchanged files too, so incoming callers
+and their tests can be found even when they are absent from the PR diff. Parsed
+imports are encrypted and cached by repository/blob/parser version. Indexing has
+separate deployment-controlled file/download/byte/time limits; it does not send
+the whole index to the model. Reviews persist complete/partial/unavailable
+discovery metadata even when no background files are selected. See
+[context discovery](context-discovery.md) for configuration and limitations.
+
 ## `security`
 
 The deterministic security layer. Three probes run against the **filtered

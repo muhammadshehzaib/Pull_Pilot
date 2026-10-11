@@ -53,6 +53,7 @@ import {
 import { TestDraftFlow } from '../../components/TestDraftFlow';
 import { BehavioralVerification } from '../../components/BehavioralVerification';
 import { ExplainableRiskCard } from '../../components/ExplainableRiskCard';
+import { ContextDiscoveryCard } from '../../components/ContextDiscoveryCard';
 import { FindingFeedbackControl } from '../../components/FindingFeedbackControl';
 import { RepositoryInsightsPanel } from '../../components/RepositoryInsightsPanel';
 import { FindingWorkflowActions } from '../../components/FindingWorkflowActions';
@@ -78,7 +79,7 @@ interface JobDetail extends JobSummary {
   /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
   securityChecks?: SecurityCheck[];
   /** Risk engine output, rehydrated from the results blob by the controller. */
-  metadata?: { risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown;
+  metadata?: { risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown; contextDiscovery?: unknown;
     historicalFeedbackEligible?: boolean;
     historicalMemory?: { version?: number; algorithmVersion?: string; suppliedPatternIds: string[]; patternCount: number; truncated: boolean } };
 }
@@ -608,6 +609,7 @@ function JobDetailView({ job }: { job: JobDetail }) {
         <TestGapCard report={job.metadata.testGaps} jobId={job.id} />
       )}
       <ExplainableRiskCard report={liveRisk} />
+      <ContextDiscoveryCard report={job.metadata?.contextDiscovery} />
       {Boolean(job.metadata?.historicalMemory?.patternCount) && (
         <div
           className="historical-memory-attribution-card"

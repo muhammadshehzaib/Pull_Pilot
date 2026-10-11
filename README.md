@@ -31,7 +31,7 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 ## Features
 
 - **Auto-review on every PR / push** — registers a webhook on your repo, queues a job, and posts inline review comments back to GitHub
-- **Full codebase context (not diff-only)** — builds a dependency graph from your repository's imports, walks it from the changed files to find related code (callers, callees, tests), and feeds that surrounding context to the AI so findings reference real integration points, not just the diff hunk
+- **Repository context beyond the diff** ? indexes imports from eligible changed and unchanged JS/TS files to find dependencies, incoming importers, and related tests. Discovery and prompt limits are separate; partial coverage is disclosed. See [context discovery](docs/context-discovery.md).
 - **Repository rules via `.aipr.yml`** — define engineering guidelines ("Never log secrets", "All public functions need explicit return types") and severity thresholds; the reviewer enforces them on every PR and quotes the broken rule in the finding
 - **Multi-provider AI** — pick OpenAI, Gemini, Claude, or Grok per user; switch any time
 - **Encrypted key vault** — your AI API key is stored AES-256-GCM encrypted; the plaintext only exists in memory during a job
@@ -86,7 +86,7 @@ The developer feedback loop (Phase 9) adds Helpful / Not useful, independent dis
 
 1. GitHub webhook (or manual trigger) enqueues a job
 2. Worker fetches the PR diff and filters it through your `ignore` globs
-3. **Context engine**: fetches the repo file tree, extracts imports from changed files, walks the dependency graph (bidirectional BFS) to find related files — callers, callees, tests — and retrieves their content (cache-first, bounded by configurable file/token budgets)
+3. **Context engine**: reads the exact commit tree, reuses encrypted parsed imports, and indexes missing eligible source files within deployment limits. It selects incoming importers, dependencies, and related tests before loading their contents under the prompt file/token budgets.
 4. Diff + related context + your `.aipr.yml` guidelines are sent to the configured AI provider
 5. Findings are deduped, severity-filtered, and posted as inline PR comments + a summary comment
 6. Results are persisted and streamed to the dashboard over Socket.IO

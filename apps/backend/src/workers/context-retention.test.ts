@@ -12,7 +12,8 @@ const { mockAnalysisJob, mockCachedFile, mockPrisma } = vi.hoisted(() => {
   return {
     mockAnalysisJob,
     mockCachedFile,
-    mockPrisma: { analysisJob: mockAnalysisJob, cachedFile: mockCachedFile },
+    mockPrisma: { analysisJob: mockAnalysisJob, cachedFile: mockCachedFile,
+      cachedImport: { findMany: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() } },
   };
 });
 
@@ -25,6 +26,7 @@ describe('sweepExpiredContextOnce', () => {
     // resetAllMocks, not clearAllMocks: queued mockResolvedValueOnce values
     // survive a clear and would leak into the next test.
     vi.resetAllMocks();
+    mockPrisma.cachedImport.findMany.mockResolvedValue([]);
   });
 
   it('does nothing when nothing has expired', async () => {
@@ -32,6 +34,13 @@ describe('sweepExpiredContextOnce', () => {
 
     await expect(sweepExpiredContextOnce()).resolves.toBe(0);
     expect(mockCachedFile.deleteMany).not.toHaveBeenCalled();
+  });
+  it('sweeps derived imports under the same expiry policy as source blobs', async () => {
+    mockCachedFile.findMany.mockResolvedValueOnce([]);
+    mockPrisma.cachedImport.findMany.mockResolvedValueOnce([{ id: 'expired-import' }]);
+    mockPrisma.cachedImport.deleteMany.mockResolvedValueOnce({ count: 1 });
+    expect(await sweepExpiredContextOnce()).toBe(1);
+    expect(mockPrisma.cachedImport.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['expired-import'] } } });
   });
 
   it('deletes only rows at or past their expiry', async () => {

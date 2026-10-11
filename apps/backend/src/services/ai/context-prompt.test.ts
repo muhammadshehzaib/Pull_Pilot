@@ -21,6 +21,15 @@ function ctx(files: ContextFile[], overrides: Partial<ReviewContext> = {}): Revi
 }
 
 describe('formatContextForPrompt()', () => {
+  it('discloses incomplete discovery even when no background files could be selected', () => {
+    const out = formatContextForPrompt({ files: [], droppedPaths: [], treeTruncated: false, incomplete: true,
+      discovery: { version: 1, status: 'PARTIAL', headSha: 'sha', eligibleFiles: 200, indexedFiles: 100, missingFiles: 100,
+        selectedFiles: 0, importCacheHits: 0, sourceCacheHits: 0, downloads: 100, downloadedBytes: 1000,
+        elapsedMs: 20, reasons: ['DOWNLOAD_LIMIT'] } }, 4000);
+    expect(out).toContain('100/200 eligible files indexed');
+    expect(out).toContain('DOWNLOAD_LIMIT');
+    expect(out.length).toBeLessThanOrEqual(4000);
+  });
   it('returns nothing for an absent context', () => {
     expect(formatContextForPrompt(undefined, 1000)).toBe('');
   });
@@ -119,7 +128,7 @@ describe('formatContextForPrompt()', () => {
       10_000,
     );
 
-    expect(out).toMatch(/could not be fetched/i);
+    expect(out).toMatch(/discovery or content retrieval was incomplete/i);
   });
 
   it('lists dropped neighbours so the model knows context is partial', () => {

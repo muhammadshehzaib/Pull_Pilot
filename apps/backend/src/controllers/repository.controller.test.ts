@@ -68,6 +68,7 @@ vi.mock('../config/prisma', () => ({
     },
     analysisJob: { create: mockJobCreate },
     cachedFile: { deleteMany: mockCachedFileDeleteMany },
+    cachedImport: { deleteMany: vi.fn(async () => ({ count: 0 })) },
   },
 }));
 

@@ -123,6 +123,13 @@ certbot --nginx -d reviewer.shehzaib.com -d reviewerapi.shehzaib.com
 
 ## Update to a new version
 
+The unchanged-caller context update adds migration
+`20261020000000_context_import_index`. Apply it before the updated backend starts
+(the production container already runs `prisma migrate deploy`). Deploy frontend
+and backend together to expose discovery coverage in History. New optional
+`CONTEXT_INDEX_*` limits are listed in `.env.prod.example`; see
+[context discovery](../docs/context-discovery.md) for limits and validation.
+
 ```bash
 cd /opt/ai-pr-reviewer && git pull
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build

@@ -13,6 +13,8 @@
  * is worse than a review with slightly less context.
  */
 
+import type { ContextDiscovery } from '../context-discovery-types';
+
 /** One file selected as context, with the content already decrypted. */
 export interface ContextFile {
   path: string;
@@ -32,6 +34,7 @@ export interface ReviewContext {
   treeTruncated: boolean;
   /** True when some files could not be fetched. */
   incomplete: boolean;
+  discovery?: ContextDiscovery;
 }
 
 /**
@@ -61,7 +64,7 @@ export function formatContextForPrompt(
   context: ReviewContext | undefined,
   maxChars: number,
 ): string {
-  if (!context || context.files.length === 0) return '';
+  if (!context) return '';
 
   const header = buildHeader(context);
   const budget = maxChars - header.length - FOOTER.length;
@@ -88,8 +91,9 @@ function buildHeader(context: ReviewContext): string {
     caveats.push('The repository file listing was incomplete, so this context may miss relevant files.');
   }
   if (context.incomplete) {
-    caveats.push('Some listed files could not be fetched and are missing below.');
+    caveats.push('Import discovery or content retrieval was incomplete; unchanged callers and tests may be missing.');
   }
+  if (context.discovery) caveats.push(`Import discovery: ${context.discovery.status}; ${context.discovery.indexedFiles}/${context.discovery.eligibleFiles} eligible files indexed. Reasons: ${context.discovery.reasons.join(', ') || 'none'}. Import relationships do not prove function calls or test coverage.`);
   if (context.droppedPaths.length > 0) {
     caveats.push(
       `${context.droppedPaths.length} further file(s) were dropped to fit the context budget: ` +

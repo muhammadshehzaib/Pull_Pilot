@@ -279,6 +279,8 @@ export const analysisWorker = new Worker(
           headSha,
           changedPaths: includedFiles,
           config: repoConfig.context,
+          ignore: repoConfig.ignore,
+          signal: abort.signal,
         }));
         await assertNotSuperseded();
 
@@ -394,7 +396,8 @@ export const analysisWorker = new Worker(
         blockOnCriticalSecret: repoConfig.security.block_on_critical_secret,
         includedFiles, ignoredFiles, securityChecks: securityScan.checks,
         ruleChecks: ruleEvaluation.checks, testGaps, behavioral,
-        context: context ? context.incomplete || context.treeTruncated || context.droppedPaths.length > 0 ? 'PARTIAL' : 'AVAILABLE' : 'NOT_RUN',
+        context: context?.discovery?.status === 'UNAVAILABLE' ? 'NOT_RUN'
+          : context ? context.incomplete || context.treeTruncated || context.droppedPaths.length > 0 ? 'PARTIAL' : 'AVAILABLE' : 'NOT_RUN',
       });
 
       // One record per rule per job: the durable pass/fail trail a model
@@ -450,6 +453,7 @@ export const analysisWorker = new Worker(
             securityChecks: securityScan.checks,
             risk,
             riskV2,
+            contextDiscovery: context?.discovery,
             testGaps,
             behavioral,
           } as any,
@@ -586,7 +590,7 @@ export const analysisWorker = new Worker(
 
       await recordJobFindings(jobId, repositoryId, suggestions, {
             analyticsConfiguration: { riskAlgorithmVersion: RISK_ALGORITHM_VERSION, repoConfig,
-              pipelineVersion: 'review_pipeline_1', provider: vault.provider,
+              pipelineVersion: 'review_pipeline_2', provider: vault.provider,
               models: { openai: 'gpt-4o', claude: CLAUDE_MODEL, grok: GROK_MODEL, gemini: process.env.GEMINI_MODEL || 'gemini-2.5-flash' },
               rules: dbRules.map(r => ({ id: r.id, updatedAt: r.updatedAt })).sort((a, b) => a.id.localeCompare(b.id)) },
             suggestions,
@@ -597,6 +601,7 @@ export const analysisWorker = new Worker(
             securityChecks: securityScan.checks,
             risk,
             riskV2,
+            contextDiscovery: context?.discovery,
             testGaps,
             behavioral,
             commentFailures,

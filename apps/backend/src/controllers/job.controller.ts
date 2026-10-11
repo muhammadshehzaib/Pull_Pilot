@@ -180,6 +180,7 @@ export class JobController {
           // Best-effort test-gap report (missing test scenarios + discovery
           // evidence), or undefined when the provider did not support it.
           testGaps: rawObj.testGaps,
+          contextDiscovery: rawObj.contextDiscovery,
           behavioral,
           historicalMemory: normalizeHistoricalAttribution(rawObj.historicalMemory),
           historicalFeedbackEligible: job.status === 'COMPLETED' && job.createdAt >= historyCutoff(),

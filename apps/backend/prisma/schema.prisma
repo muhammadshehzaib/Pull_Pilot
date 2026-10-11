@@ -127,6 +127,7 @@ model Repository {
   createdAt      DateTime      @default(now())
   analysisJobs   AnalysisJob[]
   cachedFiles    CachedFile[]
+  cachedImports  CachedImport[]
   rules          RepositoryRule[]
   testDrafts     TestDraft[]
   behavioralConfig Json?
@@ -323,6 +324,25 @@ model CachedFile {
   @@unique([repositoryId, blobSha])
   @@index([expiresAt])
   @@map("cached_files")
+}
+
+/// Extracted imports are source-derived data, encrypted and isolated per repository.
+model CachedImport {
+  id            String     @id @default(uuid())
+  repositoryId  String
+  repository    Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  blobSha       String
+  parserVersion Int
+  encryptedData String
+  iv            String
+  authTag       String
+  salt          String
+  createdAt     DateTime   @default(now())
+  expiresAt     DateTime?
+
+  @@unique([repositoryId, blobSha, parserVersion])
+  @@index([expiresAt])
+  @@map("cached_imports")
 }
 
 enum EventType {

@@ -11,6 +11,9 @@ const { mockCachedFile, mockPrisma, ENCRYPTION_KEY } = vi.hoisted(() => {
   // The worker instantiates PrismaClient on import; keep tests off a real DB.
   const mockPrisma = {
     cachedFile: mockCachedFile,
+    cachedImport: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    $queryRaw: vi.fn(async () => [{ id: 'repo-1' }]),
+    $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(mockPrisma)),
   };
   return {
     mockCachedFile,
@@ -80,6 +83,11 @@ describe('RepositoryContextCache', () => {
   });
 
   describe('put()', () => {
+    it('does not recreate cached source after repository deactivation', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([]);
+      await cache.put(REPO, SHA, 'src/a.ts', 'x');
+      expect(mockCachedFile.upsert).not.toHaveBeenCalled();
+    });
     it('stores an encrypted envelope, never plaintext', async () => {
       const secret = 'const apiKey = "sk-super-secret";';
       await cache.put(REPO, SHA, 'src/a.ts', secret);
@@ -133,6 +141,12 @@ describe('RepositoryContextCache', () => {
       const call = mockCachedFile.upsert.mock.calls[0][0];
       expect(call.update.expiresAt.getTime()).toBeGreaterThan(Date.now());
     });
+  });
+
+  it('clears both source and parsed-import records for the same repository', async () => {
+    await cache.clearRepository(REPO);
+    expect(mockPrisma.cachedImport.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: REPO } });
+    expect(mockCachedFile.deleteMany).toHaveBeenCalledWith({ where: { repositoryId: REPO } });
   });
 
   describe('get()', () => {

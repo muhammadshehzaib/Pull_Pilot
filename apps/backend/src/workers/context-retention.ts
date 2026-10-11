@@ -25,6 +25,11 @@ import {
 export async function sweepExpiredContextOnce(): Promise<number> {
   const now = new Date();
   let total = 0;
+  if (!CONTEXT_RETAIN_INDEFINITELY) {
+    const data = { expiresAt: new Date(now.getTime() + CONTEXT_RETENTION_HOURS * 3_600_000) };
+    await prisma.cachedFile.updateMany({ where: { expiresAt: null }, data });
+    await prisma.cachedImport.updateMany({ where: { expiresAt: null }, data });
+  }
 
   for (;;) {
     const expired = await prisma.cachedFile.findMany({
@@ -46,6 +51,16 @@ export async function sweepExpiredContextOnce(): Promise<number> {
     if (expired.length < DELETE_BATCH_SIZE) break;
   }
 
+  for (;;) {
+    const expired = await prisma.cachedImport.findMany({
+      where: { expiresAt: { lte: now } }, select: { id: true },
+      orderBy: { expiresAt: 'asc' }, take: DELETE_BATCH_SIZE,
+    });
+    if (!expired.length) break;
+    const { count } = await prisma.cachedImport.deleteMany({ where: { id: { in: expired.map(row => row.id) } } });
+    total += count;
+    if (expired.length < DELETE_BATCH_SIZE) break;
+  }
   return total;
 }
 

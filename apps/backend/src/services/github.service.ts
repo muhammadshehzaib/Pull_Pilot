@@ -253,13 +253,14 @@ export class GitHubService {
    * Fetches raw content of a file from a repository at a specific branch/ref.
    * Returns null if the file does not exist (404).
    */
-  async getFileContent(owner: string, repo: string, path: string, ref?: string): Promise<string | null> {
+  async getFileContent(owner: string, repo: string, path: string, ref?: string, signal?: AbortSignal): Promise<string | null> {
     try {
       const response = await this.octokit.repos.getContent({
         owner,
         repo,
         path,
         ...(ref ? { ref } : {}),
+        ...(signal ? { request: { signal, timeout: 10_000 } } : {}),
       });
 
       if ('content' in response.data && typeof response.data.content === 'string') {
@@ -286,13 +287,14 @@ export class GitHubService {
    * `truncated` is true and the caller must not assume the listing is
    * complete, or context retrieval will quietly miss neighbours.
    */
-  async getTree(owner: string, repo: string, sha: string): Promise<RepoTreeResult | null> {
+  async getTree(owner: string, repo: string, sha: string, signal?: AbortSignal): Promise<RepoTreeResult | null> {
     try {
       const { data } = await this.octokit.git.getTree({
         owner,
         repo,
         tree_sha: sha,
         recursive: 'true',
+        ...(signal ? { request: { signal, timeout: 10_000 } } : {}),
       });
 
       const files: RepoTreeEntry[] = [];
@@ -326,16 +328,20 @@ export class GitHubService {
    * returns the same SHA at every commit it appears in, so an unchanged file is
    * fetched once and then served from the cache.
    */
-  async getBlob(owner: string, repo: string, blobSha: string): Promise<string | null> {
+  async getBlob(owner: string, repo: string, blobSha: string, signal?: AbortSignal, maxBytes?: number): Promise<string | null> {
     try {
-      const { data } = await this.octokit.git.getBlob({ owner, repo, file_sha: blobSha });
+      const { data } = await this.octokit.git.getBlob({ owner, repo, file_sha: blobSha,
+        ...(signal ? { request: { signal, timeout: 10_000 } } : {}) });
 
-      if (!data.content) return null;
+      if (typeof data.content !== 'string') return null;
       if (data.encoding !== 'base64') {
         console.warn(`⚠️ Unexpected blob encoding "${data.encoding}" for ${blobSha}; skipping`);
         return null;
       }
-      return Buffer.from(data.content, 'base64').toString('utf-8');
+      if (maxBytes !== undefined && ((data.size ?? 0) > maxBytes || data.content.replace(/\s/g, '').length > Math.ceil(maxBytes / 3) * 4)) return null;
+      const decoded = Buffer.from(data.content, 'base64');
+      if (maxBytes !== undefined && decoded.length > maxBytes) return null;
+      return decoded.toString('utf-8');
     } catch (err: any) {
       const status = err.status ?? err?.response?.status;
       if (status === 404) return null;

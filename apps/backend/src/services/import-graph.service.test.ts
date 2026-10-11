@@ -24,6 +24,14 @@ const FILES = [
 ];
 
 describe('extractImports()', () => {
+  it('keeps adjacent semicolonless side-effect, dynamic and static imports distinct', () => {
+    expect(extractImports("import './one'\nconst lazy = import('./two')\nimport { x } from './three'\nexport * from './four'"))
+      .toEqual(['./one', './two', './three', './four']);
+  });
+  it('ignores property names, regex text and computed import paths', () => {
+    expect(extractImports("const pattern = /import('fake')/; obj.import('other'); import(`./${name}`); require(prefix + '/x'); import './real';"))
+      .toEqual(['./real']);
+  });
   it('reads static imports', () => {
     const src = `
       import { createSubscription } from './services/subscription.service';
@@ -113,6 +121,11 @@ describe('extractImports()', () => {
 
 describe('resolveImportSpecifier()', () => {
   const index = buildFileIndex(FILES);
+  it('does not treat a scoped package or longer exact alias as a prefix match', () => {
+    const aliases = parsePathAliases({ compilerOptions: { paths: { '@/*': ['src/*'], '@config': ['config'] } } });
+    expect(resolveImportSpecifier('@types/node', 'src/index.ts', index, aliases)).toBeNull();
+    expect(resolveImportSpecifier('@configuration', 'src/index.ts', index, aliases)).toBeNull();
+  });
 
   it('resolves an explicit extension', () => {
     expect(resolveImportSpecifier('./format.ts', 'src/utils/index.ts', index)).toBe(
