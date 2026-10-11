@@ -5,6 +5,7 @@ import { normalizeStoredSuggestions, type AiSuggestion } from '../ai/finding-tax
 import { generateFingerprint, buildFindingSummary } from './fingerprint.service';
 import { dirtyHistory, historyCutoff, lockHistoricalRepository } from './state';
 import { publishReviewAnalytics } from '../analytics/facts';
+import { DELIVERY_TERMINAL_STATES } from '../comment-delivery-report';
 
 /** Exact artifact identity, not a fuzzy cross-review pattern or array position. */
 export function findingIdentity(f: AiSuggestion): string {
@@ -31,11 +32,20 @@ export async function recordJobFindings(
 ): Promise<void> {
   await prisma.$transaction(async tx => {
     await lockHistoricalRepository(tx, repositoryId);
+    await tx.$queryRaw`SELECT id FROM analysis_jobs WHERE id = ${jobId} FOR UPDATE`;
     const repo = await tx.repository.findUnique({ where: { id: repositoryId } });
     const job = await tx.analysisJob.findFirst({ where: { id: jobId, repositoryId } });
     if (!job || !repo?.isActive) throw new Error('Review or repository unavailable');
     const normalized = normalizeStoredSuggestions(findings);
     const hash = snapshotIdentity(normalized);
+    if (completedResults !== undefined) {
+      if (['CANCELLED', 'TIMEOUT', 'FAILED', 'SKIPPED'].includes(job.status)) throw new Error('Review is terminal; completion refused');
+      if (job.deliveryVersion === 1 && job.eventType === 'PULL_REQUEST') {
+        const plan = await tx.reviewDeliveryPlan.findUnique({ where: { analysisJobId: jobId }, include: { deliveries: true } });
+        if ((!plan && normalized.length > 0) || (plan && (plan.artifactHash !== hash || plan.deliveries.some(r =>
+          !(DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state))))) throw new Error('Comment delivery is unfinished or review changed');
+      }
+    }
     if (completedResults === undefined &&
       (job.status !== 'COMPLETED' || snapshotIdentity(normalizedResults(job.results)) !== hash)) {
       throw new Error('Review changed; reload before backfilling');

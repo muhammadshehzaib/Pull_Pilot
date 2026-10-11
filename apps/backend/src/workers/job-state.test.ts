@@ -8,7 +8,8 @@ const { mockJobFindUnique, mockJobUpdate, mockEmitStatus } = vi.hoisted(() => ({
 
 vi.mock('../config/prisma', () => ({
   default: {
-    analysisJob: { findUnique: mockJobFindUnique, update: mockJobUpdate },
+    $transaction: async (fn: any) => fn({ $queryRaw: async () => [], analysisJob: { findUnique: mockJobFindUnique, update: mockJobUpdate } }),
+    analysisJob: { findUnique: mockJobFindUnique, update: mockJobUpdate, updateMany: mockJobUpdate },
   },
 }));
 
@@ -30,7 +31,8 @@ import {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mockJobUpdate.mockResolvedValue({});
+  mockJobUpdate.mockResolvedValue({ count: 1 });
+  mockJobFindUnique.mockResolvedValue({ status: 'QUEUED' });
 });
 
 describe('terminal status predicates', () => {
@@ -174,13 +176,13 @@ describe('advanceReview', () => {
   it('records the first phase of a queued review', async () => {
     await advanceFrom('QUEUED');
 
-    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'FETCHING' } });
+    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1', status: 'QUEUED' }, data: { status: 'FETCHING' } });
     expect(mockEmitStatus).toHaveBeenCalledWith('u-1', 'job-1', 'msg:FETCHING', 'FETCHING');
   });
 
   it('moves forward through the pipeline', async () => {
     await advanceFrom('FETCHING', 'ANALYZING');
-    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'ANALYZING' } });
+    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1', status: 'FETCHING' }, data: { status: 'ANALYZING' } });
   });
 
   it('refuses to move backwards', async () => {
@@ -232,10 +234,10 @@ describe('advanceReview', () => {
     }
   });
 
-  it('advances when the row is missing', async () => {
+  it('does not advance when the row is missing', async () => {
     // A deleted job is not a reason to skip the write.
     await advanceFrom(null);
 
-    expect(mockJobUpdate).toHaveBeenCalledWith({ where: { id: 'job-1' }, data: { status: 'FETCHING' } });
+    expect(mockJobUpdate).not.toHaveBeenCalled();
   });
 });

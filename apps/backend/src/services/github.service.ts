@@ -4,6 +4,40 @@ import { Octokit } from '@octokit/rest';
 export interface CommentPostResult {
   ok: boolean;
   error?: string;
+  id?: string;
+  url?: string;
+  status?: number;
+  failure?: 'REJECTED' | 'RETRYABLE' | 'UNKNOWN';
+  retryAt?: number;
+}
+
+export interface DeliveredGitHubComment {
+  id: string;
+  body: string;
+  authorId: string;
+  url: string;
+  path?: string;
+  originalCommitId?: string;
+}
+
+/** HTTP errors without a definite rejection must never trigger a second POST. */
+export function classifyCommentError(error: unknown): CommentPostResult {
+  const err = error as { status?: number; response?: { status?: number; headers?: Record<string, string>; data?: { message?: string } }; message?: string };
+  const status = err.status ?? err.response?.status;
+  const headers = err.response?.headers ?? {};
+  const message = err.response?.data?.message ?? err.message ?? '';
+  const rateLimited = status === 429 || ((status === 403 || status === 422) &&
+    (!!headers['retry-after'] || headers['x-ratelimit-remaining'] === '0' || /rate limit|spam|too quickly/i.test(message)));
+  if (rateLimited) {
+    const seconds = Number(headers['retry-after']);
+    const reset = Number(headers['x-ratelimit-reset']) * 1000;
+    const retryAt = Math.max(Date.now() + 60_000, Number.isFinite(seconds) ? Date.now() + seconds * 1000 : 0, Number.isFinite(reset) ? reset : 0);
+    return { ok: false, status, failure: 'RETRYABLE', error: 'github-rate-limited', retryAt };
+  }
+  if (status && [400, 401, 403, 404, 410, 422].includes(status)) {
+    return { ok: false, status, failure: 'REJECTED', error: status === 422 ? 'github-validation-rejected' : `github-rejected-${status}` };
+  }
+  return { ok: false, status, failure: 'UNKNOWN', error: 'github-delivery-unconfirmed' };
 }
 
 /** One file from a repository tree listing. */
@@ -24,8 +58,36 @@ export interface RepoTreeResult {
 export class GitHubService {
   private octokit: Octokit;
 
-  constructor(githubToken: string) {
+  constructor(githubToken: string, private readonly postingActor?: (signal?: AbortSignal) => Promise<string>) {
     this.octokit = new Octokit({ auth: githubToken });
+  }
+
+  async getPostingAuthorId(signal?: AbortSignal): Promise<string> {
+    if (this.postingActor) return this.postingActor(signal);
+    const { data } = await this.octokit.users.getAuthenticated({ request: { signal, timeout: 10_000 } });
+    if (!data.id) throw new Error('GitHub posting identity unavailable');
+    return String(data.id);
+  }
+
+  /** Positive matches survive a failed/capped listing; absence never permits a resend. */
+  async listDeliveryComments(owner: string, repo: string, number: number, kind: 'INLINE' | 'SUMMARY', signal?: AbortSignal): Promise<{ comments: DeliveredGitHubComment[]; complete: boolean }> {
+    const comments: DeliveredGitHubComment[] = [];
+    const deadline = Date.now() + 30_000;
+    for (let page = 1; page <= 20 && Date.now() < deadline && !signal?.aborted; page++) {
+      try {
+        const params = { owner, repo, per_page: 100, page, headers: { accept: 'application/vnd.github.raw+json' }, request: { signal, timeout: Math.min(10_000, deadline - Date.now()) } };
+        const response = kind === 'INLINE'
+          ? await this.octokit.pulls.listReviewComments({ ...params, pull_number: number })
+          : await this.octokit.issues.listComments({ ...params, issue_number: number });
+        for (const c of response.data) {
+          const inline = c as { path?: string; original_commit_id?: string };
+          comments.push({ id: String(c.id), body: c.body ?? '', authorId: String(c.user?.id ?? ''), url: c.html_url,
+            path: inline.path, originalCommitId: inline.original_commit_id });
+        }
+        if (response.data.length < 100) return { comments, complete: true };
+      } catch { return { comments, complete: false }; }
+    }
+    return { comments, complete: false };
   }
 
   /**
@@ -73,9 +135,10 @@ export class GitHubService {
     path: string,
     line: number,
     body: string,
+    signal?: AbortSignal,
   ): Promise<CommentPostResult> {
     try {
-      await this.octokit.pulls.createReviewComment({
+      const { data } = await this.octokit.pulls.createReviewComment({
         owner,
         repo,
         pull_number: pullNumber,
@@ -84,13 +147,12 @@ export class GitHubService {
         line,
         body,
         side: 'RIGHT',
+        ...(signal ? { request: { signal, timeout: 10_000 } } : {}),
       });
       console.log(`💬 Posted comment successfully to line ${line} of ${path}`);
-      return { ok: true };
+      return { ok: true, id: String(data.id), url: data.html_url };
     } catch (err) {
-      const message = (err as Error).message;
-      console.warn(`⚠️ Could not post inline comment at ${path}:${line} — ${message}`);
-      return { ok: false, error: message };
+      return classifyCommentError(err);
     }
   }
 
@@ -135,8 +197,9 @@ export class GitHubService {
    * Resolves the head SHA for a pull request — used by the manual-trigger flow,
    * which doesn't have a webhook payload to read from.
    */
-  async getPullRequest(owner: string, repo: string, pullNumber: number) {
-    const { data } = await this.octokit.pulls.get({ owner, repo, pull_number: pullNumber });
+  async getPullRequest(owner: string, repo: string, pullNumber: number, signal?: AbortSignal) {
+    const { data } = await this.octokit.pulls.get({ owner, repo, pull_number: pullNumber,
+      ...(signal ? { request: { signal, timeout: 10_000 } } : {}) });
     return data;
   }
 
@@ -358,20 +421,20 @@ export class GitHubService {
     repo: string,
     issueNumber: number,
     body: string,
+    signal?: AbortSignal,
   ): Promise<CommentPostResult> {
     try {
-      await this.octokit.issues.createComment({
+      const { data } = await this.octokit.issues.createComment({
         owner,
         repo,
         issue_number: issueNumber,
         body,
+        ...(signal ? { request: { signal, timeout: 10_000 } } : {}),
       });
       console.log(`💬 Posted issue comment successfully to PR #${issueNumber}`);
-      return { ok: true };
+      return { ok: true, id: String(data.id), url: data.html_url };
     } catch (err) {
-      const message = (err as Error).message;
-      console.warn(`⚠️ Failed to post issue comment to PR #${issueNumber}: ${message}`);
-      return { ok: false, error: message };
+      return classifyCommentError(err);
     }
   }
 

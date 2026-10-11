@@ -15,6 +15,7 @@ router.get('/:id', JobController.get);
 // /api/test-drafts). Path does not overlap `/:id`.
 router.get('/:id/test-drafts', TestDraftController.listForJob);
 router.post('/:id/cancel', JobController.cancel);
+router.post('/:id/comments/reconcile', feedbackRateLimit, JobController.reconcileComments);
 
 // Phase 8 Historical Intelligence — Finding occurrences and developer feedback
 router.get('/:id/findings', FindingController.listForJob);

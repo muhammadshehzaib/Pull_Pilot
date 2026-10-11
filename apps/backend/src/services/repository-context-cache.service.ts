@@ -165,6 +165,8 @@ export class RepositoryContextCache {
    * and app uninstall) since indefinite retention means nothing else expires.
    */
   async clearRepository(repositoryId: string): Promise<void> {
+    const { purgeRepositoryDeliveryPayloads } = await import('./comment-delivery.service');
+    await purgeRepositoryDeliveryPayloads(repositoryId);
     await prisma.cachedImport.deleteMany({ where: { repositoryId } });
     await prisma.cachedFile.deleteMany({ where: { repositoryId } });
   }

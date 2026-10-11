@@ -6,6 +6,22 @@ vi.mock('../services/historical/occurrence.service', async importOriginal => ({
     await mockJobUpdate({ where: { id: jobId }, data: { status: 'COMPLETED', results } });
   }),
 }));
+vi.mock('../services/comment-delivery.service', () => ({
+  loadReviewDelivery: vi.fn(async () => null),
+  prepareReviewDelivery: vi.fn(async (input: any) => {
+    await mockJobUpdate({ where: { id: input.jobId }, data: { status: 'POSTING', results: input.artifact } });
+    return { ...input, analysisJobId: input.jobId };
+  }),
+  deliverReviewPlan: vi.fn(async (plan: any, gh: any) => {
+    const { renderInlineComment } = await import('../services/ai/finding-format');
+    const failures: string[] = [];
+    for (const finding of plan.artifact.suggestions) {
+      const result = await gh.createReviewComment('octo', 'cat', 42, plan.headSha, finding.filePath, finding.lineNumber, renderInlineComment(finding));
+      if (result?.ok === false) failures.push(finding.filePath + ':' + finding.lineNumber + ' \u2014 ' + result.error);
+    }
+    return { artifact: { ...plan.artifact, commentFailures: failures, summaryPosted: true } };
+  }),
+}));
 vi.mock('../services/historical/review-memory.service', () => ({ retrieveHistoricalMemory: vi.fn() }));
 vi.mock('../services/feedback-loop/adaptation.service', async importOriginal => ({
   ...await importOriginal<typeof import('../services/feedback-loop/adaptation.service')>(), retrieveFeedbackAdaptation: vi.fn(),
@@ -86,7 +102,9 @@ analysisQueue: { add: vi.fn() },
 
 vi.mock('../config/prisma', () => ({
   default: {
-    analysisJob: { update: mockJobUpdate, findUnique: mockJobFindUnique },
+    $queryRaw: async () => [],
+    $transaction: async (fn: any) => fn({ $queryRaw: async () => [], analysisJob: { findUnique: mockJobFindUnique, update: mockJobUpdate } }),
+    analysisJob: { update: mockJobUpdate, updateMany: mockJobUpdate, findUnique: mockJobFindUnique },
     repository: { findUnique: mockRepoFindUnique },
     repositoryRule: { findMany: mockRuleFindMany },
     ruleCheck: { createMany: mockRuleCheckCreateMany },
@@ -112,6 +130,9 @@ vi.mock('../config/socket', () => ({
 
 import './analysis.worker';
 import { REVIEW_TIMEOUT_MS } from '../utils/constants';
+import { loadReviewDelivery, prepareReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
+const defaultPrepare = vi.mocked(prepareReviewDelivery).getMockImplementation()!;
+const defaultDeliver = vi.mocked(deliverReviewPlan).getMockImplementation()!;
 
 function makeJobPayload(overrides: Record<string, any> = {}) {
   return {
@@ -141,10 +162,12 @@ const fullRepoWithVault = {
   },
 };
 
-beforeEach(() => {
+beforeEach(async () => {
   // resetAllMocks drains queued mockResolvedValueOnce/mockRejectedValueOnce
   // values AND clears call history — clearAllMocks only does the latter.
   vi.resetAllMocks();
+  vi.mocked(prepareReviewDelivery).mockImplementation(defaultPrepare);
+  vi.mocked(deliverReviewPlan).mockImplementation(defaultDeliver);
   mockDecrypt.mockReturnValue('sk-decrypted');
   mockGetProvider.mockReturnValue({ analyzeCode: mockAnalyzeCode });
   // Default: no DB-stored rules, so reviews behave exactly as before they
@@ -154,7 +177,12 @@ beforeEach(() => {
   mockSecurityCheckCreateMany.mockResolvedValue({ count: 0 });
   // Default: the job has not entered the pipeline, so every advanceReview()
   // transition is a forward move and gets persisted.
-  mockJobFindUnique.mockResolvedValue({ status: 'QUEUED' });
+  mockJobFindUnique.mockResolvedValue({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1',
+    repository: { isActive: true, userId: 'u-owner', fullName: 'octo/cat' } });
+  GitHubServiceCtor.mockImplementation(function (this: any) { this.fetchDiff = mockFetchDiff; this.createReviewComment = mockCreateReviewComment; this.createIssueComment = vi.fn(); this.getFileContent = vi.fn(async () => null); this.getPostingAuthorId = vi.fn(async () => '7'); });
+  mockJobUpdate.mockResolvedValue({ count: 1 });
+  const delivery = await import('../services/comment-delivery.service');
+  vi.mocked(delivery.loadReviewDelivery).mockResolvedValue(null);
   process.env.GITHUB_ACCESS_TOKEN = 'ghp-bot';
 });
 
@@ -166,12 +194,41 @@ describe('analysis worker — module wiring', () => {
   });
 });
 
+describe('analysis worker — durable delivery entry', () => {
+  it('resumes a saved plan without a vault lookup, AI call, or regenerated findings', async () => {
+    const plan = { analysisJobId: 'job-1', artifact: { suggestions: [] } } as any;
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce(plan);
+    vi.mocked(deliverReviewPlan).mockResolvedValueOnce({ artifact: { suggestions: [], commentFailures: [], summaryPosted: true } });
+    expect(await capturedHandler.fn!(makeJobPayload())).toMatchObject({ status: 'success' });
+    expect(deliverReviewPlan).toHaveBeenCalledWith(plan, expect.anything(), expect.any(AbortSignal));
+    expect(mockRepoFindUnique).not.toHaveBeenCalled(); expect(mockDecrypt).not.toHaveBeenCalled();
+    expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(mockFetchDiff).not.toHaveBeenCalled();
+  });
+  it.each(['COMPLETED', 'CANCELLED', 'TIMEOUT', 'FAILED', 'SKIPPED'])('never restarts a terminal %s job', async status => {
+    mockJobFindUnique.mockResolvedValue({ status, repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } });
+    expect(await capturedHandler.fn!(makeJobPayload())).toEqual({ status: 'already-terminal' });
+    expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(deliverReviewPlan).not.toHaveBeenCalled();
+  });
+  it('does not invent sendable receipts for legacy reviews', async () => {
+    mockJobFindUnique.mockResolvedValue({ status: 'POSTING', deliveryVersion: 0, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } });
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('Legacy');
+    expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(prepareReviewDelivery).not.toHaveBeenCalled();
+    expect(mockJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SKIPPED' }) }));
+  });
+  it('does not restart a review belonging to an inactive repository', async () => {
+    mockJobFindUnique.mockResolvedValue({ status: 'POSTING', repositoryId: 'r-1', repository: { isActive: false, userId: 'u-owner' } });
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('unavailable');
+    expect(deliverReviewPlan).not.toHaveBeenCalled(); expect(mockAnalyzeCode).not.toHaveBeenCalled();
+  });
+});
+
 describe('analysis worker — happy path', () => {
   it('supplies unchanged caller evidence to the provider and persists partial discovery metadata', async () => {
     GitHubServiceCtor.mockImplementationOnce(function (this: any) {
       this.fetchDiff = mockFetchDiff;
       this.createReviewComment = mockCreateReviewComment;
       this.createIssueComment = vi.fn();
+      this.getPostingAuthorId = vi.fn(async () => '7');
       this.getFileContent = vi.fn(async () => null);
       this.getTree = vi.fn(async () => ({ files: [
         { path: 'src/payment.ts', blobSha: 'payment', size: 30, mode: '100644' },
@@ -318,7 +375,7 @@ describe('analysis worker — happy path', () => {
 
     // And the user must be told via the socket.
     const messages = mockEmitStatus.mock.calls.map((c) => String(c[2]));
-    expect(messages.some((m: string) => m.includes('could not be placed inline'))).toBe(true);
+    expect(messages.some((m: string) => m.includes('partial comment delivery'))).toBe(true);
   });
 
   it('records no commentFailures when every inline comment lands', async () => {
@@ -509,6 +566,7 @@ describe('analysis worker — cancellation and timeout', () => {
     // The cancellation lands after FETCHING is written but before the AI call
     // returns — exactly the window where a naive worker would carry on.
     mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'CANCELLED' });
 
@@ -520,6 +578,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('does not overwrite CANCELLED with FAILED', async () => {
     reviewWithFindings();
     mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'CANCELLED' });
 
@@ -533,6 +592,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('does not overwrite TIMEOUT with FAILED', async () => {
     reviewWithFindings();
     mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'TIMEOUT' });
 
@@ -558,6 +618,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('does not post comments when the review was cancelled before analysis finished', async () => {
     reviewWithFindings();
     mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'CANCELLED' });
 
@@ -570,6 +631,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('leaves the job CANCELLED rather than SKIPPED when it was cancelled mid-flight', async () => {
     reviewWithFindings();
     mockJobFindUnique
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'TIMEOUT' });
 

@@ -153,7 +153,7 @@ describe('GitHubService', () => {
       // Must not throw, but must report so the worker can surface it.
       expect(result).toEqual({
         ok: false,
-        error: 'Unprocessable Entity: pull_request_review_thread.line invalid',
+        error: 'github-delivery-unconfirmed', failure: 'UNKNOWN', status: undefined,
       });
     });
 
@@ -162,7 +162,7 @@ describe('GitHubService', () => {
 
       await expect(
         svc.createReviewComment('o', 'r', 42, 'sha', 'f.ts', 10, 'body'),
-      ).resolves.toEqual({ ok: true });
+      ).resolves.toEqual({ ok: true, id: '1', url: undefined });
     });
   });
 

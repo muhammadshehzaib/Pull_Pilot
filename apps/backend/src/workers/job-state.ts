@@ -117,16 +117,27 @@ export async function markReviewTerminal(
   status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'TIMEOUT',
   message: string,
   results?: Record<string, unknown>,
-): Promise<void> {
-  await prisma.analysisJob.update({
-    where: { id: jobId },
-    data: {
-      status,
-      ...(results ? { results: results as never } : {}),
-    },
-  });
+): Promise<boolean> {
+  const changed = await persistState(jobId, status, results);
+  if (changed) SocketService.emitStatus(userId, jobId, message, status);
+  return changed;
+}
 
-  SocketService.emitStatus(userId, jobId, message, status);
+/** Lock the job so failures/cancellation preserve findings and cannot overwrite completion. */
+async function persistState(jobId: string, status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'TIMEOUT' | 'RETRYING', metadata?: Record<string, unknown>) {
+  return prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM analysis_jobs WHERE id = ${jobId} FOR UPDATE`;
+    const row = await tx.analysisJob.findUnique({ where: { id: jobId } });
+    if (!row || isTerminalStatus(row.status)) return false;
+    const previous = row.results && typeof row.results === 'object' && !Array.isArray(row.results) ? row.results : {};
+    await tx.analysisJob.update({ where: { id: jobId }, data: { status,
+      ...(metadata ? { results: JSON.parse(JSON.stringify({ ...previous, ...metadata })) } : {}) } });
+    return true;
+  });
+}
+
+export async function persistReviewFailure(jobId: string, userId: string, status: 'RETRYING' | 'FAILED', message: string) {
+  if (await persistState(jobId, status, { error: message.slice(0, 500) })) SocketService.emitStatus(userId, jobId, message, status);
 }
 
 /**
@@ -153,16 +164,18 @@ export async function advanceReview(
     select: { status: true },
   });
 
+  if (!current) return;
+
   if (current && isReviewPhase(current.status)) {
     if (PHASE_RANK[phase] <= PHASE_RANK[current.status]) return;
   } else if (current && isTerminalStatus(current.status)) {
     return;
   }
 
-  await prisma.analysisJob.update({
-    where: { id: jobId },
+  const changed = await prisma.analysisJob.updateMany({
+    where: { id: jobId, status: current?.status },
     data: { status: phase },
   });
 
-  SocketService.emitStatus(userId, jobId, message, phase);
+  if (changed.count) SocketService.emitStatus(userId, jobId, message, phase);
 }

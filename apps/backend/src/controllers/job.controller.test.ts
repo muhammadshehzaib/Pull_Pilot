@@ -11,6 +11,7 @@ const { mockJobFindMany, mockJobCount, mockJobFindFirst, mockJobUpdate, mockQueu
 
 vi.mock('../config/prisma', () => ({
   default: {
+    $transaction: async (fn: any) => fn({ $queryRaw: async () => [], analysisJob: { findUnique: async () => ({ status: 'POSTING' }), update: mockJobUpdate } }),
     analysisJob: {
       findMany: mockJobFindMany,
       count: mockJobCount,
@@ -30,6 +31,11 @@ vi.mock('../config/socket', () => ({
 
 import { JobController, parseJobStatus, normalizeFindingAdaptation } from './job.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
+import { loadReviewDelivery, reconcileReviewDelivery } from '../services/comment-delivery.service';
+import { GitHubAppService } from '../services/github-app.service';
+
+vi.mock('../services/comment-delivery.service', () => ({ loadReviewDelivery: vi.fn(), reconcileReviewDelivery: vi.fn() }));
+vi.mock('../services/github-app.service', () => ({ GitHubAppService: { getInstallationService: vi.fn() } }));
 
 const authedReq = (overrides = {}) => {
   const req = mockReq(overrides);

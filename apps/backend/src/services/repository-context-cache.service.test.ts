@@ -10,6 +10,9 @@ const { mockCachedFile, mockPrisma, ENCRYPTION_KEY } = vi.hoisted(() => {
   };
   // The worker instantiates PrismaClient on import; keep tests off a real DB.
   const mockPrisma = {
+    repository: { findUnique: vi.fn(async () => ({ isActive: false })) },
+    reviewDeliveryPlan: { updateMany: vi.fn() },
+    commentDelivery: { updateMany: vi.fn() },
     cachedFile: mockCachedFile,
     cachedImport: { deleteMany: vi.fn(async () => ({ count: 0 })) },
     $queryRaw: vi.fn(async () => [{ id: 'repo-1' }]),

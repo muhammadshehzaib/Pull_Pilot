@@ -7,7 +7,7 @@ export const analysisQueue = new Queue(ANALYSIS_QUEUE_NAME, {
   defaultJobOptions: {
     attempts: 3, // Retry up to 3 times if failing
     backoff: {
-      type: 'exponential',
+      type: 'review',
       delay: 1000, // Wait 1s, then 2s, then 4s
     },
     removeOnComplete: true, // Clean up redis memory automatically

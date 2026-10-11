@@ -164,7 +164,15 @@ export class GitHubAppService {
   public static async getInstallationService(installationId?: string | number | null): Promise<GitHubService> {
     if (installationId && (process.env.GITHUB_APP_ID && this.getPrivateKey())) {
       const token = await this.getInstallationToken(installationId);
-      return new GitHubService(token);
+      return new GitHubService(token, async signal => {
+        const appClient = new Octokit({ auth: this.generateAppJwt() });
+        const { data: app } = await appClient.apps.getAuthenticated({ request: { signal, timeout: 10_000 } });
+        if (!app || String(app.id) !== String(process.env.GITHUB_APP_ID) || !app.slug) throw new Error('GitHub App identity unavailable');
+        const identityClient = new Octokit({ auth: token });
+        const { data: bot } = await identityClient.users.getByUsername({ username: `${app.slug}[bot]`, request: { signal, timeout: 10_000 } });
+        if (!bot.id || bot.type !== 'Bot') throw new Error('GitHub App bot identity unavailable');
+        return String(bot.id);
+      });
     }
 
     const fallbackToken = process.env.GITHUB_ACCESS_TOKEN;

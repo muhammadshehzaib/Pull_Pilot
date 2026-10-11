@@ -19,17 +19,18 @@ import { deduplicate } from '../services/ai/finding-dedup.service';
 import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
+import { prepareReviewDelivery, loadReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
+import type { GitHubService } from '../services/github.service';
+import { reviewBackoff } from '../services/review-backoff';
 import { recordJobFindings } from '../services/historical/occurrence.service';
 import { RISK_ALGORITHM_VERSION } from '../services/analytics/facts';
 import { retrieveFeedbackAdaptation, adaptationAttribution } from '../services/feedback-loop/adaptation.service';
 import { retrieveHistoricalMemory, type HistoricalReviewContext } from '../services/historical/review-memory.service';
 import {
-  renderFindingListItem,
-  renderInlineComment,
   severityTally,
 } from '../services/ai/finding-format';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
-import { advanceReview, markReviewTerminal, wasSuperseded } from './job-state';
+import { advanceReview, markReviewTerminal, wasSuperseded, isTerminalStatus, persistReviewFailure } from './job-state';
 import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS, CLAUDE_MODEL, GROK_MODEL } from '../utils/constants';
 
 export const analysisWorker = new Worker(
@@ -123,7 +124,32 @@ export const analysisWorker = new Worker(
       });
     }, REVIEW_TIMEOUT_MS);
 
+    const finishDelivery = async (plan: NonNullable<Awaited<ReturnType<typeof loadReviewDelivery>>>, service: GitHubService) => {
+      const { artifact } = await guard(deliverReviewPlan(plan, service, abort.signal));
+      await assertNotSuperseded();
+      await recordJobFindings(jobId, repositoryId, artifact.suggestions, JSON.parse(JSON.stringify(artifact)));
+      const partial = artifact.commentFailures?.length > 0;
+      SocketService.emitStatus(userId, jobId, partial ? 'Review completed with partial comment delivery. See delivery details.' : 'Review and comment delivery completed.', 'COMPLETED', { suggestions: artifact.suggestions });
+      return { status: 'success', findingCount: artifact.suggestions.length };
+    };
+
     try {
+      // Resume saved delivery before requiring an AI key or invoking a provider.
+      const persisted = await prisma.analysisJob.findUnique({ where: { id: jobId },
+        include: { repository: { include: { installation: true } } } });
+      if (!persisted || !persisted.repository.isActive || persisted.repository.userId !== userId || persisted.repositoryId !== repositoryId) {
+        throw new UnrecoverableError('Review or repository unavailable');
+      }
+      if (isTerminalStatus(persisted.status)) return { status: 'already-terminal' };
+      if (persisted.eventType === 'PULL_REQUEST' && persisted.deliveryVersion !== 1) {
+        await markReviewTerminal(jobId, userId, 'SKIPPED', 'Legacy review delivery is untracked; start a new review.', { reason: 'legacy-delivery-untracked' });
+        throw new UnrecoverableError('Legacy review delivery is untracked');
+      }
+      const savedPlan = await loadReviewDelivery(jobId);
+      if (savedPlan) {
+        const service = await GitHubAppService.getInstallationService(persisted.repository.installation?.githubInstallationId?.toString());
+        return await finishDelivery(savedPlan, service);
+      }
       // 1. Enter the pipeline. Every step below advances the phase rather than
       //    re-asserting RUNNING, so the dashboard reflects real progress.
       await advanceReview(jobId, userId, 'FETCHING', '🚀 Worker Active: Analysis Cycle Commenced');
@@ -438,13 +464,11 @@ export const analysisWorker = new Worker(
         );
       }
 
-      // Persist the findings now, but not as COMPLETED: comments still have to
-      // be delivered, and a crash during delivery must not read as a finished
-      // review. The final COMPLETED write happens after posting succeeds.
-      await prisma.analysisJob.update({
-        where: { id: jobId },
-        data: {
-          results: {
+      const artifact = {
+            analyticsConfiguration: { riskAlgorithmVersion: RISK_ALGORITHM_VERSION, repoConfig,
+              pipelineVersion: 'review_pipeline_2', provider: vault.provider,
+              models: { openai: 'gpt-4o', claude: CLAUDE_MODEL, grok: GROK_MODEL, gemini: process.env.GEMINI_MODEL || 'gemini-2.5-flash' },
+              rules: dbRules.map(r => ({ id: r.id, updatedAt: r.updatedAt })).sort((a, b) => a.id.localeCompare(b.id)) },
             suggestions,
             ignoredFiles,
             includedFiles,
@@ -456,84 +480,18 @@ export const analysisWorker = new Worker(
             contextDiscovery: context?.discovery,
             testGaps,
             behavioral,
-          } as any,
-        },
-      });
-
-      // 9. POST INLINE REVIEWS AND SUMMARY ON PULL REQUESTS
-      // Comment posting reports instead of throwing, so a rejected comment
-      // (wrong line, renamed file, stale SHA) must be counted and surfaced —
-      // otherwise the user is told the review succeeded with zero comments.
-      const commentFailures: string[] = [];
-      let summaryPosted = true;
-
-      if (eventType === 'PULL_REQUEST') {
-        const prNum = parseInt(referenceId, 10);
-
-        if (suggestions.length > 0) {
-          console.log(`📬 Broadcasting inline review comments back to Pull Request #${referenceId}...`);
-
-          // Last checkpoint before anything is written to the PR. Comments are
-          // the only step with an effect the user cannot undo from here, so this
-          // is where abandoning the attempt matters most.
-          await assertNotSuperseded();
-
-          await advanceReview(jobId, userId, 'POSTING', `📬 Injecting Inline Comments onto GitHub PR`);
-
-          for (const suggestion of suggestions) {
-            // The deadline can fire between comments; re-check cheaply so an
-            // abandoned review stops touching the PR partway through delivery.
-            if (superseded) await assertNotSuperseded();
-
-            const result = await guard(ghService.createReviewComment(
-              owner,
-              repo,
-              prNum,
-              headSha,
-              suggestion.filePath,
-              suggestion.lineNumber,
-              renderInlineComment(suggestion)
-            ));
-
-            if (result && result.ok === false) {
-              commentFailures.push(
-                `${suggestion.filePath}:${suggestion.lineNumber} — ${result.error ?? 'unknown error'}`
-              );
-            }
-          }
-        }
-
-        // Inline comments are rejected whenever the model cites a line that is
-        // not in the diff. The findings are still valid and already stored, so
-        // publish them as a single fallback comment rather than losing them.
-        const postedInline = suggestions.length - commentFailures.length;
-
-        if (commentFailures.length > 0) {
-          console.warn(
-            `⚠️ ${commentFailures.length}/${suggestions.length} inline comments rejected for PR #${referenceId}. ` +
-            `Falling back to a single consolidated comment.`,
-          );
-          SocketService.emitStatus(
-            userId,
-            jobId,
-            `⚠️ ${commentFailures.length} comment(s) could not be placed inline — posting a consolidated summary instead.`,
-            'POSTING',
-          );
-        }
-
-        // Post top-level summary if enabled in config
-        if (repoConfig.summarize && typeof ghService.createIssueComment === 'function') {
-          const fallbackSection =
-            commentFailures.length > 0
-              ? `\n\n> ⚠️ **${commentFailures.length} of ${suggestions.length} findings could not be attached inline** (the cited lines are not part of this diff). They are listed below and saved in full in the AI PR Reviewer dashboard.`
-              : '';
-
-          const findingsSection =
-            commentFailures.length > 0
-              ? `\n\n## Findings\n\n${suggestions.map(renderFindingListItem).join('\n')}`
-              : '';
-
-          const summaryMarkdown = [
+            feedbackAdaptation: feedbackAttribution,
+            historicalMemory: historicalMemory
+              ? {
+                  suppliedPatternIds: historicalMemory.suppliedPatternIds,
+                  patternCount: historicalMemory.patterns.length,
+                  version: historicalMemory.version,
+                  algorithmVersion: historicalMemory.algorithmVersion,
+                  truncated: historicalMemory.truncated,
+                }
+              : undefined,
+      };
+          const summaryBase = [
             '## 🤖 AI PR Review Summary',
             '',
             '- **Status**: Audit completed',
@@ -568,66 +526,18 @@ export const analysisWorker = new Worker(
             ...(riskV2.verdict === 'BLOCK'
               ? [`> **Advisory BLOCK verdict**: ${riskV2.reasons.join(' ')} GitHub merge protection is not enforced by this report.`]
               : []),
-            `- **Comments Posted Inline**: ${postedInline}/${suggestions.length}${fallbackSection}`,
             '',
             '*Automated review powered by [AI PR Reviewer](https://reviewer.shehzaib.com)*',
-            findingsSection,
           ].join('\n');
-
-          const summaryResult = await guard(ghService.createIssueComment(owner, repo, prNum, summaryMarkdown));
-          summaryPosted = !summaryResult || summaryResult.ok !== false;
-        }
-      }
-
-      // Persist delivery outcome and mark the review finished. This is the
-      // single terminal write, so a review can never read as COMPLETED while
-      // its comments are still in flight.
-      //
-      // Re-checked immediately before: the deadline can fire during delivery, and
-      // without this a review already written off as TIMEOUT would be overwritten
-      // with a cheerful COMPLETED.
       await assertNotSuperseded();
-
-      await recordJobFindings(jobId, repositoryId, suggestions, {
-            analyticsConfiguration: { riskAlgorithmVersion: RISK_ALGORITHM_VERSION, repoConfig,
-              pipelineVersion: 'review_pipeline_2', provider: vault.provider,
-              models: { openai: 'gpt-4o', claude: CLAUDE_MODEL, grok: GROK_MODEL, gemini: process.env.GEMINI_MODEL || 'gemini-2.5-flash' },
-              rules: dbRules.map(r => ({ id: r.id, updatedAt: r.updatedAt })).sort((a, b) => a.id.localeCompare(b.id)) },
-            suggestions,
-            ignoredFiles,
-            includedFiles,
-            config: repoConfig,
-            ruleChecks: ruleEvaluation.checks,
-            securityChecks: securityScan.checks,
-            risk,
-            riskV2,
-            contextDiscovery: context?.discovery,
-            testGaps,
-            behavioral,
-            commentFailures,
-            feedbackAdaptation: feedbackAttribution,
-            summaryPosted,
-            historicalMemory: historicalMemory
-              ? {
-                  suppliedPatternIds: historicalMemory.suppliedPatternIds,
-                  patternCount: historicalMemory.patterns.length,
-                  version: historicalMemory.version,
-                  algorithmVersion: historicalMemory.algorithmVersion,
-                  truncated: historicalMemory.truncated,
-                }
-              : undefined,
-      } as any);
-      // Durable historicalRevision is reconciled by the bounded maintenance worker.
-
-      if (commentFailures.length > 0) {
-        SocketService.emitStatus(
-          userId,
-          jobId,
-          `⚠️ Review finished, but ${commentFailures.length} comment(s) could not be placed inline. See the PR summary for details.`,
-          'COMPLETED',
-          { suggestions },
-        );
+      if (eventType === 'PULL_REQUEST') {
+        const plan = await guard(prepareReviewDelivery({ jobId, repositoryId, userId, headSha, baseSha, fullName,
+          prNumber: Number(referenceId), expectedAuthorId: await guard(ghService.getPostingAuthorId(abort.signal)),
+          artifact, summaryBase }));
+        return await finishDelivery(plan, ghService);
       }
+      await recordJobFindings(jobId, repositoryId, suggestions, JSON.parse(JSON.stringify(artifact)));
+      // Durable historicalRevision is reconciled by the bounded maintenance worker.
 
       console.log(`🏁 Job Cycle ${jobId} gracefully exited with 100% success.\n`);
       SocketService.emitStatus(userId, jobId, `✅ All Analysis Finalized. Results fully loaded.`, 'COMPLETED', { suggestions });
@@ -656,13 +566,7 @@ export const analysisWorker = new Worker(
         console.warn(`⏭️  JOB SKIPPED (needs user action): ${jobId} — ${message}`);
         SocketService.emitStatus(userId, jobId, `⏭️ Skipped: ${message}`, 'SKIPPED');
 
-        await prisma.analysisJob.update({
-          where: { id: jobId },
-          data: {
-            status: 'SKIPPED',
-            results: { reason: err.reason, error: message } as any,
-          },
-        });
+        await markReviewTerminal(jobId, userId, 'SKIPPED', message, { reason: err.reason, error: message });
 
         throw new UnrecoverableError(message);
       }
@@ -675,10 +579,7 @@ export const analysisWorker = new Worker(
       const willRetry = Number(job.attemptsMade ?? 0) + 1 < attempts;
       const failureStatus = willRetry ? 'RETRYING' : 'FAILED';
       SocketService.emitStatus(userId, jobId, message, failureStatus);
-      await prisma.analysisJob.update({
-        where: { id: jobId },
-        data: { status: failureStatus, results: { error: message } as any },
-      });
+      await persistReviewFailure(jobId, userId, failureStatus, message);
 
       throw err;
     } finally {
@@ -691,6 +592,7 @@ export const analysisWorker = new Worker(
   {
     connection: redisConnection,
     concurrency: 5,
+    settings: { backoffStrategy: reviewBackoff },
   }
 );
 

@@ -366,6 +366,9 @@ enum JobStatus {
 }
 
 model AnalysisJob {
+  /// Existing jobs are migrated as 0; new jobs opt into durable delivery.
+  deliveryVersion Int @default(1)
+  deliveryPlan ReviewDeliveryPlan?
   completedAt                   DateTime?
   analyticsRevision             Int @default(0)
   analyticsHash                 String?
@@ -392,6 +395,72 @@ model AnalysisJob {
   @@index([commitSha])
   @@index([repositoryId, status, createdAt])
   @@map("analysis_jobs")
+}
+
+enum CommentDeliveryKind {
+  INLINE
+  SUMMARY
+}
+
+enum CommentDeliveryState {
+  WAITING
+  READY
+  SENDING
+  DELIVERED
+  REJECTED
+  UNKNOWN
+  OMITTED
+}
+
+model ReviewDeliveryPlan {
+  id String @id @default(uuid())
+  analysisJobId String @unique
+  analysisJob AnalysisJob @relation(fields: [analysisJobId], references: [id], onDelete: Cascade)
+  version Int @default(1)
+  artifactHash String
+  headSha String
+  baseSha String
+  fullName String
+  prNumber Int
+  expectedAuthorId String
+  encryptedData String? @db.Text
+  iv String?
+  authTag String?
+  salt String?
+  createdAt DateTime @default(now())
+  deliveries CommentDelivery[]
+  @@map("review_delivery_plans")
+}
+
+model CommentDelivery {
+  id String @id @default(uuid())
+  planId String
+  plan ReviewDeliveryPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  repositoryId String
+  deliveryKey String
+  kind CommentDeliveryKind
+  findingKey String?
+  path String?
+  line Int?
+  encryptedData String? @db.Text
+  iv String?
+  authTag String?
+  salt String?
+  payloadHash String?
+  state CommentDeliveryState
+  attempts Int @default(0)
+  nextAttemptAt DateTime?
+  claimToken String?
+  claimExpiresAt DateTime?
+  githubCommentId String?
+  githubUrl String?
+  reason String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([planId, deliveryKey])
+  @@unique([repositoryId, kind, githubCommentId])
+  @@index([state, claimExpiresAt])
+  @@map("comment_deliveries")
 }
 
 /// Immutable, bounded numeric snapshot. No source, notes or generated code.

@@ -1,6 +1,7 @@
 import prisma from '../config/prisma';
 import { aggregateRepositoryPatterns } from '../services/historical/aggregation.service';
 import { dirtyHistory, historyCutoff, lockHistoricalRepository, HISTORY_MAX_AGE_MS } from '../services/historical/state';
+import { purgeExpiredDeliveryPayloads } from '../services/comment-delivery.service';
 
 /** One bounded pass. DB revision mismatch is durable pending work, not a fire-and-forget promise. */
 export async function sweepHistoricalOnce() {
@@ -51,7 +52,7 @@ export function startHistoricalMaintenance() {
   const tick = async () => {
     if (running) return;
     running = true;
-    try { await sweepHistoricalOnce(); }
+    try { await sweepHistoricalOnce(); await purgeExpiredDeliveryPayloads(); }
     catch { console.warn('[Phase8] Historical maintenance unavailable; will retry'); }
     finally { running = false; }
   };

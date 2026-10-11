@@ -9,6 +9,9 @@ import { assessExplainableRisk, type ExplainableRiskReport } from '../services/s
 import { findingIdentity } from '../services/historical/occurrence.service';
 import { historyCutoff } from '../services/historical/state';
 import { mayDeprioritize, ADAPTATION_POLICY } from '../services/feedback-loop/adaptation-policy';
+import { commentDeliveryReport } from '../services/comment-delivery-report';
+import { loadReviewDelivery, reconcileReviewDelivery } from '../services/comment-delivery.service';
+import { GitHubAppService } from '../services/github-app.service';
 
 /**
  * Every value the `JobStatus` enum can hold. Kept as an explicit list because
@@ -122,6 +125,7 @@ export class JobController {
         repository: { userId: req.auth!.userId },
       },
       include: {
+        deliveryPlan: { select: { deliveries: { select: { kind: true, state: true, reason: true, githubUrl: true } } } },
         repository: { select: { id: true, fullName: true } },
         // Per-rule pass/fail records for this job, oldest first. Rows outlive
         // the rule they describe (ruleId goes null, ruleName is snapshotted),
@@ -141,7 +145,7 @@ export class JobController {
     const rawObj = (job.results && typeof job.results === 'object' && !Array.isArray(job.results))
       ? (job.results as Record<string, unknown>)
       : {};
-    const { behavioralRuns, findingOccurrences, ...publicJob } = job;
+    const { behavioralRuns, findingOccurrences, deliveryPlan, ...publicJob } = job;
     const occurrencesByKey = new Map((findingOccurrences ?? []).map(occ => [occ.findingKey, occ]));
     const findingsWithFeedback = normalizedFindings.map(finding => {
       const occurrence = occurrencesByKey.get(findingIdentity(finding));
@@ -181,6 +185,7 @@ export class JobController {
           // evidence), or undefined when the provider did not support it.
           testGaps: rawObj.testGaps,
           contextDiscovery: rawObj.contextDiscovery,
+          commentDelivery: deliveryPlan ? commentDeliveryReport(deliveryPlan.deliveries) : undefined,
           behavioral,
           historicalMemory: normalizeHistoricalAttribution(rawObj.historicalMemory),
           historicalFeedbackEligible: job.status === 'COMPLETED' && job.createdAt >= historyCutoff(),
@@ -206,6 +211,21 @@ export class JobController {
    * the user pressed cancel on a review that had already posted its comments,
    * and telling them it was cancelled would be a lie.
    */
+  static async reconcileComments(req: Request, res: Response) {
+    const job = await prisma.analysisJob.findFirst({ where: { id: String(req.params.id), repository: { userId: req.auth!.userId, isActive: true } },
+      include: { repository: { include: { installation: true } } } });
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const plan = await loadReviewDelivery(job.id);
+    if (!plan) return res.status(409).json({ error: 'Comment delivery was not tracked for this review' });
+    const signal = AbortSignal.timeout(30_000);
+    try {
+      const gh = await GitHubAppService.getInstallationService(job.repository.installation?.githubInstallationId?.toString());
+      await reconcileReviewDelivery(plan, gh, signal);
+      const refreshed = await loadReviewDelivery(job.id);
+      return res.json({ commentDelivery: refreshed ? commentDeliveryReport(refreshed.deliveries) : undefined });
+    } catch { return res.status(503).json({ error: 'Delivery could not be checked. No comments were posted.' }); }
+  }
+
   static async cancel(req: Request, res: Response) {
     const id = String(req.params.id);
 
@@ -241,13 +261,15 @@ export class JobController {
       console.warn(`Could not remove job ${id} from the queue:`, err);
     }
 
-    await markReviewTerminal(
+    const cancelled = await markReviewTerminal(
       job.id,
       req.auth!.userId,
       'CANCELLED',
-      '🚫 Review cancelled. No further comments will be posted.',
+      'Review cancelled. A request already sent to GitHub may still finish.',
       { reason: 'cancelled-by-user' },
     );
+
+    if (!cancelled) return res.status(409).json({ error: 'Review already stopped or completed; cancellation was not applied.' });
 
     return res.json({ status: 'CANCELLED', id: job.id });
   }
