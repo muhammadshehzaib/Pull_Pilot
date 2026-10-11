@@ -12,6 +12,12 @@ describe('comment delivery', () => {
     expect(screen.getByText(/will not be posted again automatically/)).toBeTruthy();
     expect(screen.getByText(/Findings remain available/)).toBeTruthy();
   });
+  it('explains disconnect omissions without calling them a changed PR head', () => {
+    render(<CommentDeliveryCard jobId="j" report={{ ...report, omitted: 1, unconfirmed: 0, summary: 'OMITTED', repositoryDisconnected: true }} />);
+    expect(screen.getByText('Summary: Omitted because the repository was disconnected.')).toBeTruthy();
+    expect(screen.getByText('1 inline comment(s) omitted because the repository was disconnected.')).toBeTruthy();
+    expect(screen.queryByText(/PR head changed/)).toBeNull();
+  });
   it.each([undefined, {}, { ...report, version: 2 }, { ...report, expected: -1 }])('handles legacy or malformed reports', value => {
     render(<CommentDeliveryCard jobId="j" report={value} />);
     expect(screen.getByText(/was not tracked/)).toBeTruthy();

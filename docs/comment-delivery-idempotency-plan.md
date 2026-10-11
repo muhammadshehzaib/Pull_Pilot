@@ -1,6 +1,9 @@
 # Plan: resume review comment delivery without posting duplicates
 
-Status: proposed; implementation has not started.
+Status: implemented for the conservative first release described below. See
+[comment-delivery.md](comment-delivery.md) for shipped behavior, limits, recovery,
+retention, deployment, and validation. Production deployment and a designated
+live GitHub smoke test remain operator steps.
 
 ## Goal
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+vi.mock('../services/comment-delivery.service', () => ({ purgeRepositoryDeliveryPayloads: vi.fn(async () => {}) }));
 
 const {
   mockRepoFindFirst,

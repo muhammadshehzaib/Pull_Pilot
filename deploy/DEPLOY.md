@@ -137,6 +137,16 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
 ## Notes
 
+The comment-delivery update adds migration `20261021000000_comment_delivery`.
+Stop/drain the old backend before rebuilding so old and new posting workers do
+not overlap. Keep both database and Redis volumes. The production image generates
+Prisma and runs `prisma migrate deploy` before startup. Deploy the frontend with
+the backend to show delivery status and the read-only GitHub reconciliation action.
+Existing unfinished PR jobs are marked legacy/untracked and skipped; start a new
+manual review when needed. Roll back by pausing delivery rather than restarting
+an old worker that bypasses tracking. See [comment delivery](../docs/comment-delivery.md)
+for recovery, retention, and test-PR verification.
+
 - The backend container runs API + BullMQ worker + repo poller in one process.
 - Webhook signature verification is HMAC over the raw body; NODE_ENV=production
   fails closed if GITHUB_WEBHOOK_SECRET is unset.

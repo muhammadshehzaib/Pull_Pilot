@@ -12,6 +12,9 @@ const {
   mockCreateIssueComment,
   mockGetTree,
   mockGetBlob,
+  mockListReviewComments,
+  mockListIssueComments,
+  mockGetAuthenticated,
   OctokitCtor,
 } = vi.hoisted(() => {
   const mockCompareCommits = vi.fn();
@@ -24,6 +27,9 @@ const {
   const mockCreateIssueComment = vi.fn();
   const mockGetTree = vi.fn();
   const mockGetBlob = vi.fn();
+  const mockListReviewComments = vi.fn();
+  const mockListIssueComments = vi.fn();
+  const mockGetAuthenticated = vi.fn();
 
   const OctokitCtor = vi.fn(function (this: any, _opts?: unknown) {
     this.repos = {
@@ -36,10 +42,13 @@ const {
     this.pulls = {
       createReviewComment: mockCreateReviewComment,
       get: mockGetPullRequest,
+      listReviewComments: mockListReviewComments,
     };
     this.issues = {
       createComment: mockCreateIssueComment,
+      listComments: mockListIssueComments,
     };
+    this.users = { getAuthenticated: mockGetAuthenticated };
     this.git = {
       getTree: mockGetTree,
       getBlob: mockGetBlob,
@@ -57,6 +66,9 @@ const {
     mockCreateIssueComment,
     mockGetTree,
     mockGetBlob,
+    mockListReviewComments,
+    mockListIssueComments,
+    mockGetAuthenticated,
     OctokitCtor,
   };
 });
@@ -163,6 +175,50 @@ describe('GitHubService', () => {
       await expect(
         svc.createReviewComment('o', 'r', 42, 'sha', 'f.ts', 10, 'body'),
       ).resolves.toEqual({ ok: true, id: '1', url: undefined });
+    });
+  });
+
+  describe('durable delivery API support', () => {
+    const comment = (id: number) => ({ id, body: `marker-${id}`, user: { id: 7 }, html_url: `https://github.com/o/r/pull/42#${id}`,
+      path: 'src/a.ts', original_commit_id: 'head' });
+    beforeEach(() => { mockListReviewComments.mockReset(); mockListIssueComments.mockReset(); mockGetAuthenticated.mockReset(); });
+    it('paginates raw inline comment bodies and keeps original commit identity', async () => {
+      mockListReviewComments.mockResolvedValueOnce({ data: Array.from({ length: 100 }, (_, i) => comment(i + 1)) })
+        .mockResolvedValueOnce({ data: [comment(101)] });
+      const result = await svc.listDeliveryComments('o', 'r', 42, 'INLINE', new AbortController().signal);
+      expect(result.complete).toBe(true); expect(result.comments).toHaveLength(101);
+      expect(result.comments[100]).toMatchObject({ id: '101', authorId: '7', originalCommitId: 'head', body: 'marker-101' });
+      expect(mockListReviewComments).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, per_page: 100,
+        headers: { accept: 'application/vnd.github.raw+json' }, request: expect.objectContaining({ timeout: expect.any(Number) }) }));
+    });
+    it('preserves positive results when a subsequent page fails', async () => {
+      mockListIssueComments.mockResolvedValueOnce({ data: Array.from({ length: 100 }, (_, i) => comment(i)) })
+        .mockRejectedValueOnce(new Error('rate limited'));
+      const result = await svc.listDeliveryComments('o', 'r', 42, 'SUMMARY');
+      expect(result.complete).toBe(false); expect(result.comments).toHaveLength(100);
+    });
+    it('caps scans at 20 pages and reports incomplete discovery', async () => {
+      mockListReviewComments.mockResolvedValue({ data: Array.from({ length: 100 }, (_, i) => comment(i)) });
+      const result = await svc.listDeliveryComments('o', 'r', 42, 'INLINE');
+      expect(result.complete).toBe(false); expect(mockListReviewComments).toHaveBeenCalledTimes(20);
+    });
+    it('does not start a request after cancellation', async () => {
+      const abort = new AbortController(); abort.abort();
+      expect(await svc.listDeliveryComments('o', 'r', 42, 'INLINE', abort.signal)).toEqual({ comments: [], complete: false });
+      expect(mockListReviewComments).not.toHaveBeenCalled();
+    });
+    it('returns the PAT actor numeric ID and refuses a missing identity', async () => {
+      mockGetAuthenticated.mockResolvedValueOnce({ data: { id: 7 } }).mockResolvedValueOnce({ data: {} });
+      expect(await svc.getPostingAuthorId()).toBe('7');
+      await expect(svc.getPostingAuthorId()).rejects.toThrow('unavailable');
+    });
+    it('returns successful GitHub receipt IDs and never retries ambiguous creation', async () => {
+      mockCreateReviewComment.mockResolvedValueOnce({ data: { id: 9, html_url: 'https://github.com/o/r/pull/42#9' } });
+      expect(await svc.createReviewComment('o', 'r', 42, 'head', 'src/a.ts', 1, 'body')).toEqual({ ok: true, id: '9', url: 'https://github.com/o/r/pull/42#9' });
+      mockCreateReviewComment.mockClear();
+      mockCreateReviewComment.mockRejectedValueOnce(Object.assign(new Error('lost response'), { status: 502 }));
+      expect(await svc.createReviewComment('o', 'r', 42, 'head', 'src/a.ts', 1, 'body')).toMatchObject({ failure: 'UNKNOWN' });
+      expect(mockCreateReviewComment).toHaveBeenCalledOnce();
     });
   });
 

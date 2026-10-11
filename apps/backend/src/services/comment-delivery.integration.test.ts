@@ -129,6 +129,14 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     await service.deliverReviewPlan(await reload(data.jobId), fake.api);
     expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
   });
+  it('waits for an outstanding summary lease before recovery rather than exhausting retries immediately', async () => {
+    const data = await input(true), plan = await service.prepareReviewDelivery(data), fake = github();
+    const retryAt = Date.now() + 30_000;
+    await db.commentDelivery.updateMany({ where: { planId: plan.id, kind: 'INLINE' }, data: { state: 'DELIVERED' } });
+    await db.commentDelivery.updateMany({ where: { planId: plan.id, kind: 'SUMMARY' }, data: { state: 'SENDING', claimExpiresAt: new Date(retryAt) } });
+    await expect(service.deliverReviewPlan(await reload(data.jobId), fake.api)).rejects.toMatchObject({ retryAt });
+    expect(fake.gh.createIssueComment).not.toHaveBeenCalled();
+  });
   it('summary-disabled reviews keep rejected findings without a fallback post', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
     fake.gh.createReviewComment.mockResolvedValueOnce({ ok: false, failure: 'REJECTED', error: 'github-rejected-403' });
@@ -214,14 +222,81 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     await persistReviewFailure(data.jobId, userId, 'FAILED', 'late failure');
     expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe(saved.status);
   });
+  it('rolls back preparation if saving results fails after creating the plan', async () => {
+    const data = await input();
+    // A database constraint violation inside the transaction must roll back all rows.
+    const invalid = { ...data, artifact: { ...data.artifact, suggestions: [{ ...finding, lineNumber: 2 ** 40 }] } };
+    await expect(service.prepareReviewDelivery(invalid)).rejects.toThrow();
+    expect(await service.loadReviewDelivery(data.jobId)).toBeNull();
+    expect((await service.prepareReviewDelivery(data)).deliveries).toHaveLength(1);
+  });
+  it('keeps a late accepted receipt after cancellation without completing the cancelled job', async () => {
+    const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
+    let release!: () => void, entered!: () => void;
+    const started = new Promise<void>(r => { entered = r; });
+    const pause = new Promise<void>(r => { release = r; });
+    fake.gh.createReviewComment.mockImplementationOnce(async (_o, _r, _pr, _sha, path, _line, body) => { entered(); await pause; return fake.accept('INLINE', body, path); });
+    const sending = service.deliverReviewPlan(plan, fake.api);
+    await started;
+    const { markReviewTerminal } = await import('../workers/job-state');
+    await markReviewTerminal(data.jobId, userId, 'CANCELLED', 'cancelled');
+    release(); await sending;
+    expect((await reload(data.jobId)).deliveries[0].state).toBe('DELIVERED');
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('CANCELLED');
+    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
+  });
+  it('finalization-only recovery skips all GitHub I/O after a publication failure', async () => {
+    const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
+    const result = await service.deliverReviewPlan(plan, fake.api);
+    // Force a real transaction failure after receipt delivery: the next snapshot
+    // overflows PostgreSQL's integer column. Completion and occurrences roll back.
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { findingSnapshot: 2147483647 } });
+    await expect(record(data.jobId, repositoryId, result.artifact.suggestions, result.artifact)).rejects.toThrow();
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('POSTING');
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { findingSnapshot: 0 } });
+    fake.gh.getPostingAuthorId.mockRejectedValue(new Error('GitHub offline'));
+    fake.gh.getPullRequest.mockClear();
+    const resumed = await service.deliverReviewPlan(await reload(data.jobId), fake.api);
+    expect(fake.gh.getPullRequest).not.toHaveBeenCalled();
+    await record(data.jobId, repositoryId, resumed.artifact.suggestions, resumed.artifact);
+    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
+  });
+  it('never treats an empty adapter response as proof of delivery', async () => {
+    const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
+    fake.gh.createReviewComment.mockResolvedValueOnce(undefined as any);
+    await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toThrow('unconfirmed');
+    expect((await reload(data.jobId)).deliveries[0].state).toBe('UNKNOWN');
+  });
+  it('refuses legacy preparation and changed authentication identities', async () => {
+    const data = await input();
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { deliveryVersion: 0 } });
+    await expect(service.prepareReviewDelivery(data)).rejects.toThrow('identity mismatch');
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { deliveryVersion: 1 } });
+    const plan = await service.prepareReviewDelivery(data), fake = github();
+    fake.gh.getPostingAuthorId.mockResolvedValue('8');
+    await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toThrow('identity changed');
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+  });
+  it('expires encrypted terminal artifacts after 90 days while keeping receipt identity', async () => {
+    const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
+    await service.deliverReviewPlan(plan, fake.api);
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { status: 'COMPLETED' } });
+    await db.reviewDeliveryPlan.update({ where: { id: plan.id }, data: { createdAt: new Date(0) } });
+    expect(await service.purgeExpiredDeliveryPayloads()).toBeGreaterThanOrEqual(1);
+    const expired = await reload(data.jobId);
+    expect(expired.encryptedData).toBeNull(); expect(expired.deliveries[0].encryptedData).toBeNull();
+    expect(expired.deliveries[0].githubCommentId).toBeTruthy(); expect(expired.deliveries[0].state).toBe('DELIVERED');
+  });
   it('purges disconnected payloads, preserves receipts, prevents late preparation, and cascades on deletion', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data);
     await db.repository.update({ where: { id: repositoryId }, data: { isActive: false } });
     await service.purgeRepositoryDeliveryPayloads(repositoryId);
     expect((await reload(data.jobId)).encryptedData).toBeNull();
     expect((await reload(data.jobId)).deliveries[0].encryptedData).toBeNull();
+    expect((await reload(data.jobId)).deliveries[0].state).toBe('OMITTED');
     await expect(service.prepareReviewDelivery(data)).rejects.toThrow('stopped');
     await db.repository.update({ where: { id: repositoryId }, data: { isActive: true } });
+    expect((await reload(data.jobId)).deliveries[0].state).toBe('OMITTED');
     await db.analysisJob.delete({ where: { id: data.jobId } });
     expect(await db.commentDelivery.count({ where: { planId: plan.id } })).toBe(0);
   });

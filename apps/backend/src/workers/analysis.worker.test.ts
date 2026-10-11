@@ -209,6 +209,13 @@ describe('analysis worker — durable delivery entry', () => {
     expect(await capturedHandler.fn!(makeJobPayload())).toEqual({ status: 'already-terminal' });
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(deliverReviewPlan).not.toHaveBeenCalled();
   });
+  it('publishes fully delivered saved reviews without initializing a GitHub connector', async () => {
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ analysisJobId: 'job-1', deliveries: [{ state: 'DELIVERED' }] } as any);
+    vi.mocked(deliverReviewPlan).mockResolvedValueOnce({ artifact: { suggestions: [], commentFailures: [], summaryPosted: true } });
+    await capturedHandler.fn!(makeJobPayload());
+    expect(GitHubServiceCtor).not.toHaveBeenCalled(); expect(mockGetProvider).not.toHaveBeenCalled();
+    expect(deliverReviewPlan).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(AbortSignal));
+  });
   it('does not invent sendable receipts for legacy reviews', async () => {
     mockJobFindUnique.mockResolvedValue({ status: 'POSTING', deliveryVersion: 0, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } });
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('Legacy');

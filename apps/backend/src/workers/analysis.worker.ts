@@ -22,6 +22,7 @@ import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import { prepareReviewDelivery, loadReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
 import type { GitHubService } from '../services/github.service';
 import { reviewBackoff } from '../services/review-backoff';
+import { DELIVERY_TERMINAL_STATES } from '../services/comment-delivery-report';
 import { recordJobFindings } from '../services/historical/occurrence.service';
 import { RISK_ALGORITHM_VERSION } from '../services/analytics/facts';
 import { retrieveFeedbackAdaptation, adaptationAttribution } from '../services/feedback-loop/adaptation.service';
@@ -124,7 +125,7 @@ export const analysisWorker = new Worker(
       });
     }, REVIEW_TIMEOUT_MS);
 
-    const finishDelivery = async (plan: NonNullable<Awaited<ReturnType<typeof loadReviewDelivery>>>, service: GitHubService) => {
+    const finishDelivery = async (plan: NonNullable<Awaited<ReturnType<typeof loadReviewDelivery>>>, service?: GitHubService) => {
       const { artifact } = await guard(deliverReviewPlan(plan, service, abort.signal));
       await assertNotSuperseded();
       await recordJobFindings(jobId, repositoryId, artifact.suggestions, JSON.parse(JSON.stringify(artifact)));
@@ -147,7 +148,8 @@ export const analysisWorker = new Worker(
       }
       const savedPlan = await loadReviewDelivery(jobId);
       if (savedPlan) {
-        const service = await GitHubAppService.getInstallationService(persisted.repository.installation?.githubInstallationId?.toString());
+        const finished = savedPlan.deliveries?.every(r => (DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state));
+        const service = finished ? undefined : await GitHubAppService.getInstallationService(persisted.repository.installation?.githubInstallationId?.toString());
         return await finishDelivery(savedPlan, service);
       }
       // 1. Enter the pipeline. Every step below advances the phase rather than
@@ -564,7 +566,6 @@ export const analysisWorker = new Worker(
       // a job that cannot succeed. Logged once, not once per attempt.
       if (permanent) {
         console.warn(`⏭️  JOB SKIPPED (needs user action): ${jobId} — ${message}`);
-        SocketService.emitStatus(userId, jobId, `⏭️ Skipped: ${message}`, 'SKIPPED');
 
         await markReviewTerminal(jobId, userId, 'SKIPPED', message, { reason: err.reason, error: message });
 
@@ -573,12 +574,10 @@ export const analysisWorker = new Worker(
 
       // Transient: log and let BullMQ use the remaining attempts.
       console.error(`🚨 JOB FATALITY (attempt will retry): ${jobId} died:`, err);
-      SocketService.emitStatus(userId, jobId, `🚨 Fatal Error Encountered: ${message}`, 'FAILED');
 
       const attempts = Number(job.opts?.attempts ?? 1);
       const willRetry = Number(job.attemptsMade ?? 0) + 1 < attempts;
       const failureStatus = willRetry ? 'RETRYING' : 'FAILED';
-      SocketService.emitStatus(userId, jobId, message, failureStatus);
       await persistReviewFailure(jobId, userId, failureStatus, message);
 
       throw err;

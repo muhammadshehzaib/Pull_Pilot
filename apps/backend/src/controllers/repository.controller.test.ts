@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../workers/historical-maintenance', () => ({ clearRepositoryHistory: vi.fn() }));
+vi.mock('../services/comment-delivery.service', () => ({ purgeRepositoryDeliveryPayloads: vi.fn(async () => {}) }));
 const {
   mockRepoFindMany,
   mockRepoCount,

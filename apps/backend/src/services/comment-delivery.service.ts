@@ -22,6 +22,11 @@ export class DeliveryPendingError extends Error {
   constructor(message = 'Comment delivery is unconfirmed or pending', public readonly retryAt?: number) { super(message); }
 }
 
+function pendingError(rows: CommentDelivery[]) {
+  const leases = rows.filter(r => r.state === 'SENDING' && r.claimExpiresAt).map(r => r.claimExpiresAt!.getTime());
+  return new DeliveryPendingError(undefined, leases.length ? Math.min(...leases) : undefined);
+}
+
 function open(row: { encryptedData: string | null; iv: string | null; authTag: string | null; salt: string | null }) {
   if (!row.encryptedData || !row.iv || !row.authTag || !row.salt) throw new Error('Review delivery payload unavailable');
   return EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
@@ -105,7 +110,7 @@ export async function reconcileReviewDelivery(plan: Plan, gh: GitHubService, sig
   }
 }
 
-export async function deliverReviewPlan(plan: Plan, gh: GitHubService, signal?: AbortSignal) {
+export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?: AbortSignal) {
   const artifact = JSON.parse(open(plan)) as FrozenReview;
   const finish = (rows: CommentDelivery[]) => {
     const { summaryBase: _summary, ...completion } = artifact;
@@ -115,6 +120,7 @@ export async function deliverReviewPlan(plan: Plan, gh: GitHubService, signal?: 
   };
   const savedRows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
   if (savedRows.every(r => terminal(r.state))) return finish(savedRows);
+  if (!gh) throw new Error('GitHub connector required for pending delivery');
   const job = await prisma.analysisJob.findUniqueOrThrow({ where: { id: plan.analysisJobId } });
   const repositoryId = job.repositoryId;
   const [owner, repo] = plan.fullName.split('/');
@@ -170,8 +176,7 @@ export async function deliverReviewPlan(plan: Plan, gh: GitHubService, signal?: 
   for (const row of rows.filter(r => r.kind === 'INLINE').sort((a, b) => (order.get(a.findingKey!) ?? 0) - (order.get(b.findingKey!) ?? 0))) await send(row);
   rows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
   if (rows.some(r => r.kind === 'INLINE' && !terminal(r.state))) {
-    const leases = rows.filter(r => r.state === 'SENDING' && r.claimExpiresAt).map(r => r.claimExpiresAt!.getTime());
-    throw new DeliveryPendingError(undefined, leases.length ? Math.min(...leases) : undefined);
+    throw pendingError(rows);
   }
   const summary = rows.find(r => r.kind === 'SUMMARY');
   if (summary?.state === 'WAITING') {
@@ -189,7 +194,7 @@ export async function deliverReviewPlan(plan: Plan, gh: GitHubService, signal?: 
   }
   if (summary) await send(await prisma.commentDelivery.findUniqueOrThrow({ where: { id: summary.id } }));
   rows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
-  if (rows.some(r => !terminal(r.state))) throw new DeliveryPendingError();
+  if (rows.some(r => !terminal(r.state))) throw pendingError(rows);
   return finish(rows);
 }
 
@@ -197,8 +202,13 @@ export async function purgeRepositoryDeliveryPayloads(repositoryId: string) {
   const empty = { encryptedData: null, iv: null, authTag: null, salt: null };
   await prisma.$transaction(async tx => {
     await lockHistoricalRepository(tx, repositoryId);
-    const repo = await tx.repository.findUnique({ where: { id: repositoryId } });
-    if (repo?.isActive) return;
+    // This is an explicit disconnect action. A quick reconnect must not revive
+    // old workers holding source payloads in memory or reset an uncertain send.
+    const scope = { plan: { analysisJob: { repositoryId } } };
+    await tx.commentDelivery.updateMany({ where: { ...scope, state: { in: ['READY', 'WAITING'] } },
+      data: { state: 'OMITTED', reason: 'repository-disconnected' } });
+    await tx.commentDelivery.updateMany({ where: { ...scope, state: 'SENDING' },
+      data: { state: 'UNKNOWN', reason: 'repository-disconnected' } });
     await tx.commentDelivery.updateMany({ where: { plan: { analysisJob: { repositoryId } } }, data: empty });
     await tx.reviewDeliveryPlan.updateMany({ where: { analysisJob: { repositoryId } }, data: empty });
   });

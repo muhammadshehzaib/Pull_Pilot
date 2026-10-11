@@ -195,6 +195,22 @@ export class JobController {
     });
   }
 
+  /** Reads existing GitHub comments and saves positive delivery evidence; never posts. */
+  static async reconcileComments(req: Request, res: Response) {
+    const job = await prisma.analysisJob.findFirst({ where: { id: String(req.params.id), repository: { userId: req.auth!.userId, isActive: true } },
+      include: { repository: { include: { installation: true } } } });
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const plan = await loadReviewDelivery(job.id);
+    if (!plan) return res.status(409).json({ error: 'Comment delivery was not tracked for this review' });
+    const signal = AbortSignal.timeout(30_000);
+    try {
+      const gh = await GitHubAppService.getInstallationService(job.repository.installation?.githubInstallationId?.toString());
+      await reconcileReviewDelivery(plan, gh, signal);
+      const refreshed = await loadReviewDelivery(job.id);
+      return res.json({ commentDelivery: refreshed ? commentDeliveryReport(refreshed.deliveries) : undefined });
+    } catch { return res.status(503).json({ error: 'Delivery could not be checked. No comments were posted.' }); }
+  }
+
   /**
    * Cancels an in-flight review.
    *
@@ -211,21 +227,6 @@ export class JobController {
    * the user pressed cancel on a review that had already posted its comments,
    * and telling them it was cancelled would be a lie.
    */
-  static async reconcileComments(req: Request, res: Response) {
-    const job = await prisma.analysisJob.findFirst({ where: { id: String(req.params.id), repository: { userId: req.auth!.userId, isActive: true } },
-      include: { repository: { include: { installation: true } } } });
-    if (!job) return res.status(404).json({ error: 'Job not found' });
-    const plan = await loadReviewDelivery(job.id);
-    if (!plan) return res.status(409).json({ error: 'Comment delivery was not tracked for this review' });
-    const signal = AbortSignal.timeout(30_000);
-    try {
-      const gh = await GitHubAppService.getInstallationService(job.repository.installation?.githubInstallationId?.toString());
-      await reconcileReviewDelivery(plan, gh, signal);
-      const refreshed = await loadReviewDelivery(job.id);
-      return res.json({ commentDelivery: refreshed ? commentDeliveryReport(refreshed.deliveries) : undefined });
-    } catch { return res.status(503).json({ error: 'Delivery could not be checked. No comments were posted.' }); }
-  }
-
   static async cancel(req: Request, res: Response) {
     const id = String(req.params.id);
 

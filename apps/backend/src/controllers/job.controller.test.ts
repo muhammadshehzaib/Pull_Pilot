@@ -515,6 +515,56 @@ describe('JobController.get', () => {
   });
 });
 
+describe('JobController comment delivery', () => {
+  it('exposes the safe report while keeping plan payloads and claims private', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', status: 'FAILED', results: { suggestions: [], error: 'delivery-unconfirmed' },
+      deliveryPlan: { encryptedData: 'secret-envelope', deliveries: [{ kind: 'INLINE', state: 'UNKNOWN', reason: 'delivery-unconfirmed', githubUrl: null, claimToken: 'secret-claim' }] } });
+    const res = mockRes();
+    await JobController.get(authedReq({ params: { id: 'j1' } }), res);
+    const body = res.json.mock.calls[0][0];
+    expect(body.job.metadata.commentDelivery).toMatchObject({ version: 1, expected: 1, unconfirmed: 1, summary: 'DISABLED' });
+    expect(JSON.stringify(body)).not.toContain('secret-');
+    expect(body.job).not.toHaveProperty('deliveryPlan');
+  });
+  it('scopes reconciliation to the authenticated owner and an active repository', async () => {
+    mockJobFindFirst.mockResolvedValueOnce(null);
+    const res = mockRes();
+    await JobController.reconcileComments(authedReq({ params: { id: 'other-job' } }), res);
+    expect(mockJobFindFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'other-job', repository: { userId: 'u-1', isActive: true } } }));
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(reconcileReviewDelivery).not.toHaveBeenCalled();
+  });
+  it('does not fabricate receipts for legacy jobs', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1' });
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce(null);
+    const res = mockRes();
+    await JobController.reconcileComments(authedReq({ params: { id: 'j1' } }), res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(reconcileReviewDelivery).not.toHaveBeenCalled();
+  });
+  it('only invokes read-only reconciliation and returns refreshed counts', async () => {
+    const plan = { id: 'plan', deliveries: [{ kind: 'INLINE', state: 'DELIVERED', reason: null, githubUrl: null }] } as any;
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', repository: { installation: { githubInstallationId: 7n } } });
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce(plan).mockResolvedValueOnce(plan);
+    const gh = { createReviewComment: vi.fn(), createIssueComment: vi.fn() } as any;
+    vi.mocked(GitHubAppService.getInstallationService).mockResolvedValueOnce(gh);
+    const res = mockRes();
+    await JobController.reconcileComments(authedReq({ params: { id: 'j1' } }), res);
+    expect(reconcileReviewDelivery).toHaveBeenCalledWith(plan, gh, expect.any(AbortSignal));
+    expect(gh.createReviewComment).not.toHaveBeenCalled(); expect(gh.createIssueComment).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ commentDelivery: expect.objectContaining({ delivered: 1 }) });
+  });
+  it('reports a failed lookup without exposing GitHub errors or posting', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'j1', repository: {} });
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ id: 'plan' } as any);
+    vi.mocked(GitHubAppService.getInstallationService).mockRejectedValueOnce(new Error('private credential details'));
+    const res = mockRes();
+    await JobController.reconcileComments(authedReq({ params: { id: 'j1' } }), res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('private credential');
+  });
+});
+
 describe('JobController.cancel', () => {
   const queuedJob = { id: 'j1', status: 'ANALYZING' };
 

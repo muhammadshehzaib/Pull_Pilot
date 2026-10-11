@@ -12,6 +12,7 @@ export function commentDeliveryReport(rows: Pick<CommentDelivery, 'kind' | 'stat
     rejected: count('REJECTED'), omitted: count('OMITTED'),
     pending: count('READY') + count('WAITING') + count('SENDING'), unconfirmed: count('UNKNOWN'),
     summary: summary?.state ?? 'DISABLED',
+    repositoryDisconnected: rows.some(r => r.reason === 'repository-disconnected'),
     reasons: [...new Set(rows.map(r => r.reason).filter((s): s is string => !!s))].slice(0, 10),
     links: rows.filter(r => r.state === 'DELIVERED' && r.githubUrl && /^https:\/\/github\.com\//.test(r.githubUrl))
       .slice(0, 100).map(r => r.githubUrl!),
