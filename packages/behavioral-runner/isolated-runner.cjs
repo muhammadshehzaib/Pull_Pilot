@@ -5,9 +5,12 @@ const { LIMITS, parsePlan, parseEvidence } = require('../../apps/backend/dist/se
 const { fetchPreview, validateDestination } = require('../../apps/backend/dist/services/behavioral/destination-policy.js');
 
 async function runIsolated(rawPlan, previewUrl, deps = {}) {
-  const plan = parsePlan(rawPlan, rawPlan.map(s => s.id));
+  const execution = deps.execution || { mode: 'PUBLIC_PREVIEW' };
+  const plan = parsePlan(rawPlan, rawPlan.map(s => s.id), execution);
   const host = new URL(previewUrl).hostname;
-  validateDestination(previewUrl, host);
+  if (execution.mode === 'OWNER_SANDBOX') {
+    if (previewUrl !== 'https://sandbox.aipr.invalid' || !deps.transport) throw new Error('Sandbox transport unavailable');
+  } else validateDestination(previewUrl, host);
   const name = 'aipr-behavioral-' + randomUUID();
   const child = (deps.spawn || spawn)('docker', ['run', '--rm', '-i', '--name', name, '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128', '--memory', '1g', '--cpus', '1', '--shm-size', '128m', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m', 'aipr-behavioral:local'], { shell: false, stdio: ['pipe', 'pipe', 'ignore'], env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot } });
   const budget = { requests: 0, bytes: 0 };
@@ -18,15 +21,25 @@ async function runIsolated(rawPlan, previewUrl, deps = {}) {
   const send = message => { if (!child.stdin.destroyed) child.stdin.write(JSON.stringify(message) + '\n'); };
   const timer = setTimeout(() => { timedOut = true; child.kill(); }, LIMITS.totalMs);
   child.stdin.on('error', () => {});
-  child.stdout.on('data', chunk => { outputBytes += chunk.length; if (outputBytes > 128_000) child.kill(); });
+  // JSON escaping can expand a permitted 16 KB request body sixfold. Bound the
+  // whole IPC stream while permitting all configured requests at that size.
+  child.stdout.on('data', chunk => { outputBytes += chunk.length; if (outputBytes > LIMITS.requests * 100_000 + 128_000) child.kill(); });
   createInterface({ input: child.stdout }).on('line', async line => {
     try {
-      if (line.length > 16_000) throw new Error();
+      if (line.length > 100_000) throw new Error();
       const message = JSON.parse(line);
-      if (message.type === 'resource') {
+      if (message.type === 'control') {
+        const scenario = plan.find(s => s.id === message.scenarioId);
+        const step = scenario?.steps[message.index];
+        if (execution.mode !== 'OWNER_SANDBOX' || !Number.isSafeInteger(message.id) || !Number.isSafeInteger(message.index) || !step || !['authenticate', 'assertJson'].includes(step.action) || ++requests > LIMITS.requests) throw new Error();
+        try { send({ type: 'resource', id: message.id, passed: await deps.transport.control(scenario.id, step) }); }
+        catch { send({ type: 'resource', id: message.id, error: true }); }
+      } else if (message.type === 'resource') {
         if (!Number.isSafeInteger(message.id) || typeof message.url !== 'string' || ++requests > LIMITS.requests) { child.kill(); return; }
         try {
-          const fetched = await (deps.fetchPreview || fetchPreview)(message.url, host, budget);
+          if (!plan.some(s => s.id === message.scenarioId) && execution.mode === 'OWNER_SANDBOX') throw new Error();
+          if (execution.mode === 'PUBLIC_PREVIEW' && message.method && message.method !== 'GET') throw new Error();
+          const fetched = execution.mode === 'OWNER_SANDBOX' ? await deps.transport.resource(message) : await (deps.fetchPreview || fetchPreview)(message.url, host, budget);
           send({ type: 'resource', id: message.id, ...fetched });
         } catch { send({ type: 'resource', id: message.id, error: true }); }
       } else if (message.type === 'result') {
@@ -40,7 +53,7 @@ async function runIsolated(rawPlan, previewUrl, deps = {}) {
     await new Promise(resolve => {
       child.once('error', resolve);
       child.once('close', resolve);
-      send({ type: 'start', plan, previewUrl });
+      send({ type: 'start', plan, previewUrl, execution });
     });
   } finally {
     clearTimeout(timer);

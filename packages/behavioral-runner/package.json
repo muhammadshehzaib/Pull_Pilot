@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "description": "Trusted owner-CI browser executor; never imported by the API worker",
-  "scripts": { "test": "node --test runner.test.cjs" },
+  "scripts": { "test": "node --test runner.test.cjs sandbox.test.cjs", "test:smoke": "node sandbox-smoke.cjs" },
   "dependencies": { "playwright": "1.64.0" }
 }

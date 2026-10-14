@@ -59,3 +59,44 @@ test('a hung browser is timed out and its exact container is removed', async t =
   assert.equal(result[0].status, 'TIMED_OUT'); assert.equal(removed, true);
   t.mock.timers.reset();
 });
+test('sandbox control requests execute the frozen assertion rather than child-supplied values', async () => {
+  const sandbox = { dockerfile: 'Dockerfile', port: 3000, readyPath: '/', mutations: [], assertions: ['/__aipr/state'] };
+  const plan = [{ ...scenario, steps: [scenario.steps[0], { action: 'assertJson', path: '/__aipr/state', pointer: '/orderCount', equals: 1 }] }];
+  const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.kill = () => child.emit('close', 1);
+  let actual;
+  child.stdin.on('data', line => {
+    const message = JSON.parse(line);
+    if (message.type === 'start') setImmediate(() => child.stdout.write(JSON.stringify({ type: 'control', id: 1, scenarioId: scenario.id, index: 1, equals: 999 }) + '\n'));
+    else if (message.type === 'resource') {
+      assert.equal(message.passed, true);
+      child.stdout.write(JSON.stringify({ type: 'result', result: { id: scenario.id, status: 'PASSED', steps: [{ index: 0, status: 'PASSED' }, { index: 1, status: 'PASSED' }] } }) + '\n');
+      child.stdout.end(); child.emit('close', 0);
+    }
+  });
+  const evidence = await runIsolated(plan, 'https://sandbox.aipr.invalid', { execution: { mode: 'OWNER_SANDBOX', sandbox }, transport: { control: async (_id, step) => { actual = step; return true; } }, spawn: () => child, execFile: (_c, _a, _o, cb) => cb() });
+  assert.equal(actual.equals, 1); assert.equal(evidence[0].status, 'PASSED');
+});
+test('public mode still rejects mutations and sandbox control messages', async () => {
+  for (const message of [{ type: 'control', id: 1, scenarioId: scenario.id, index: 1 }, { type: 'resource', id: 1, url: 'https://preview.example.com/orders', method: 'POST' }]) {
+    const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.kill = () => child.emit('close', 1);
+    child.stdin.on('data', line => {
+      if (JSON.parse(line).type === 'start') setImmediate(() => child.stdout.write(JSON.stringify(message) + '\n'));
+      else { child.stdout.end(); child.emit('close', 1); }
+    });
+    const evidence = await runIsolated([scenario], 'https://preview.example.com', { spawn: () => child, fetchPreview: () => assert.fail('Write must not reach public preview'), execFile: (_c, _a, _o, cb) => cb() });
+    assert.equal(evidence[0].status, 'ERROR');
+  }
+});
+test('owner workflow checks out only authenticated preparation outputs with credentials disabled', () => {
+  const yaml = require('yaml'); const fs = require('node:fs'); const path = require('node:path');
+  const workflow = yaml.parse(fs.readFileSync(path.join(__dirname, '../../docs/behavioral-workflow.example.yml'), 'utf8'));
+  const job = workflow.jobs.verify;
+  assert.equal(job['runs-on'], 'ubuntu-latest');
+  const checkout = job.steps.find(s => s.name === 'Checkout authorized application commit');
+  assert.equal(checkout.with.ref, '${{ steps.prepare.outputs.head_sha }}');
+  assert.equal(checkout.with.repository, '${{ steps.prepare.outputs.repository }}');
+  assert.equal(checkout.with['persist-credentials'], false);
+  assert.equal(checkout.with.path, 'application');
+  assert.equal(job.steps.at(-1).if, 'always()');
+  assert.ok(job.steps.at(-1).run.endsWith('--cleanup'));
+});

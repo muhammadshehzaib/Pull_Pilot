@@ -3,7 +3,7 @@ import prisma from '../config/prisma';
 import { GitHubAppService } from '../services/github-app.service';
 import { authenticDispatch, BehavioralError, behavioralForJob, completeBehavioralRun, parseBehavioralConfig, resultsObject, runDto, startBehavioralRun, trustedPreview } from '../services/behavioral/behavioral.service';
 import { verifyCiToken } from '../services/behavioral/oidc';
-import { LIMITS } from '../services/behavioral/contracts';
+import { LIMITS, storedPlan } from '../services/behavioral/contracts';
 
 async function ownedJob(req: Request) {
   const job = await prisma.analysisJob.findFirst({ where: { id: String(req.params.jobId), repository: { userId: req.auth!.userId, isActive: true } }, include: { repository: { include: { installation: true } } } });
@@ -18,7 +18,8 @@ async function ciContext(req: Request) {
   if (!run || !authenticDispatch(req.body?.dispatchToken, run.dispatchHash)) throw new BehavioralError(401, 'CI authentication failed');
   if (run.expiresAt.getTime() <= Date.now() || run.deadlineAt.getTime() <= Date.now()) throw new BehavioralError(409, 'CI run expired');
   const config = parseBehavioralConfig(run.repository.behavioralConfig);
-  if (!run.repository.isActive || !config.enabled || config.workflowSha !== run.workflowSha || !run.previewUrl || new URL(run.previewUrl).hostname !== config.previewHost || !run.repository.installation || run.repository.installation.userId !== run.repository.userId) throw new BehavioralError(403, 'CI configuration was revoked or changed');
+  const execution = storedPlan(run.plan).execution;
+  if (!run.repository.isActive || !config.enabled || config.workflowSha !== run.workflowSha || !run.previewUrl || (execution.mode === 'PUBLIC_PREVIEW' && new URL(run.previewUrl).hostname !== config.previewHost) || JSON.stringify(config.execution) !== JSON.stringify(execution) || !run.repository.installation || run.repository.installation.userId !== run.repository.userId) throw new BehavioralError(403, 'CI configuration was revoked or changed');
   const token = req.headers.authorization?.replace(/^Bearer /, '') ?? '';
   let identity;
   try { identity = await verifyCiToken(token, { repositoryId: String(run.repository.githubRepoId), workflowRef: run.workflowRef, workflowSha: run.workflowSha, audience: process.env.BEHAVIORAL_OIDC_AUDIENCE ?? '' }); }
@@ -57,12 +58,15 @@ export class BehavioralController {
   static async claim(req: Request, res: Response) {
     try {
       const { run, identity, config } = await ciContext(req);
-      const gh = await GitHubAppService.getInstallationService(run.repository.installation!.githubInstallationId.toString());
-      const preview = await trustedPreview(gh, run.repository.fullName, run.deploymentId, run.headSha, config);
-      if (preview !== run.previewUrl) throw new BehavioralError(409, 'Preview metadata changed; create a new run');
+      const { scenarios, execution } = storedPlan(run.plan);
+      if (execution.mode === 'PUBLIC_PREVIEW') {
+        const gh = await GitHubAppService.getInstallationService(run.repository.installation!.githubInstallationId.toString());
+        const preview = await trustedPreview(gh, run.repository.fullName, run.deploymentId, run.headSha, config);
+        if (preview !== run.previewUrl) throw new BehavioralError(409, 'Preview metadata changed; create a new run');
+      }
       const claimed = await prisma.behavioralRun.updateMany({ where: { id: run.id, deadlineAt: { gt: new Date() }, OR: [{ status: 'QUEUED' }, { status: 'RUNNING', ciRunId: identity.runId }] }, data: { status: 'RUNNING', ciRunId: identity.runId, reason: null } });
       if (!claimed.count) throw new BehavioralError(409, 'Run is no longer claimable');
-      return res.json({ plan: run.plan, previewUrl: run.previewUrl, limits: LIMITS, headSha: run.headSha });
+      return res.json({ plan: scenarios, execution, previewUrl: run.previewUrl, limits: LIMITS, headSha: run.headSha, repository: run.repository.fullName });
     } catch (err) { return failure(res, err); }
   }
   static async finish(req: Request, res: Response) {

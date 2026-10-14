@@ -1,9 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { baselineBehavioral, outcome, parseEvidence, parsePlan, withExecution } from './contracts';
+import { baselineBehavioral, outcome, parseEvidence, parsePlan, parseExecution, storedPlan, withExecution } from './contracts';
 
 const id = 'a'.repeat(24);
 const steps = [{ action: 'navigate', path: '/' }, { action: 'assertVisible', testId: 'cart' }];
 const plan = parsePlan([{ id, steps }], [id]);
+const execution = parseExecution({ mode: 'OWNER_SANDBOX', sandbox: { dockerfile: 'deploy/Dockerfile.preview', port: 3000, readyPath: '/', sessionPath: '/__aipr/session', mutations: [{ method: 'POST', path: '/orders' }], assertions: ['/__aipr/state'] } });
+
+describe('sandbox contract', () => {
+  const extended = [{ id, steps: [steps[0], { action: 'authenticate', fixture: 'CUSTOMER' }, { action: 'assertJson', path: '/__aipr/state', pointer: '/orderCount', equals: 1 }] }];
+  it('requires an approved sandbox for synthetic authentication and server-state assertions', () => {
+    expect(parsePlan(extended, [id], execution)[0].steps).toHaveLength(3);
+    expect(() => parsePlan(extended, [id])).toThrow();
+    const evidence = parseEvidence([{ id, status: 'FAILED', steps: [{ index: 0, status: 'PASSED' }, { index: 1, status: 'PASSED' }, { index: 2, status: 'FAILED' }] }], parsePlan(extended, [id], execution));
+    expect(outcome(evidence)).toBe('FAILED');
+  });
+  it.each(['/admin', 'https://production.example.com', '/__aipr/state?token=x'])('rejects unapproved assertion path %s', path => {
+    expect(() => parsePlan([{ id, steps: [steps[0], { action: 'assertJson', path, pointer: '/count', equals: 1 }] }], [id], execution)).toThrow();
+  });
+  it.each(['/__proto__', '/constructor', '/count~1', '/'])('rejects invalid pointer %s', pointer => {
+    expect(() => parsePlan([{ id, steps: [steps[0], { action: 'assertJson', path: '/__aipr/state', pointer, equals: 1 }] }], [id], execution)).toThrow();
+  });
+  it('rejects arbitrary Docker paths, ports, methods and overlapping control endpoints', () => {
+    if (execution.mode !== 'OWNER_SANDBOX') throw new Error();
+    for (const extra of [{ dockerfile: '../../Dockerfile' }, { dockerfile: '/etc/passwd' }, { port: 80 }, { mutations: [{ method: 'CONNECT', path: '/orders' }] }, { mutations: [{ method: 'POST', path: '/__aipr/session' }] }, { assertions: [] }]) {
+      expect(() => parseExecution({ mode: 'OWNER_SANDBOX', sandbox: { ...execution.sandbox, ...extra } })).toThrow();
+    }
+  });
+  it('reads legacy array plans and frozen sandbox plans separately', () => {
+    expect(storedPlan(plan)).toEqual({ scenarios: plan, execution: { mode: 'PUBLIC_PREVIEW' } });
+    expect(storedPlan({ version: 2, scenarios: extended, execution }).execution).toEqual(execution);
+    expect(() => storedPlan({ version: 3, scenarios: [] })).toThrow();
+  });
+});
 describe('explicit behavioral plan', () => {
   it('requires an opening navigation, an assertion, known scenario and bounded actions', () => {
     expect(plan[0].steps).toHaveLength(2);

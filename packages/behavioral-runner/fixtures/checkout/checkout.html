@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <body>
+    <button data-testid="checkout">Checkout</button>
+    <div data-testid="result">Ready</div>
+    <script>
+      document.querySelector('button').onclick = async () => {
+        const response = await fetch('/orders', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}'
+        });
+        document.querySelector('[data-testid=result]').textContent =
+          response.ok ? 'Order created' : 'Login required';
+      };
+    </script>
+  </body>
+</html>

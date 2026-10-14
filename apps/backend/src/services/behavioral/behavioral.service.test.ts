@@ -3,7 +3,7 @@ const m = vi.hoisted(() => ({ find: vi.fn(), count: vi.fn(), create: vi.fn(), up
 vi.mock('../../config/prisma', () => ({ default: { behavioralRun: { findUnique: m.find, update: m.update }, $transaction: m.transaction } }));
 vi.mock('./destination-policy', async original => ({ ...await original<any>(), resolvePublic: m.dns }));
 import { baselineBehavioral, type Scenario } from './contracts';
-import { behavioralForJob, completeBehavioralRun, startBehavioralRun, trustedPreview } from './behavioral.service';
+import { behavioralForJob, completeBehavioralRun, startBehavioralRun, trustedPreview, parseBehavioralConfig } from './behavioral.service';
 const sha = 'a'.repeat(40);
 const config = { enabled: true, workflowSha: sha, previewHost: 'preview.example.com', environment: 'preview', publishers: ['deploy[bot]'] };
 const gaps = { analyzed: true, scenarios: [{ filePath: 'a.ts', scenario: 'opens cart', lineNumber: 1, expected: 'visible', confidence: 'HIGH' as const }], evidence: { changedSources: ['a.ts'], relatedTests: [], treeTruncated: false, incomplete: false } };
@@ -17,6 +17,16 @@ beforeEach(() => {
   m.transaction.mockImplementation(async fn => fn({ behavioralRun: { findUnique: m.find, findUniqueOrThrow: m.find, count: m.count, create: m.create, updateMany: m.cas }, analysisJob: { findUniqueOrThrow: m.job, update: m.snapshot } }));
 });
 describe('behavioral dispatch', () => {
+  it('automatically queues a frozen sandbox plan without a deployment or public preview settings', async () => {
+    const sandboxConfig = { enabled: true, workflowSha: sha, execution: { mode: 'OWNER_SANDBOX', sandbox: { dockerfile: 'Dockerfile', port: 3000, readyPath: '/', sessionPath: '/__aipr/session', mutations: [{ method: 'POST', path: '/orders' }], assertions: ['/__aipr/state'] } } };
+    expect(parseBehavioralConfig(sandboxConfig).execution?.mode).toBe('OWNER_SANDBOX');
+    const gh = github();
+    const run = await startBehavioralRun({ ...job, repository: { ...job.repository, behavioralConfig: sandboxConfig } }, { ...request, deploymentId: null }, gh as any);
+    expect(run.status).toBe('QUEUED'); expect(run.previewUrl).toBe('https://sandbox.aipr.invalid');
+    expect(run.plan).toMatchObject({ version: 2, scenarios: plan, execution: sandboxConfig.execution });
+    expect(run.deadlineAt.getTime() - run.expiresAt.getTime() + 7 * 86400000).toBe(30 * 60000);
+    expect(gh.getDeploymentPreview).not.toHaveBeenCalled(); expect(gh.dispatchBehavioralWorkflow).toHaveBeenCalledOnce();
+  });
   it('creates and dispatches one explicit plan from a pinned owner workflow', async () => {
     const gh = github(); const run = await startBehavioralRun(job, request, gh as any);
     expect(run.status).toBe('QUEUED');

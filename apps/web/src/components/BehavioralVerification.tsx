@@ -13,6 +13,7 @@ export function BehavioralVerification({ jobId, initialReport, onUpdated }: { jo
   const [configText, setConfigText] = useState(initialConfig);
   const [configConfirmed, setConfigConfirmed] = useState(false);
   const [enabled, setEnabled] = useState(false);
+  const [sandbox, setSandbox] = useState(false);
   const [scenarioId, setScenarioId] = useState(initial?.scenarios[0]?.id ?? '');
   const [steps, setSteps] = useState('');
   const [deploymentId, setDeploymentId] = useState('');
@@ -29,7 +30,7 @@ export function BehavioralVerification({ jobId, initialReport, onUpdated }: { jo
     let live = true;
     api<StateResponse>(`/api/behavioral/jobs/${jobId}`).then(data => {
       if (!live) return;
-      if (data.config) { setConfigText(JSON.stringify(data.config, null, 2)); setEnabled((data.config as { enabled?: boolean }).enabled === true); }
+      if (data.config) { setConfigText(JSON.stringify(data.config, null, 2)); setEnabled((data.config as { enabled?: boolean }).enabled === true); setSandbox((data.config as { execution?: { mode?: string } }).execution?.mode === 'OWNER_SANDBOX'); }
       setReport(normalizeBehavioral(data.report) ?? initial);
       setRunStatus(data.runs[0]?.status ?? '');
     }).catch(() => { if (live) setError('Behavioral settings are unavailable.'); });
@@ -52,7 +53,7 @@ export function BehavioralVerification({ jobId, initialReport, onUpdated }: { jo
     try {
       const config = JSON.parse(configText);
       await api(`/api/behavioral/jobs/${jobId}/config`, { method: 'PUT', body: JSON.stringify({ config, confirmed: true }) });
-      setEnabled(config.enabled === true); setConfigConfirmed(false); invalidate();
+      setEnabled(config.enabled === true); setSandbox(config.execution?.mode === 'OWNER_SANDBOX'); setConfigConfirmed(false); invalidate();
     } catch (err) { setError((err as { error?: string }).error ?? 'Invalid settings or unavailable service.'); }
     finally { locked.current = false; setBusy(false); }
   }
@@ -78,14 +79,15 @@ export function BehavioralVerification({ jobId, initialReport, onUpdated }: { jo
       <details>
         <summary>Owner CI and preview settings</summary>
         <p>Install the documented workflow on your default branch, pin its reviewed commit SHA, and approve one exact preview host, environment and deployment-status publisher. Changes to that branch require reviewing and updating the pin.</p>
+        <p>For login, order and sandbox payment tests, select OWNER_SANDBOX in the configuration JSON. Owner CI builds the reviewed commit and starts a temporary app and database. Configure its Dockerfile, port, synthetic session endpoint, allowed mutation paths and server assertion paths as described in the behavioral sandbox guide.</p>
         <label>CI configuration JSON<textarea aria-label="CI configuration JSON" rows={9} value={configText} onChange={e => { setConfigText(e.target.value); setConfigConfirmed(false); }} style={{ width: '100%' }} /></label>
         <label><input type="checkbox" checked={configConfirmed} onChange={e => setConfigConfirmed(e.target.checked)} /> I reviewed this CI workflow and approve this preview configuration.</label>
         <button type="button" disabled={busy || !configConfirmed} onClick={configure}>Save CI settings</button>
       </details>
       {report.scenarios.length > 0 && <>
         <label>Scenario<select aria-label="Behavioral scenario" value={scenarioId} onChange={e => { setScenarioId(e.target.value); invalidate(); }}>{report.scenarios.map(s => <option key={s.id} value={s.id}>{s.description}</option>)}</select></label>
-        <label>GitHub deployment ID<input aria-label="GitHub deployment ID" inputMode="numeric" value={deploymentId} onChange={e => { setDeploymentId(e.target.value); invalidate(); }} /></label>
-        <p>Define explicit actions using existing data-testid values: navigate, click, fill (EMPTY/TEXT/EMAIL fixtures), assertVisible or assertText. Execution permits public HTTPS GET resources only; authentication, form submissions and third-party resources are unavailable.</p>
+        {!sandbox && <label>GitHub deployment ID<input aria-label="GitHub deployment ID" inputMode="numeric" value={deploymentId} onChange={e => { setDeploymentId(e.target.value); invalidate(); }} /></label>}
+        <p>Define explicit actions using existing data-testid values: navigate, click, fill (EMPTY/TEXT/EMAIL fixtures), assertVisible or assertText. {sandbox ? 'The preview is built automatically in owner CI. Use authenticate with the CUSTOMER fixture for a synthetic login, then assertJson to verify server data such as orderCount equals 1. Only approved mutations are allowed; payments use the application’s mock adapter.' : 'Public preview mode permits HTTPS GET resources only. Select OWNER_SANDBOX to test login and data changes.'}</p>
         <label>Scenario actions JSON<textarea aria-label="Scenario actions JSON" rows={7} value={steps} placeholder={'[{"action":"navigate","path":"/"},{"action":"assertVisible","testId":"your-existing-testid"}]'} onChange={e => { setSteps(e.target.value); invalidate(); }} style={{ width: '100%' }} /></label>
         <label><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I approve executing these exact actions against this preview in owner CI.</label>
         <button type="button" disabled={!enabled || !confirmed || !steps || busy} onClick={start}>Run in owner CI</button>

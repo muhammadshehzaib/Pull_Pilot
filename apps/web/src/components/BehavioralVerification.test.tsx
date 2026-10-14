@@ -7,6 +7,13 @@ import { BehavioralVerification } from './BehavioralVerification';
 const report = { version: 1, executor: 'OWNER_CI', scenarios: [{ id: 'a'.repeat(24), filePath: 'cart.ts', description: 'opens cart', stage: 'GENERATED', status: 'NOT_RUN' }] };
 beforeEach(() => { vi.clearAllMocks(); mockApi.mockResolvedValue({ report, config: { enabled: true }, runs: [] }); });
 describe('behavioral UI', () => {
+  it('explains automatic sandbox previews and server assertions without asking for a deployment ID', async () => {
+    mockApi.mockResolvedValue({ report, config: { enabled: true, execution: { mode: 'OWNER_SANDBOX' } }, runs: [] });
+    render(<BehavioralVerification jobId="job" initialReport={report} />);
+    await waitFor(() => expect(screen.queryByLabelText('GitHub deployment ID')).toBeNull());
+    expect(screen.getByText(/The preview is built automatically in owner CI/)).toBeTruthy();
+    expect(screen.getByText(/orderCount equals 1/)).toBeTruthy();
+  });
   it('keeps legacy jobs without behavioral data compatible', () => {
     const view = render(<BehavioralVerification jobId="old" />);
     expect(view.container.textContent).toBe(''); expect(mockApi).not.toHaveBeenCalled();

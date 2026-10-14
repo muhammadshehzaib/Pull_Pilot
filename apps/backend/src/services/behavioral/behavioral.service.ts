@@ -3,17 +3,20 @@ import { Prisma, type BehavioralRun } from '@prisma/client';
 import prisma from '../../config/prisma';
 import type { GitHubService } from '../github.service';
 import type { TestGapReport } from '../test-gap/test-gap-types';
-import { baselineBehavioral, LIMITS, outcome, parseEvidence, parsePlan, withExecution, WORKFLOW_PATH, type BehavioralReport, type Scenario, type ScenarioResult } from './contracts';
+import { baselineBehavioral, LIMITS, outcome, parseEvidence, parsePlan, parseExecution, storedPlan, withExecution, WORKFLOW_PATH, type Execution, type BehavioralReport, type ScenarioResult } from './contracts';
 import { previewHost, resolvePublic, validateDestination } from './destination-policy';
 
 export class BehavioralError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
-export interface BehavioralConfig { enabled: boolean; workflowSha: string; previewHost: string; environment: string; publishers: string[] }
+export interface BehavioralConfig { enabled: boolean; workflowSha: string; previewHost: string; environment: string; publishers: string[]; execution?: Execution }
 export function parseBehavioralConfig(value: unknown): BehavioralConfig {
   const c = value as Record<string, unknown> | null;
-  if (!c || typeof c.enabled !== 'boolean' || typeof c.workflowSha !== 'string' || !/^[a-f0-9]{40}$/.test(c.workflowSha) || typeof c.environment !== 'string' || !/^[a-zA-Z0-9_-]{1,60}$/.test(c.environment) || !Array.isArray(c.publishers) || !c.publishers.length || c.publishers.length > 5 || c.publishers.some(v => typeof v !== 'string' || !/^[a-zA-Z0-9_-]+(?:\[bot\])?$/.test(v))) throw new BehavioralError(400, 'Invalid CI/preview configuration');
-  return { enabled: c.enabled, workflowSha: c.workflowSha, previewHost: previewHost(c.previewHost), environment: c.environment, publishers: c.publishers as string[] };
+  if (!c || typeof c.enabled !== 'boolean' || typeof c.workflowSha !== 'string' || !/^[a-f0-9]{40}$/.test(c.workflowSha)) throw new BehavioralError(400, 'Invalid CI configuration');
+  const execution = parseExecution(c.execution ?? {});
+  if (execution.mode === 'OWNER_SANDBOX') return { enabled: c.enabled, workflowSha: c.workflowSha, previewHost: '', environment: 'sandbox', publishers: [], execution };
+  if (typeof c.environment !== 'string' || !/^[a-zA-Z0-9_-]{1,60}$/.test(c.environment) || !Array.isArray(c.publishers) || !c.publishers.length || c.publishers.length > 5 || c.publishers.some(v => typeof v !== 'string' || !/^[a-zA-Z0-9_-]+(?:\[bot\])?$/.test(v))) throw new BehavioralError(400, 'Invalid CI/preview configuration');
+  return { enabled: c.enabled, workflowSha: c.workflowSha, previewHost: previewHost(c.previewHost), environment: c.environment, publishers: c.publishers as string[], execution };
 }
 export function resultsObject(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -54,7 +57,8 @@ export async function startBehavioralRun(job: any, body: Record<string, unknown>
   const results = resultsObject(job.results);
   if (!results.testGaps?.analyzed || !Array.isArray(results.testGaps.scenarios)) throw new BehavioralError(409, 'Phase 5 test-gap scenarios are required');
   const baseline = baselineBehavioral(results.testGaps as TestGapReport);
-  const plan = parsePlan(body.scenarios, baseline.scenarios.map(s => s.id));
+  const execution = config.execution!;
+  const plan = parsePlan(body.scenarios, baseline.scenarios.map(s => s.id), execution);
   const deploymentId = body.deploymentId == null ? null : Number(body.deploymentId);
   if (deploymentId !== null && (!Number.isSafeInteger(deploymentId) || deploymentId <= 0 || deploymentId > 2_147_483_647)) throw new BehavioralError(400, 'Invalid deployment ID');
   const [owner, repo] = job.repository.fullName.split('/');
@@ -66,7 +70,8 @@ export async function startBehavioralRun(job: any, body: Record<string, unknown>
     const pr = await gh.getPullRequest(owner, repo, Number(job.referenceId));
     if (pr.head.sha !== job.commitSha) throw new BehavioralError(409, 'Source PR changed; review its current commit first');
   }
-  const previewUrl = await trustedPreview(gh, job.repository.fullName, deploymentId, job.commitSha, config);
+  const previewUrl = execution.mode === 'OWNER_SANDBOX' ? 'https://sandbox.aipr.invalid' : await trustedPreview(gh, job.repository.fullName, deploymentId, job.commitSha, config);
+  const persistedPlan = execution.mode === 'OWNER_SANDBOX' ? { version: 2, scenarios: plan, execution } : plan;
   const dispatchToken = randomBytes(32).toString('hex');
   const now = new Date();
   let run: BehavioralRun;
@@ -82,7 +87,7 @@ export async function startBehavioralRun(job: any, body: Record<string, unknown>
         tx.behavioralRun.count({ where: { repositoryId: job.repositoryId, status: { in: ['QUEUED', 'RUNNING'] }, deadlineAt: { gt: now } } }),
       ]);
       if (jobCount >= LIMITS.runsPerJob || dayCount >= LIMITS.runsPerDay || active) throw new BehavioralError(429, 'Behavioral execution limit reached');
-      return tx.behavioralRun.create({ data: { analysisJobId: job.id, repositoryId: job.repositoryId, requestKey: body.requestKey as string, headSha: job.commitSha, plan: plan as any, status: previewUrl ? 'QUEUED' : 'NOT_RUN', reason: previewUrl ? null : 'NO_TRUSTED_PREVIEW', previewUrl, deploymentId, workflowSha: config.workflowSha, workflowRef: `${job.repository.fullName}/${WORKFLOW_PATH}@refs/heads/${branch}`, dispatchHash: digest(dispatchToken), deadlineAt: new Date(now.getTime() + 10 * 60_000), expiresAt: new Date(now.getTime() + LIMITS.retentionDays * 86400000) } });
+      return tx.behavioralRun.create({ data: { analysisJobId: job.id, repositoryId: job.repositoryId, requestKey: body.requestKey as string, headSha: job.commitSha, plan: persistedPlan as any, status: previewUrl ? 'QUEUED' : 'NOT_RUN', reason: previewUrl ? null : 'NO_TRUSTED_PREVIEW', previewUrl, deploymentId, workflowSha: config.workflowSha, workflowRef: `${job.repository.fullName}/${WORKFLOW_PATH}@refs/heads/${branch}`, dispatchHash: digest(dispatchToken), deadlineAt: new Date(now.getTime() + (execution.mode === 'OWNER_SANDBOX' ? 30 : 10) * 60_000), expiresAt: new Date(now.getTime() + LIMITS.retentionDays * 86400000) } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   } catch (err) {
     if (err instanceof BehavioralError) throw err;
@@ -105,7 +110,7 @@ export async function startBehavioralRun(job: any, body: Record<string, unknown>
 
 /** Atomically accept one authenticated CI result and snapshot a content-free summary. */
 export async function completeBehavioralRun(run: BehavioralRun, ciRunId: string, raw: unknown) {
-  const plan = run.plan as unknown as Scenario[];
+  const plan = storedPlan(run.plan).scenarios;
   const evidence = parseEvidence(raw, plan);
   return prisma.$transaction(async tx => {
     const changed = await tx.behavioralRun.updateMany({ where: { id: run.id, status: 'RUNNING', ciRunId, deadlineAt: { gt: new Date() } }, data: { status: outcome(evidence), evidence: evidence as any, reason: null } });
@@ -130,7 +135,7 @@ export function behavioralForJob(results: Record<string, any>, runs: BehavioralR
   const latest = runs[0];
   const baseline = latest ? priorReport(results, latest.headSha) : baselineBehavioral(results.testGaps);
   if (!latest) return results.behavioral ?? baseline;
-  const plan = latest.plan as unknown as Scenario[];
+  const plan = storedPlan(latest.plan).scenarios;
   const expired = ['QUEUED', 'RUNNING'].includes(latest.status) && latest.deadlineAt.getTime() <= Date.now();
   const fallback = plan.map(s => ({ id: s.id, status: expired ? 'TIMED_OUT' : ['ERROR', 'TIMED_OUT'].includes(latest.status) ? latest.status : 'NOT_RUN', steps: [] })) as ScenarioResult[];
   const report = withExecution(baseline, latest.evidence ? latest.evidence as unknown as ScenarioResult[] : fallback, latest);
