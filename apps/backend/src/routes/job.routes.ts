@@ -5,11 +5,13 @@ import { FindingController } from '../controllers/finding.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
 import { FeedbackLoopController } from '../controllers/feedback-loop.controller';
 import { feedbackRateLimit } from '../middlewares/feedback-rate-limit';
+import { requireRepositoryAccess } from '../middlewares/repository-access.middleware';
 
 const router = Router();
 
 router.use(requireAuth);
 router.get('/', JobController.list);
+router.use('/:id', requireRepositoryAccess('job', 'id'));
 router.get('/:id', JobController.get);
 // Drafts belonging to one review (list only; create/edit/PR live under
 // /api/test-drafts). Path does not overlap `/:id`.

@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import { RepositoryAccessError } from '../errors/repository-access.error';
 
 /** Outcome of a comment post. Comment posting never throws; it reports. */
 export interface CommentPostResult {
@@ -191,6 +192,47 @@ export class GitHubService {
   async getRepo(owner: string, repo: string) {
     const { data } = await this.octokit.repos.get({ owner, repo });
     return data;
+  }
+
+  /** Server access is transport authority, never proof of the user's access. */
+  async getRepoForUser(
+    owner: string,
+    repo: string,
+    githubId: string,
+    options: { expectedRepoId?: string; requireMembership?: boolean; signal?: AbortSignal } = {},
+  ) {
+    if (!/^[1-9]\d*$/.test(githubId) || !Number.isSafeInteger(Number(githubId))) {
+      throw new RepositoryAccessError();
+    }
+    const request = { timeout: 10_000, signal: options.signal };
+    try {
+      const { data: repository } = await this.octokit.repos.get({ owner, repo, request });
+      if (!repository.id || (options.expectedRepoId && String(repository.id) !== options.expectedRepoId)) {
+        throw new RepositoryAccessError();
+      }
+      if (typeof repository.private !== 'boolean') throw new RepositoryAccessError();
+      // Saved private reports may contain code that predates a visibility change.
+      if (repository.private === false && !options.requireMembership) return repository;
+      const { data: user } = await this.octokit.users.getById({ account_id: Number(githubId), request });
+      if (String(user.id) !== githubId || !user.login) throw new RepositoryAccessError();
+      const { data: access } = await this.octokit.repos.getCollaboratorPermissionLevel({
+        owner, repo, username: user.login, request,
+      });
+      // permission is GitHub's effective base role, including team/org grants.
+      // repository.permissions describes the SERVER credential and is ignored.
+      if (String(access.user?.id) !== githubId || !['read', 'write', 'admin'].includes(access.permission)) {
+        throw new RepositoryAccessError();
+      }
+      return repository;
+    } catch (error) {
+      if (error instanceof RepositoryAccessError) throw error;
+      const upstream = error as { status?: number; response?: { headers?: Record<string, string> }; message?: string };
+      const status = upstream?.status;
+      const headers = upstream?.response?.headers;
+      const rateLimited = status === 403 && (headers?.['x-ratelimit-remaining'] === '0' ||
+        !!headers?.['retry-after'] || /rate limit/i.test(upstream.message ?? ''));
+      throw new RepositoryAccessError(!rateLimited && [401, 403, 404].includes(status ?? 0) ? 403 : 503);
+    }
   }
 
   /**

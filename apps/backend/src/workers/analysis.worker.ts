@@ -31,6 +31,7 @@ import {
   severityTally,
 } from '../services/ai/finding-format';
 import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.error';
+import { RepositoryAccessError } from '../errors/repository-access.error';
 import { advanceReview, markReviewTerminal, wasSuperseded, isTerminalStatus, persistReviewFailure } from './job-state';
 import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS, CLAUDE_MODEL, GROK_MODEL } from '../utils/constants';
 
@@ -47,7 +48,6 @@ export const analysisWorker = new Worker(
       eventType,
       referenceId,
       payloadSnapshot,
-      githubInstallationId,
     } = job.data;
 
     const [owner, repo] = fullName.split('/');
@@ -137,7 +137,7 @@ export const analysisWorker = new Worker(
     try {
       // Resume saved delivery before requiring an AI key or invoking a provider.
       const persisted = await prisma.analysisJob.findUnique({ where: { id: jobId },
-        include: { repository: { include: { installation: true } } } });
+        include: { repository: { include: { installation: true, user: { select: { githubId: true } } } } } });
       if (!persisted || !persisted.repository.isActive || persisted.repository.userId !== userId || persisted.repositoryId !== repositoryId) {
         throw new UnrecoverableError('Review or repository unavailable');
       }
@@ -146,10 +146,32 @@ export const analysisWorker = new Worker(
         await markReviewTerminal(jobId, userId, 'SKIPPED', 'Legacy review delivery is untracked; start a new review.', { reason: 'legacy-delivery-untracked' });
         throw new UnrecoverableError('Legacy review delivery is untracked');
       }
+      // Reauthorize old queued jobs and saved delivery plans before reading code,
+      // calling AI, or posting comments. Queue installation fields are not proof.
+      if (persisted.repository.installation && persisted.repository.installation.userId !== userId) {
+        throw new PermanentJobError('repository-access-denied', 'Repository access was revoked.');
+      }
+      const authorizedGitHub = await guard(GitHubAppService.getInstallationService(
+        persisted.repository.installation?.githubInstallationId.toString(),
+      ));
+      try {
+        const [repositoryOwner, repositoryName] = persisted.repository.fullName.split('/');
+        await guard(authorizedGitHub.getRepoForUser(repositoryOwner, repositoryName, persisted.repository.user.githubId, {
+          expectedRepoId: persisted.repository.githubRepoId.toString(),
+          requireMembership: persisted.repository.isPrivate,
+          signal: abort.signal,
+        }));
+        if (fullName !== persisted.repository.fullName) throw new RepositoryAccessError();
+      } catch (error) {
+        if (error instanceof RepositoryAccessError && error.status === 403) {
+          throw new PermanentJobError('repository-access-denied', error.message);
+        }
+        throw error;
+      }
       const savedPlan = await loadReviewDelivery(jobId);
       if (savedPlan) {
         const finished = savedPlan.deliveries?.every(r => (DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state));
-        const service = finished ? undefined : await GitHubAppService.getInstallationService(persisted.repository.installation?.githubInstallationId?.toString());
+        const service = finished ? undefined : authorizedGitHub;
         return await finishDelivery(savedPlan, service);
       }
       // 1. Enter the pipeline. Every step below advances the phase rather than
@@ -182,9 +204,8 @@ export const analysisWorker = new Worker(
         vault.salt
       );
 
-      // 4. BOOT MULTI-TENANT GITHUB APP CONNECTOR
-      const resolvedInstallationId = githubInstallationId || dbRepo.installation?.githubInstallationId?.toString();
-      const ghService = await GitHubAppService.getInstallationService(resolvedInstallationId);
+      // 4. Reuse the connector authorized against persisted repository ownership.
+      const ghService = authorizedGitHub;
 
       // 5. FETCH REPO CONFIGURATION (.aipr.yml)
       const { baseSha, headSha } = payloadSnapshot;

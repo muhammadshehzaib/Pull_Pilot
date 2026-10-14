@@ -39,6 +39,7 @@ Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** o
 - **CSRF-protected GitHub OAuth** — validates a one-time OAuth `state` value before establishing a session
 - **User-linked GitHub App installations** — installation claims are tied to the authenticated GitHub user and verified against GitHub's signed installation webhook before repositories are linked
 - **Per-user repo management** — repositories are scoped to their owner and GitHub repository ID; webhook routing refuses ambiguous ownership instead of crossing tenants
+- **Verified private-repository access** — GitHub confirms the signed-in user's effective read permission before manual connection/reconnection, private review reads, and worker processing. Server-token access alone grants no user access. See [authorization behavior and rollout](docs/repository-access-plan.md).
 - **Manual review trigger** — fire off a review for any PR on demand from the dashboard
 - **Live dashboard** — Socket.IO streams every step (`fetching diff → building context → AI dispatching → posting comments`) in real time
 - **GitHub App Integration (Pull Pilot)** — 1-click installation across individual repositories or entire organizations with automated PR & push webhooks

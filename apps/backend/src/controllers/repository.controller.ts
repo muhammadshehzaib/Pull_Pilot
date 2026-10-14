@@ -7,6 +7,7 @@ import { analysisQueue } from '../config/queue';
 import { BACKEND_URL } from '../utils/constants';
 import { QuotaService } from '../services/quota.service';
 import { paginationMeta, parsePagination } from '../utils/pagination';
+import { RepositoryAccessError } from '../errors/repository-access.error';
 
 async function getGitHub(installationId?: string | number | null): Promise<GitHubService> {
   return await GitHubAppService.getInstallationService(installationId);
@@ -56,7 +57,7 @@ export class RepositoryController {
 
   static async register(req: Request, res: Response) {
     const { fullName } = req.body ?? {};
-    if (!fullName || typeof fullName !== 'string' || !fullName.includes('/')) {
+    if (typeof fullName !== 'string' || !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\/[a-zA-Z0-9_.-]+$/.test(fullName) || /\/(?:\.|\.\.)$/.test(fullName)) {
       return res.status(400).json({ error: 'fullName must be in "owner/repo" form' });
     }
 
@@ -70,8 +71,14 @@ export class RepositoryController {
     }
 
     try {
+      if (existing?.installation && existing.installation.userId !== req.auth!.userId) {
+        throw new RepositoryAccessError();
+      }
       const gh = await getGitHub(existing?.installation?.githubInstallationId?.toString());
-      const ghRepo = await gh.getRepo(owner, repo);
+      const ghRepo = await gh.getRepoForUser(owner, repo, req.auth!.githubId, {
+        expectedRepoId: existing?.githubRepoId.toString(),
+        requireMembership: existing?.isPrivate,
+      });
       const claimedRepo = await prisma.repository.findFirst({
         where: { githubRepoId: BigInt(ghRepo.id) },
         select: { id: true, userId: true },
@@ -139,8 +146,11 @@ export class RepositoryController {
             }),
       });
     } catch (err) {
+      if (err instanceof RepositoryAccessError) {
+        return res.status(err.status).json({ error: err.message });
+      }
       console.error('🔴 Repo registration failure:', err);
-      return res.status(500).json({ error: (err as Error).message });
+      return res.status(500).json({ error: 'Could not connect repository' });
     }
   }
 

@@ -15,6 +15,8 @@ const {
   mockListReviewComments,
   mockListIssueComments,
   mockGetAuthenticated,
+  mockGetById,
+  mockGetPermission,
   OctokitCtor,
 } = vi.hoisted(() => {
   const mockCompareCommits = vi.fn();
@@ -30,6 +32,8 @@ const {
   const mockListReviewComments = vi.fn();
   const mockListIssueComments = vi.fn();
   const mockGetAuthenticated = vi.fn();
+  const mockGetById = vi.fn();
+  const mockGetPermission = vi.fn();
 
   const OctokitCtor = vi.fn(function (this: any, _opts?: unknown) {
     this.repos = {
@@ -37,6 +41,7 @@ const {
       createWebhook: mockCreateWebhook,
       deleteWebhook: mockDeleteWebhook,
       get: mockGetRepo,
+      getCollaboratorPermissionLevel: mockGetPermission,
       getContent: mockGetContent,
     };
     this.pulls = {
@@ -48,7 +53,7 @@ const {
       createComment: mockCreateIssueComment,
       listComments: mockListIssueComments,
     };
-    this.users = { getAuthenticated: mockGetAuthenticated };
+    this.users = { getAuthenticated: mockGetAuthenticated, getById: mockGetById };
     this.git = {
       getTree: mockGetTree,
       getBlob: mockGetBlob,
@@ -69,6 +74,8 @@ const {
     mockListReviewComments,
     mockListIssueComments,
     mockGetAuthenticated,
+    mockGetById,
+    mockGetPermission,
     OctokitCtor,
   };
 });
@@ -77,6 +84,7 @@ vi.mock('@octokit/rest', () => ({ Octokit: OctokitCtor }));
 
 import { GitHubService } from './github.service';
 import { Octokit } from '@octokit/rest';
+import { RepositoryAccessError } from '../errors/repository-access.error';
 
 describe('GitHubService', () => {
   let svc: GitHubService;
@@ -94,6 +102,103 @@ describe('GitHubService', () => {
     it('initializes Octokit with the provided token', () => {
       new GitHubService('ghp_xyz');
       expect(Octokit).toHaveBeenCalledWith({ auth: 'ghp_xyz' });
+    });
+  });
+
+  describe('getRepoForUser()', () => {
+    beforeEach(() => {
+      mockGetRepo.mockResolvedValue({ data: { id: 99, private: true, permissions: { admin: true } } });
+      mockGetById.mockResolvedValue({ data: { id: 7, login: 'current-login' } });
+      mockGetPermission.mockResolvedValue({ data: { user: { id: 7 }, permission: 'read' } });
+    });
+
+    it.each(['read', 'write', 'admin'])('accepts effective %s access, including team/org grants', async permission => {
+      mockGetPermission.mockResolvedValueOnce({ data: { user: { id: 7 }, permission, role_name: 'custom-role' } });
+      await expect(svc.getRepoForUser('company', 'private', '7')).resolves.toMatchObject({ id: 99 });
+      expect(mockGetById).toHaveBeenCalledWith({ account_id: 7, request: expect.objectContaining({ timeout: 10_000 }) });
+      expect(mockGetPermission).toHaveBeenCalledWith({ owner: 'company', repo: 'private', username: 'current-login', request: expect.any(Object) });
+    });
+
+    it('denies a stranger even when the server has admin access', async () => {
+      mockGetPermission.mockResolvedValueOnce({ data: { user: { id: 7 }, permission: 'none' } });
+      await expect(svc.getRepoForUser('company', 'private', '7')).rejects.toMatchObject({ status: 403 });
+    });
+
+    it.each([
+      { user: { id: 8 }, permission: 'admin' },
+      { permission: 'admin' },
+      { user: { id: 7 }, permission: 'unexpected' },
+    ])('denies malformed or mismatched permission evidence: %j', async data => {
+      mockGetPermission.mockResolvedValueOnce({ data });
+      await expect(svc.getRepoForUser('o', 'r', '7')).rejects.toBeInstanceOf(RepositoryAccessError);
+    });
+
+    it('uses the current login resolved from the stable ID, not a stale username', async () => {
+      mockGetById.mockResolvedValueOnce({ data: { id: 7, login: 'renamed-user' } });
+      await svc.getRepoForUser('o', 'r', '7');
+      expect(mockGetPermission.mock.calls.at(-1)![0].username).toBe('renamed-user');
+    });
+
+    it('denies a mismatched GitHub profile before the permission request', async () => {
+      mockGetById.mockResolvedValueOnce({ data: { id: 8, login: 'other-person' } });
+      await expect(svc.getRepoForUser('o', 'r', '7')).rejects.toMatchObject({ status: 403 });
+      expect(mockGetPermission).not.toHaveBeenCalled();
+    });
+
+    it.each(['', 'gh', '0', '-1', '7/path', '9007199254740992'])('denies invalid account ID %j', async id => {
+      await expect(svc.getRepoForUser('o', 'r', id)).rejects.toMatchObject({ status: 403 });
+      expect(mockGetRepo).not.toHaveBeenCalled();
+    });
+
+    it('allows a public repo without collaborator membership', async () => {
+      mockGetRepo.mockResolvedValueOnce({ data: { id: 99, private: false } });
+      await svc.getRepoForUser('o', 'r', '7');
+      expect(mockGetPermission).not.toHaveBeenCalled();
+      expect(mockGetById).not.toHaveBeenCalled();
+    });
+
+    it('still protects saved private reports after the repository becomes public', async () => {
+      mockGetRepo.mockResolvedValueOnce({ data: { id: 99, private: false } });
+      mockGetPermission.mockResolvedValueOnce({ data: { user: { id: 7 }, permission: 'none' } });
+      await expect(svc.getRepoForUser('o', 'r', '7', { requireMembership: true })).rejects.toMatchObject({ status: 403 });
+    });
+
+    it('denies repository replacement at the same owner/name', async () => {
+      await expect(svc.getRepoForUser('o', 'r', '7', { expectedRepoId: '100' })).rejects.toMatchObject({ status: 403 });
+      expect(mockGetPermission).not.toHaveBeenCalled();
+    });
+
+    it('denies unknown repository visibility', async () => {
+      mockGetRepo.mockResolvedValueOnce({ data: { id: 99 } });
+      await expect(svc.getRepoForUser('o', 'r', '7')).rejects.toMatchObject({ status: 403 });
+    });
+
+    it.each([401, 403, 404, 429, 500])('fails closed with sanitized GitHub status %i', async status => {
+      mockGetPermission.mockRejectedValueOnce(Object.assign(new Error('credential secret upstream details'), { status }));
+      const unavailable = status >= 429;
+      await expect(svc.getRepoForUser('o', 'r', '7')).rejects.toMatchObject({ status: unavailable ? 503 : 403,
+        message: unavailable ? 'GitHub access verification is temporarily unavailable. Try again later.' :
+          'GitHub repository access could not be confirmed for your account.' });
+    });
+
+    it('treats a 403 rate limit as temporary instead of permanently skipping reviews', async () => {
+      mockGetPermission.mockRejectedValueOnce({ status: 403, response: { headers: { 'x-ratelimit-remaining': '0' } } });
+      await expect(svc.getRepoForUser('o', 'r', '7')).rejects.toMatchObject({ status: 503 });
+    });
+
+    it('does not cache a previous grant after permission is revoked', async () => {
+      await svc.getRepoForUser('o', 'r', '7');
+      mockGetPermission.mockResolvedValueOnce({ data: { user: { id: 7 }, permission: 'none' } });
+      await expect(svc.getRepoForUser('o', 'r', '7')).rejects.toMatchObject({ status: 403 });
+      expect(mockGetPermission).toHaveBeenCalledTimes(2);
+    });
+
+    it('passes cancellation to every GitHub lookup', async () => {
+      const signal = new AbortController().signal;
+      await svc.getRepoForUser('o', 'r', '7', { signal });
+      for (const mock of [mockGetRepo, mockGetById, mockGetPermission]) {
+        expect(mock.mock.calls.at(-1)![0].request).toEqual({ timeout: 10_000, signal });
+      }
     });
   });
 

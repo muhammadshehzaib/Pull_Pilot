@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { TestDraftController } from '../controllers/test-draft.controller';
 import { requireAuth } from '../middlewares/auth.middleware';
+import { requireRepositoryAccess } from '../middlewares/repository-access.middleware';
 
 /**
  * Test-draft endpoints. Drafts are created from a review's test-gap scenario,
@@ -11,7 +12,8 @@ import { requireAuth } from '../middlewares/auth.middleware';
 const router = Router();
 
 router.use(requireAuth);
-router.post('/', TestDraftController.create);
+router.post('/', requireRepositoryAccess('job', 'jobId', true), TestDraftController.create);
+router.use('/:id', requireRepositoryAccess('draft', 'id'));
 router.get('/:id', TestDraftController.get);
 router.put('/:id', TestDraftController.update);
 router.delete('/:id', TestDraftController.discard);

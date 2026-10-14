@@ -33,7 +33,7 @@ vi.mock('../services/feedback-loop/adaptation.service', async importOriginal => 
  * handler that the source code passes in, and then invoke it directly with
  * fake job payloads.
  */
-const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockRuleFindMany, mockRuleCheckCreateMany, mockSecurityCheckCreateMany, mockDecrypt, mockFetchDiff, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
+const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockRuleFindMany, mockRuleCheckCreateMany, mockSecurityCheckCreateMany, mockDecrypt, mockFetchDiff, mockGetRepoForUser, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
   const capturedHandler: { fn?: (job: any) => Promise<any> } = {};
 
   const WorkerMock = vi.fn(function (this: any, _name: string, handler: any) {
@@ -52,13 +52,14 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoF
   const mockSecurityCheckCreateMany = vi.fn();
   const mockDecrypt = vi.fn();
   const mockFetchDiff = vi.fn();
+  const mockGetRepoForUser = vi.fn();
   const mockCreateReviewComment = vi.fn();
   const mockGetProvider = vi.fn();
   const mockAnalyzeCode = vi.fn();
   const mockEmitStatus = vi.fn();
 
   const GitHubServiceCtor = vi.fn(function (this: any) {
-    this.fetchDiff = mockFetchDiff;
+    this.getRepoForUser = mockGetRepoForUser; this.fetchDiff = mockFetchDiff;
     this.createReviewComment = mockCreateReviewComment;
     this.createIssueComment = vi.fn();
     this.getFileContent = vi.fn().mockResolvedValue(null);
@@ -75,6 +76,7 @@ const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoF
     mockSecurityCheckCreateMany,
     mockDecrypt,
     mockFetchDiff,
+    mockGetRepoForUser,
     mockCreateReviewComment,
     mockGetProvider,
     mockAnalyzeCode,
@@ -130,6 +132,7 @@ vi.mock('../config/socket', () => ({
 
 import './analysis.worker';
 import { REVIEW_TIMEOUT_MS } from '../utils/constants';
+import { RepositoryAccessError } from '../errors/repository-access.error';
 import { loadReviewDelivery, prepareReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
 const defaultPrepare = vi.mocked(prepareReviewDelivery).getMockImplementation()!;
 const defaultDeliver = vi.mocked(deliverReviewPlan).getMockImplementation()!;
@@ -150,6 +153,8 @@ function makeJobPayload(overrides: Record<string, any> = {}) {
   };
 }
 
+const authorizedRepository = { isActive: true, userId: 'u-owner', fullName: 'octo/cat', githubRepoId: BigInt(99), isPrivate: true, user: { githubId: '7' } };
+
 const fullRepoWithVault = {
   user: {
     vault: {
@@ -168,6 +173,7 @@ beforeEach(async () => {
   vi.resetAllMocks();
   vi.mocked(prepareReviewDelivery).mockImplementation(defaultPrepare);
   vi.mocked(deliverReviewPlan).mockImplementation(defaultDeliver);
+  mockGetRepoForUser.mockResolvedValue({ id: 99, private: true });
   mockDecrypt.mockReturnValue('sk-decrypted');
   mockGetProvider.mockReturnValue({ analyzeCode: mockAnalyzeCode });
   // Default: no DB-stored rules, so reviews behave exactly as before they
@@ -178,8 +184,8 @@ beforeEach(async () => {
   // Default: the job has not entered the pipeline, so every advanceReview()
   // transition is a forward move and gets persisted.
   mockJobFindUnique.mockResolvedValue({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1',
-    repository: { isActive: true, userId: 'u-owner', fullName: 'octo/cat' } });
-  GitHubServiceCtor.mockImplementation(function (this: any) { this.fetchDiff = mockFetchDiff; this.createReviewComment = mockCreateReviewComment; this.createIssueComment = vi.fn(); this.getFileContent = vi.fn(async () => null); this.getPostingAuthorId = vi.fn(async () => '7'); });
+    repository: authorizedRepository });
+  GitHubServiceCtor.mockImplementation(function (this: any) { this.getRepoForUser = mockGetRepoForUser; this.fetchDiff = mockFetchDiff; this.createReviewComment = mockCreateReviewComment; this.createIssueComment = vi.fn(); this.getFileContent = vi.fn(async () => null); this.getPostingAuthorId = vi.fn(async () => '7'); });
   mockJobUpdate.mockResolvedValue({ count: 1 });
   const delivery = await import('../services/comment-delivery.service');
   vi.mocked(delivery.loadReviewDelivery).mockResolvedValue(null);
@@ -195,6 +201,36 @@ describe('analysis worker — module wiring', () => {
 });
 
 describe('analysis worker — durable delivery entry', () => {
+  it.each([false, true])('denies revoked access before code, AI, or saved delivery; saved=%s', async saved => {
+    if (saved) vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ analysisJobId: 'job-1', artifact: { suggestions: [] } } as any);
+    mockGetRepoForUser.mockRejectedValueOnce(new RepositoryAccessError());
+    await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('access could not be confirmed');
+    expect(mockFetchDiff).not.toHaveBeenCalled();
+    expect(mockDecrypt).not.toHaveBeenCalled();
+    expect(mockAnalyzeCode).not.toHaveBeenCalled();
+    expect(loadReviewDelivery).not.toHaveBeenCalled();
+    expect(deliverReviewPlan).not.toHaveBeenCalled();
+    expect(mockCreateReviewComment).not.toHaveBeenCalled();
+    expect(mockJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SKIPPED' }) }));
+  });
+
+  it('uses persisted GitHub identity and ignores a forged queue installation ID', async () => {
+    mockGetRepoForUser.mockRejectedValueOnce(new RepositoryAccessError());
+    await expect(capturedHandler.fn!(makeJobPayload({ githubInstallationId: 'foreign-installation' }))).rejects.toThrow();
+    expect(GitHubServiceCtor).toHaveBeenCalledWith('ghp-bot');
+    expect(mockGetRepoForUser).toHaveBeenCalledWith('octo', 'cat', '7', expect.objectContaining({ expectedRepoId: '99', requireMembership: true }));
+    expect(mockFetchDiff).not.toHaveBeenCalled();
+  });
+
+  it('fails closed and retries temporary access-check outages before reading code', async () => {
+    mockGetRepoForUser.mockRejectedValueOnce(new RepositoryAccessError(503));
+    const job = { ...makeJobPayload(), opts: { attempts: 3 }, attemptsMade: 0 };
+    await expect(capturedHandler.fn!(job)).rejects.toMatchObject({ status: 503 });
+    expect(mockFetchDiff).not.toHaveBeenCalled();
+    expect(mockAnalyzeCode).not.toHaveBeenCalled();
+    expect(mockJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'RETRYING' }) }));
+  });
+
   it('resumes a saved plan without a vault lookup, AI call, or regenerated findings', async () => {
     const plan = { analysisJobId: 'job-1', artifact: { suggestions: [] } } as any;
     vi.mocked(loadReviewDelivery).mockResolvedValueOnce(plan);
@@ -205,19 +241,19 @@ describe('analysis worker — durable delivery entry', () => {
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(mockFetchDiff).not.toHaveBeenCalled();
   });
   it.each(['COMPLETED', 'CANCELLED', 'TIMEOUT', 'FAILED', 'SKIPPED'])('never restarts a terminal %s job', async status => {
-    mockJobFindUnique.mockResolvedValue({ status, repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } });
+    mockJobFindUnique.mockResolvedValue({ status, repositoryId: 'r-1', repository: authorizedRepository });
     expect(await capturedHandler.fn!(makeJobPayload())).toEqual({ status: 'already-terminal' });
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(deliverReviewPlan).not.toHaveBeenCalled();
   });
-  it('publishes fully delivered saved reviews without initializing a GitHub connector', async () => {
+  it('reauthorizes fully delivered saved reviews before publishing them', async () => {
     vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ analysisJobId: 'job-1', deliveries: [{ state: 'DELIVERED' }] } as any);
     vi.mocked(deliverReviewPlan).mockResolvedValueOnce({ artifact: { suggestions: [], commentFailures: [], summaryPosted: true } });
     await capturedHandler.fn!(makeJobPayload());
-    expect(GitHubServiceCtor).not.toHaveBeenCalled(); expect(mockGetProvider).not.toHaveBeenCalled();
+    expect(mockGetRepoForUser).toHaveBeenCalled(); expect(mockGetProvider).not.toHaveBeenCalled();
     expect(deliverReviewPlan).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(AbortSignal));
   });
   it('does not invent sendable receipts for legacy reviews', async () => {
-    mockJobFindUnique.mockResolvedValue({ status: 'POSTING', deliveryVersion: 0, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } });
+    mockJobFindUnique.mockResolvedValue({ status: 'POSTING', deliveryVersion: 0, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository });
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('Legacy');
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(prepareReviewDelivery).not.toHaveBeenCalled();
     expect(mockJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SKIPPED' }) }));
@@ -232,7 +268,7 @@ describe('analysis worker — durable delivery entry', () => {
 describe('analysis worker — happy path', () => {
   it('supplies unchanged caller evidence to the provider and persists partial discovery metadata', async () => {
     GitHubServiceCtor.mockImplementationOnce(function (this: any) {
-      this.fetchDiff = mockFetchDiff;
+      this.getRepoForUser = mockGetRepoForUser; this.fetchDiff = mockFetchDiff;
       this.createReviewComment = mockCreateReviewComment;
       this.createIssueComment = vi.fn();
       this.getPostingAuthorId = vi.fn(async () => '7');
@@ -573,7 +609,7 @@ describe('analysis worker — cancellation and timeout', () => {
     // The cancellation lands after FETCHING is written but before the AI call
     // returns — exactly the window where a naive worker would carry on.
     mockJobFindUnique
-      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'CANCELLED' });
 
@@ -585,7 +621,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('does not overwrite CANCELLED with FAILED', async () => {
     reviewWithFindings();
     mockJobFindUnique
-      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'CANCELLED' });
 
@@ -599,7 +635,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('does not overwrite TIMEOUT with FAILED', async () => {
     reviewWithFindings();
     mockJobFindUnique
-      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'TIMEOUT' });
 
@@ -625,7 +661,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('does not post comments when the review was cancelled before analysis finished', async () => {
     reviewWithFindings();
     mockJobFindUnique
-      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'CANCELLED' });
 
@@ -638,7 +674,7 @@ describe('analysis worker — cancellation and timeout', () => {
   it('leaves the job CANCELLED rather than SKIPPED when it was cancelled mid-flight', async () => {
     reviewWithFindings();
     mockJobFindUnique
-      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: { isActive: true, userId: 'u-owner' } })
+      .mockResolvedValueOnce({ status: 'QUEUED', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository })
       .mockResolvedValueOnce({ status: 'QUEUED' })
       .mockResolvedValueOnce({ status: 'TIMEOUT' });
 

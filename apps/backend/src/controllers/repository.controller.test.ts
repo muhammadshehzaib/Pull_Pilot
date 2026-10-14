@@ -34,6 +34,7 @@ const {
 
   const GitHubServiceCtor = vi.fn(function (this: any) {
     this.getRepo = mockGetRepo;
+    this.getRepoForUser = mockGetRepo;
     this.createWebhook = mockCreateWebhook;
     this.deleteWebhook = mockDeleteWebhook;
     this.getPullRequest = mockGetPullRequest;
@@ -89,10 +90,11 @@ vi.mock('../services/quota.service', () => ({
 
 import { RepositoryController } from './repository.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
+import { RepositoryAccessError } from '../errors/repository-access.error';
 
 const authedReq = (overrides = {}) => {
   const req = mockReq(overrides);
-  (req as any).auth = { userId: 'u-1', githubId: 'gh' };
+  (req as any).auth = { userId: 'u-1', githubId: '7' };
   return req;
 };
 
@@ -210,7 +212,7 @@ describe('RepositoryController.register — happy path', () => {
 
     await RepositoryController.register(req, res);
 
-    expect(mockGetRepo).toHaveBeenCalledWith('octo', 'cat');
+    expect(mockGetRepo).toHaveBeenCalledWith('octo', 'cat', '7', expect.any(Object));
     expect(mockCreateWebhook).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(201);
     const out = res.json.mock.calls[0][0];
@@ -271,6 +273,7 @@ describe('RepositoryController.register — happy path', () => {
   it('reactivates a previously disconnected repo with a fresh webhook and returns 200', async () => {
     mockRepoFindFirst.mockResolvedValueOnce({
       id: 'r-old',
+      githubRepoId: BigInt(99),
       fullName: 'octo/cat',
       isActive: false,
       webhookId: null,
@@ -304,6 +307,57 @@ describe('RepositoryController.register — happy path', () => {
 });
 
 describe('RepositoryController.register — breaking path', () => {
+  it.each(['o/r/extra', 'o/r?query', 'o/r#fragment', ' o/r', 'o/..', '/r', 'o/'])('rejects malformed fullName %j before GitHub lookup', async fullName => {
+    const res = mockRes();
+    await RepositoryController.register(authedReq({ body: { fullName } }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockGetRepo).not.toHaveBeenCalled();
+    expect(mockCreateWebhook).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('denies a stranger before webhook/write, reconnect=%s', async reconnect => {
+    mockRepoFindFirst.mockResolvedValueOnce(reconnect
+      ? { id: 'old', githubRepoId: BigInt(99), isPrivate: true, isActive: false }
+      : null);
+    mockGetRepo.mockRejectedValueOnce(new RepositoryAccessError());
+    const res = mockRes();
+    await RepositoryController.register(authedReq({ body: { fullName: 'company/private', githubId: 'victim', username: 'victim' } }), res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockGetRepo).toHaveBeenCalledWith('company', 'private', '7', expect.any(Object));
+    expect(mockCreateWebhook).not.toHaveBeenCalled();
+    expect(mockRepoCreate).not.toHaveBeenCalled();
+    expect(mockRepoUpdate).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when GitHub access verification is unavailable', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(null);
+    mockGetRepo.mockRejectedValueOnce(new RepositoryAccessError(503));
+    const res = mockRes();
+    await RepositoryController.register(authedReq({ body: { fullName: 'company/private' } }), res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockCreateWebhook).not.toHaveBeenCalled();
+    expect(mockRepoCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects an installation belonging to another user', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce({ id: 'old', isActive: false, installation: { userId: 'someone-else', githubInstallationId: BigInt(44) } });
+    const res = mockRes();
+    await RepositoryController.register(authedReq({ body: { fullName: 'company/private' } }), res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockGetRepo).not.toHaveBeenCalled();
+    expect(mockCreateWebhook).not.toHaveBeenCalled();
+  });
+
+  it('preserves the cross-account ownership conflict after access verification', async () => {
+    mockRepoFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'other-repo', userId: 'other-user' });
+    mockGetRepo.mockResolvedValueOnce({ id: 99, private: true });
+    const res = mockRes();
+    await RepositoryController.register(authedReq({ body: { fullName: 'company/private' } }), res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(mockCreateWebhook).not.toHaveBeenCalled();
+    expect(mockRepoCreate).not.toHaveBeenCalled();
+  });
+
   it('returns 400 when fullName is missing', async () => {
     const req = authedReq({ body: {} });
     const res = mockRes();
