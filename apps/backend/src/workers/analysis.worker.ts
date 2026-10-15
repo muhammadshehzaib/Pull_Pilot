@@ -7,6 +7,7 @@ import { AiProviderFactory } from '../services/ai/ai-factory';
 import { SocketService } from '../config/socket';
 import { ConfigService } from '../services/config.service';
 import { RulesService } from '../services/rules.service';
+import { boundScanInput, INCOMPLETE_SCAN } from '../services/security/scan-input';
 import { runSecurityProbes, countByProbe } from '../services/security/run-probes';
 import { OsvClient } from '../services/security/osv-client';
 import { fetchChangedFileContents } from '../services/changed-files.service';
@@ -239,13 +240,18 @@ export const analysisWorker = new Worker(
       }
 
       // Filter out files specified in .aipr.yml ignore list
-      const { filteredDiff, ignoredFiles, includedFiles } = DiffFilterService.filterDiff(rawDiff, repoConfig);
+      const reviewInput = boundScanInput(rawDiff);
+      if (!reviewInput.diff.trim()) {
+        throw new PermanentJobError('scan-input-limits', 'Review input exceeded safety limits. Split this change into smaller reviews.');
+      }
+      const { filteredDiff, ignoredFiles, includedFiles } = DiffFilterService.filterDiff(reviewInput.diff, repoConfig);
 
       if (ignoredFiles.length > 0) {
         console.log(`🛡️ Ignored ${ignoredFiles.length} files matching .aipr.yml patterns: ${ignoredFiles.join(', ')}`);
       }
 
       if (!filteredDiff || filteredDiff.trim().length < 5) {
+        if (reviewInput.incomplete) throw new PermanentJobError('scan-input-limits', 'Review input exceeded safety limits; omitted content was not reviewed.');
         console.log(`💨 Diff empty after applying .aipr.yml ignore filters. Finishing early.`);
         SocketService.emitStatus(userId, jobId, `💨 All changed files matched ignore rules. No audit required.`, 'COMPLETED');
         await recordJobFindings(jobId, repositoryId, [], { suggestions: [], ignoredFiles, includedFiles });
@@ -257,6 +263,7 @@ export const analysisWorker = new Worker(
       //     violations exist even if the provider later fails or simply fails
       //     to notice them. LLM-only rules yield SKIPPED check records.
       const ruleEvaluation = RulesService.evaluateRules(dbRules, filteredDiff);
+      if (reviewInput.incomplete) for (const check of ruleEvaluation.checks) check.status = 'SKIPPED';
       if (ruleEvaluation.checks.length > 0) {
         const failed = ruleEvaluation.checks.filter((c) => c.status === 'FAIL').length;
         console.log(
@@ -296,7 +303,8 @@ export const analysisWorker = new Worker(
       const securityScan = await guard(
         runSecurityProbes(repoConfig.security, filteredDiff, {
           osv: repoConfig.security.osv ? new OsvClient() : undefined,
-          dependencyDiff: rawDiff,
+          dependencyDiff: reviewInput.diff,
+          ...(reviewInput.incomplete ? { inputDetail: INCOMPLETE_SCAN } : {}),
           semgrep: semgrepFiles && semgrepFiles.size > 0 ? { files: semgrepFiles } : undefined,
         }),
       );

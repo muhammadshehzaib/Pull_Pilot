@@ -1,9 +1,10 @@
-import { collectAddedLines } from '../../diff-lines';
+import { boundedAddedLines, INCOMPLETE_SCAN } from '../scan-input';
 import {
   SecurityProbeResult,
   SecuritySuggestion,
   MAX_FINDINGS_PER_RULE,
   checkForProbe,
+  checkForProbeWithStatus,
 } from '../probe-types';
 
 /**
@@ -196,8 +197,9 @@ function validateGenericSecret(candidate: string): boolean {
 export function scanSecrets(diff: string): SecurityProbeResult {
   const findings: SecuritySuggestion[] = [];
   const counts = new Map<string, number>();
+  const input = boundedAddedLines(diff);
 
-  for (const line of collectAddedLines(diff)) {
+  for (const line of input.lines) {
     for (const rule of SECRETS_RULES) {
       const match = rule.pattern.exec(line.text);
       if (!match) continue;
@@ -224,6 +226,8 @@ export function scanSecrets(diff: string): SecurityProbeResult {
 
   return {
     findings,
-    checks: [checkForProbe('SECRETS', 'secrets', 'Hardcoded credentials scan', findings.length)],
+    checks: [input.incomplete
+      ? checkForProbeWithStatus('SECRETS', 'secrets', 'Hardcoded credentials scan', 'DEGRADED', findings.length, INCOMPLETE_SCAN)
+      : checkForProbe('SECRETS', 'secrets', 'Hardcoded credentials scan', findings.length)],
   };
 }

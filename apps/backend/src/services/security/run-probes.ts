@@ -1,7 +1,7 @@
 import type { SecurityConfig } from '../config.service';
 import { SecurityProbeResult, SecurityCheckRecord, SecurityProbe, checkForProbe, checkForProbeWithStatus } from './probe-types';
-import { scanSast } from './probes/sast';
-import { scanSecrets } from './probes/secrets';
+import { runIsolatedProbe } from './isolated-probe';
+import { boundScanInput, INCOMPLETE_SCAN } from './scan-input';
 import { scanDependencies } from './probes/deps';
 import type { SecuritySuggestion } from './probe-types';
 import type { OsvClient } from './osv-client';
@@ -15,6 +15,8 @@ export interface SecurityScanOutcome {
 }
 
 export interface SecurityProbeOptions {
+  /** Trusted pipeline notice when earlier diff filtering omitted oversized input. */
+  inputDetail?: string;
   /** Live advisory database used by the dependency probe; omit to stay offline. */
   osv?: OsvClient;
   /** Unfiltered GitHub diff for scanning lockfiles omitted from the AI review diff. */
@@ -42,20 +44,27 @@ export async function runSecurityProbes(
   if (!security.enabled) return { findings: [], checks: [], enabledProbeCount: 0 };
 
   const results: SecurityProbeResult[] = [];
+  const input = boundScanInput(diff);
+  const dependencyInput = boundScanInput(options.dependencyDiff ?? diff);
 
   if (security.sast) {
-    results.push(await runSast(diff, options.semgrep));
+    results.push(await runSast(input.diff, options.semgrep));
   }
-  if (security.secrets) results.push(scanSecrets(diff));
+  if (security.secrets) results.push(await runIsolatedProbe('secrets', input.diff));
   if (security.dependencies) {
-    results.push(await scanDependencies(diff, {
+    results.push(await scanDependencies(input.diff, {
       osv: options.osv,
-      lockfileDiff: options.dependencyDiff,
+      lockfileDiff: dependencyInput.diff,
     }));
   }
 
   const findings = results.flatMap((r) => r.findings);
   const checks = results.flatMap((r) => r.checks);
+  const detail = options.inputDetail || (input.incomplete || dependencyInput.incomplete ? INCOMPLETE_SCAN : undefined);
+  if (detail) for (const check of checks) {
+    if (check.status !== 'FAIL') check.status = 'DEGRADED';
+    check.detail = [check.detail, detail].filter(Boolean).join(' ');
+  }
 
   const applicable = checks.filter((c) => c.status !== 'SKIPPED');
   return { findings, checks, enabledProbeCount: applicable.length };
@@ -71,7 +80,7 @@ export async function runSecurityProbes(
  * clean, full-coverage scan.
  */
 async function runSast(diff: string, semgrep?: SemgrepOptions): Promise<SecurityProbeResult> {
-  const builtIn = scanSast(diff);
+  const builtIn = await runIsolatedProbe('sast', diff);
 
   if (semgrep && semgrep.files.size > 0) {
     const extra = await runSemgrep(semgrep);
@@ -85,7 +94,7 @@ async function runSast(diff: string, semgrep?: SemgrepOptions): Promise<Security
             'Static code security scan',
             'DEGRADED',
             builtIn.findings.length,
-            `Semgrep extra pass skipped: ${extra.reason}. Built-in SAST rules still ran.`,
+            [`Semgrep extra pass skipped: ${extra.reason}.`, builtIn.checks[0]?.detail].filter(Boolean).join(' '),
           ),
         ],
       };
@@ -93,7 +102,9 @@ async function runSast(diff: string, semgrep?: SemgrepOptions): Promise<Security
     const findings = [...builtIn.findings, ...extra.findings];
     return {
       findings,
-      checks: [checkForProbe('SAST', 'sast', 'Static code security scan', findings.length)],
+      checks: [builtIn.checks[0]?.detail
+        ? checkForProbeWithStatus('SAST', 'sast', 'Static code security scan', 'DEGRADED', findings.length, builtIn.checks[0].detail)
+        : checkForProbe('SAST', 'sast', 'Static code security scan', findings.length)],
     };
   }
 

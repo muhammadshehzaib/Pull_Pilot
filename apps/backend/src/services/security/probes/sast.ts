@@ -1,10 +1,11 @@
 import { FindingSeverity } from '../../ai/finding-taxonomy';
-import { collectAddedLines } from '../../diff-lines';
+import { boundedAddedLines, INCOMPLETE_SCAN } from '../scan-input';
 import {
   SecurityProbeResult,
   SecuritySuggestion,
   MAX_FINDINGS_PER_RULE,
   checkForProbe,
+  checkForProbeWithStatus,
 } from '../probe-types';
 
 /**
@@ -353,8 +354,9 @@ function isDynamicHtmlRhs(match: RegExpExecArray | null, fallback: string): bool
 export function scanSast(diff: string): SecurityProbeResult {
   const findings: SecuritySuggestion[] = [];
   const counts = new Map<string, number>();
+  const input = boundedAddedLines(diff);
 
-  for (const line of collectAddedLines(diff)) {
+  for (const line of input.lines) {
     for (const rule of SAST_RULES) {
       if (rule.filePattern && !rule.filePattern.test(line.filename)) continue;
 
@@ -383,6 +385,8 @@ export function scanSast(diff: string): SecurityProbeResult {
 
   return {
     findings,
-    checks: [checkForProbe('SAST', 'sast', 'Static code security scan', findings.length)],
+    checks: [input.incomplete
+      ? checkForProbeWithStatus('SAST', 'sast', 'Static code security scan', 'DEGRADED', findings.length, INCOMPLETE_SCAN)
+      : checkForProbe('SAST', 'sast', 'Static code security scan', findings.length)],
   };
 }

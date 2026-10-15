@@ -64,3 +64,7 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
   deploy separately, with Redis progress transport and distinct CPU/memory caps.
   105 focused tests, backend TypeScript, and compose validation pass. Docker
   containers were not started because the local engine is unavailable.
+- Long-line protection bounds review inputs before parsing and scanner matching.
+  Built-in SAST/secrets execute in terminable threads with time/memory limits.
+  Omission, timeout, and failure produce partial coverage instead of a clean
+  result. 70 focused scanner/worker tests and backend TypeScript checks pass.
