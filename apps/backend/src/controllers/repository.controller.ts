@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { safeErrorMetadata } from '../utils/safe-error';
 import prisma from '../config/prisma';
 import { GitHubService } from '../services/github.service';
 import { GitHubAppService } from '../services/github-app.service';
@@ -97,7 +98,7 @@ export class RepositoryController {
           /isn't reachable over the public internet/i.test(msg) || webhookUrl.includes('localhost');
         if (!unreachableUrl) throw hookErr;
         console.warn(
-          `⚠️ Webhook not installed for ${fullName} (${msg}). Connected for manual audits only.`
+          'Webhook not installed; repository is available for manual audits only.'
         );
       }
 
@@ -149,7 +150,7 @@ export class RepositoryController {
       if (err instanceof RepositoryAccessError) {
         return res.status(err.status).json({ error: err.message });
       }
-      console.error('🔴 Repo registration failure:', err);
+      console.error('Repository registration failed', safeErrorMetadata(err));
       return res.status(500).json({ error: 'Could not connect repository' });
     }
   }
@@ -168,7 +169,7 @@ export class RepositoryController {
         const gh = await getGitHub(repo.installation?.githubInstallationId?.toString());
         await gh.deleteWebhook(owner, name, Number(repo.webhookId));
       } catch (err) {
-        console.warn('⚠️ Failed to delete GitHub webhook — proceeding with DB deactivation:', err);
+        console.warn('GitHub webhook deletion failed during deactivation', safeErrorMetadata(err));
       }
     }
 
@@ -238,7 +239,7 @@ export class RepositoryController {
         resolvedBase = commitInfo.baseSha;
       }
     } catch (err) {
-      return res.status(502).json({ error: `GitHub lookup failed: ${(err as Error).message}` });
+      return res.status(502).json({ error: 'Could not inspect the GitHub repository. Please retry.' });
     }
 
     const job = await prisma.analysisJob.create({
@@ -341,8 +342,8 @@ export class RepositoryController {
         forceRefresh: req.query.refresh === 'true',
       });
       return res.json(insights);
-    } catch (err: any) {
-      return res.status(500).json({ error: err.message });
+    } catch {
+      return res.status(500).json({ error: 'Repository insights are temporarily unavailable. Please retry.' });
     }
   }
 }

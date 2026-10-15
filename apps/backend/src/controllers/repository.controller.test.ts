@@ -398,6 +398,7 @@ describe('RepositoryController.register — breaking path', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(mockRepoCreate).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ error: 'Could not connect repository' });
   });
 
   it('returns 500 when bot token is not configured', async () => {
