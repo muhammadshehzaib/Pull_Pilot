@@ -333,11 +333,6 @@ const SAST_RULES: SastRule[] = [
   },
 ];
 
-function describeMatch(match: RegExpExecArray): string {
-  const snippet = (match[0] ?? '').replace(/\s+/g, ' ').trim();
-  return snippet.length > 60 ? `${snippet.slice(0, 57)}...` : snippet;
-}
-
 /** A literal-string RHS (constant markup) is the only safe innerHTML-like use. */
 function isDynamicHtmlRhs(match: RegExpExecArray | null, fallback: string): boolean {
   const rhs = String(match?.[1] ?? fallback)
@@ -371,14 +366,15 @@ export function scanSast(diff: string): SecurityProbeResult {
       if (hitCount >= MAX_FINDINGS_PER_RULE) continue;
       counts.set(rule.key, hitCount + 1);
 
-      const snippet = describeMatch(match);
       findings.push({
         filePath: line.filename,
         lineNumber: line.lineNumber,
         agentType: 'SECURITY',
         source: 'SAST',
         ruleKey: rule.key,
-        issue: `${rule.name} — ${snippet || rule.description}`,
+        // Matches can contain credentials even for non-authentication rules.
+        // Use fixed rule text so stored findings and PR comments never quote them.
+        issue: `${rule.name} — ${rule.description}`,
         suggestion: rule.remediation,
         priority: rule.severity,
       });

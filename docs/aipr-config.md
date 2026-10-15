@@ -133,6 +133,12 @@ such as `eslint-disable-line`, do not suppress credential scanning. Recognized
 credentials are reported with redacted values. Existing generic-secret checks
 still exclude recognizable placeholders, pure hex values, and low-entropy values.
 
+Built-in SAST findings use fixed rule explanations and remediation text rather
+than quoting matched source code, which may contain passwords or tokens. File and
+line references still identify the affected code. This applies to newly generated
+findings; existing saved review plans and previously posted comments are not
+rewritten. AI and external-scanner output are separate from this reporting rule.
+
 **Probe statuses.** Each probe records one durable outcome per job. The
 dashboard renders the status verbatim, and a status is never upgraded to a clean
 pass when coverage was partial:

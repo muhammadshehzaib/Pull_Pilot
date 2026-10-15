@@ -990,6 +990,41 @@ describe('analysis worker — security probes', () => {
     expect(result.findingCount).toBe(1);
   });
 
+  it.each(['basic-auth', 'url-password'])('does not store or post credentials copied from SAST matches: %s', async kind => {
+    const password = 'PrivatePass42';
+    const encoded = Buffer.from(`admin:${password}`).toString('base64');
+    const line = kind === 'basic-auth'
+      ? `authorization: "Basic ${encoded}"`
+      : `fetch("https://admin:${password}@example.com/" + path);`;
+    const diff = [
+      'diff --git a/src/client.ts b/src/client.ts',
+      '--- a/src/client.ts',
+      '+++ b/src/client.ts',
+      '@@ -1,1 +1,1 @@',
+      `+${line}`,
+    ].join('\n');
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(diff);
+    mockAnalyzeCode.mockResolvedValueOnce([]);
+    mockCreateReviewComment.mockResolvedValue({ ok: true });
+
+    await capturedHandler.fn!(makeJobPayload());
+
+    const artifact = vi.mocked(prepareReviewDelivery).mock.calls[0][0].artifact;
+    expect(artifact.suggestions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: 'SAST', filePath: 'src/client.ts', lineNumber: 1 }),
+    ]));
+    expect(mockCreateReviewComment).toHaveBeenCalled();
+    const results = mockJobUpdate.mock.calls.map(([input]) => input.data?.results).filter(Boolean);
+    expect(results.length).toBeGreaterThan(0);
+    const outputs = [JSON.stringify(artifact), JSON.stringify(results),
+      ...mockCreateReviewComment.mock.calls.map(call => String(call[6]))];
+    for (const output of outputs) {
+      expect(output).not.toContain(password);
+      expect(output).not.toContain(encoded);
+    }
+  });
+
   it('does not filter deterministic security findings by min_severity', async () => {
     // The model reports nothing. The SAST CRITICAL finding must still be
     // posted and scored (CRITICAL weight = 30) even though it is deterministic —

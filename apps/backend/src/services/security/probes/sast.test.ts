@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { scanSast } from './sast';
+import { renderInlineComment, renderFindingListItem } from '../../ai/finding-format';
 
 function diffWith(filename: string, addedLines: string[]): string {
   const body = addedLines.map((l) => `+${l}`).join('\n');
@@ -222,5 +223,63 @@ describe('SAST probe — provenance metadata', () => {
     expect(f.source).toBe('SAST');
     expect(f.agentType).toBe('SECURITY');
     expect(f.issue).toContain('SQL injection');
+  });
+});
+
+describe('SAST probe — credential-safe reporting', () => {
+  const password = 'PrivatePass42';
+  const basicToken = Buffer.from(`admin:${password}`).toString('base64');
+  const longBasicToken = Buffer.from(`admin:${password.repeat(12)}`).toString('base64');
+  const githubToken = `ghp_${'C'.repeat(36)}`;
+
+  it.each([
+    {
+      name: 'Basic-auth header',
+      line: `authorization: "Basic ${basicToken}"`,
+      ruleKey: 'sast-basic-auth-literal', priority: 'CRITICAL',
+      sensitiveValues: [basicToken, password],
+    },
+    {
+      name: 'long Basic-auth header',
+      line: `authorization: "Basic ${longBasicToken}"`,
+      ruleKey: 'sast-basic-auth-literal', priority: 'CRITICAL',
+      sensitiveValues: [longBasicToken, longBasicToken.slice(0, 12), password],
+    },
+    {
+      name: 'URL containing a password',
+      line: `fetch("https://admin:${password}@example.com/" + path);`,
+      ruleKey: 'sast-ssrf-url-concat', priority: 'MEDIUM',
+      sensitiveValues: [password, `admin:${password}`],
+    },
+    {
+      name: 'long URL password that would be truncated',
+      line: `fetch("https://u:${password.repeat(12)}@example.com/" + path);`,
+      ruleKey: 'sast-ssrf-url-concat', priority: 'MEDIUM',
+      sensitiveValues: [password, password.repeat(12)],
+    },
+    {
+      name: 'token embedded in an XSS match',
+      line: `document.write("${githubToken}" + userHtml);`,
+      ruleKey: 'sast-xss-documentwrite', priority: 'HIGH',
+      sensitiveValues: [githubToken, githubToken.slice(0, 12)],
+    },
+    {
+      name: 'password embedded in a SQL match',
+      line: 'db.query(`SELECT \'' + password + '\' WHERE id = ${id}`);',
+      ruleKey: 'sast-sql-template-js', priority: 'CRITICAL',
+      sensitiveValues: [password],
+    },
+  ])('does not copy credentials from $name into findings or either comment format', ({ line, ruleKey, priority, sensitiveValues }) => {
+    const result = scanSast(diffWith('src/client.ts', [line]));
+    const finding = result.findings.find(f => f.ruleKey === ruleKey)!;
+    expect(finding).toMatchObject({ filePath: 'src/client.ts', lineNumber: 2, priority, source: 'SAST' });
+    expect(finding.issue.length).toBeGreaterThan(0);
+    expect(finding.suggestion.length).toBeGreaterThan(0);
+    expect(result.checks[0]).toMatchObject({ status: 'FAIL' });
+
+    const outputs = [JSON.stringify(result), renderInlineComment(finding), renderFindingListItem(finding, 0)];
+    for (const output of outputs) {
+      for (const sensitiveValue of sensitiveValues) expect(output).not.toContain(sensitiveValue);
+    }
   });
 });
