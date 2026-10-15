@@ -44,11 +44,18 @@ mkdir -p secrets && chmod 700 secrets
 # scp the .pem from your machine, or paste its contents:
 nano secrets/github-app.pem      # then Ctrl-D
 chmod 600 secrets/github-app.pem
+chown 1000:1000 secrets/github-app.pem
 ```
 
 `docker-compose.prod.yml` maps it to `/run/secrets/github-app.pem` read-only, and
 `GITHUB_APP_PRIVATE_KEY_PATH` is already set to that path in the compose file, so
 there is nothing to add to `.env.prod` for the key itself — only `GITHUB_APP_ID`.
+
+The backend now runs as the image's `node` user (UID/GID 1000), including database
+migrations. The mounted key must be readable by that UID, not world-readable.
+After deployment, verify `docker exec aipr-backend id -u` prints `1000` and
+`docker exec aipr-backend test -r /run/secrets/github-app.pem` succeeds. Never fix
+permissions by reverting the backend to root.
 
 Verify the mount landed:
 

@@ -47,3 +47,7 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
   remain usable until expiry or logout; logged-out tokens are denied immediately
   on later authentication and before further socket deliveries.
 - Remaining issues pending in the sequence above.
+- Full credential masking pushed as `130442e`; 140 scanner/worker tests passed.
+- Backend image now uses UID/GID 1000 with owned runtime files, dropped Linux
+  capabilities, and no privilege escalation. Deployment key ownership instructions
+  are updated. Docker runtime verification remains unavailable on this machine.

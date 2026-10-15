@@ -37,6 +37,9 @@ services:
       context: .
       dockerfile: apps/backend/Dockerfile
     container_name: aipr-backend
+    user: '1000:1000'
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     depends_on:
       postgres:
         condition: service_healthy
