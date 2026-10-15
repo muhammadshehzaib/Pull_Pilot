@@ -42,7 +42,19 @@ test('container isolation, partial evidence and unconditional cleanup', async ()
   });
   assert.equal(args[args.indexOf('--network') + 1], 'none');
   assert.ok(args.includes('--read-only')); assert.ok(args.includes('--memory'));
+  assert.equal(args[args.indexOf('--user') + 1], 'pwuser');
+  assert.ok(args.some(arg => arg.startsWith('seccomp=') && arg.endsWith('chromium-seccomp.json')));
+  assert.ok(args.includes('--init'));
   assert.equal(result[0].status, 'PASSED'); assert.equal(result[1].status, 'ERROR'); assert.equal(cleaned, true);
+});
+
+test('browser requests Chromium sandboxing and never retries an unsandboxed launch', async () => {
+  const { run } = require('./browser-child.cjs');
+  let launches = 0;
+  await assert.rejects(run({ plan: [scenario], previewUrl: 'https://preview.example.com' }, {
+    launch: async options => { launches++; assert.equal(options.chromiumSandbox, true); throw new Error('Sandbox unavailable'); },
+  }), /Sandbox unavailable/);
+  assert.equal(launches, 1);
 });
 test('unsafe preview destinations are rejected before spawning', async () => {
   let spawned = false;

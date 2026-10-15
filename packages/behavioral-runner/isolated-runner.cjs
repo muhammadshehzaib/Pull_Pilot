@@ -1,6 +1,7 @@
 const { spawn, execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { createInterface } = require('node:readline');
+const path = require('node:path');
 const { LIMITS, parsePlan, parseEvidence } = require('../../apps/backend/dist/services/behavioral/contracts.js');
 const { fetchPreview, validateDestination } = require('../../apps/backend/dist/services/behavioral/destination-policy.js');
 
@@ -12,7 +13,7 @@ async function runIsolated(rawPlan, previewUrl, deps = {}) {
     if (previewUrl !== 'https://sandbox.aipr.invalid' || !deps.transport) throw new Error('Sandbox transport unavailable');
   } else validateDestination(previewUrl, host);
   const name = 'aipr-behavioral-' + randomUUID();
-  const child = (deps.spawn || spawn)('docker', ['run', '--rm', '-i', '--name', name, '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128', '--memory', '1g', '--cpus', '1', '--shm-size', '128m', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m', 'aipr-behavioral:local'], { shell: false, stdio: ['pipe', 'pipe', 'ignore'], env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot } });
+  const child = (deps.spawn || spawn)('docker', ['run', '--rm', '-i', '--init', '--user', 'pwuser', '--security-opt', 'seccomp=' + path.join(__dirname, 'chromium-seccomp.json'), '--name', name, '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128', '--memory', '1g', '--cpus', '1', '--shm-size', '128m', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m', 'aipr-behavioral:local'], { shell: false, stdio: ['pipe', 'pipe', 'ignore'], env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot } });
   const budget = { requests: 0, bytes: 0 };
   const results = new Map();
   let timedOut = false;

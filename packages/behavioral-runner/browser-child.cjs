@@ -21,7 +21,7 @@ async function run(message, deps = {}) {
   const execution = message.execution || { mode: 'PUBLIC_PREVIEW' };
   const plan = parsePlan(message.plan, message.plan.map(s => s.id), execution);
   const origin = new URL(message.previewUrl).origin;
-  const browser = await (deps.launch || chromium.launch.bind(chromium))({ headless: true });
+  const browser = await (deps.launch || chromium.launch.bind(chromium))({ headless: true, chromiumSandbox: true });
   try {
     for (const scenario of plan) {
       let policyFailure = false;
