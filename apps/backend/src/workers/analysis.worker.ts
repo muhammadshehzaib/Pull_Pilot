@@ -209,8 +209,11 @@ export const analysisWorker = new Worker(
 
       // 5. FETCH REPO CONFIGURATION (.aipr.yml)
       const { baseSha, headSha } = payloadSnapshot;
+      // A PR must not weaken its own review policy through config changes.
+      // Pin its settings to the target branch commit; pushes use committed settings.
+      const configRef = eventType === 'PULL_REQUEST' ? baseSha : headSha;
       SocketService.emitStatus(userId, jobId, `⚙️ Inspecting repository rules (.aipr.yml)`, 'FETCHING');
-      const repoConfig = await guard(ConfigService.fetchRepoConfig(ghService, owner, repo, headSha));
+      const repoConfig = await guard(ConfigService.fetchRepoConfig(ghService, owner, repo, configRef));
 
       // 5b. LOAD DB-STORED ENGINEERING RULES (dashboard-managed). These merge
       //     with the .aipr.yml guidelines below: one combined prompt block for

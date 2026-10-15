@@ -3,6 +3,12 @@
 Drop a `.aipr.yml` at the repo root and the reviewer picks it up automatically.
 It is read from `.aipr.yml`, `.aipr.yaml`, `.github/.aipr.yml`, or `.github/.aipr.yaml`.
 
+For pull requests, configuration is read from the target repository at the PR's
+base commit. Changes to these files in a PR cannot change its own ignore patterns,
+security settings, or AI guidelines. They take effect for subsequent reviews after
+being merged. If the base commit has no configuration file, the reviewer uses its
+defaults. Push reviews read configuration from the pushed commit.
+
 ## Example
 
 ```yaml
