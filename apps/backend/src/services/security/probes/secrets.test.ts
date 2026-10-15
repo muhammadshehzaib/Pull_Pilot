@@ -18,8 +18,10 @@ function keys(diff: string): string[] {
 }
 
 describe('redact', () => {
-  it('masks to first4••••last2', () => {
-    expect(redact('AKIAIOSFODNN7EXAMPLE')).toBe('AKIA••••LE');
+  it('fully masks secrets without revealing prefixes, suffixes, or length', () => {
+    for (const value of ['AKIAIOSFODNN7EXAMPLE', '12', '', 'long-secret-XY']) {
+      expect(redact(value)).toBe('[redacted]');
+    }
   });
 
   it('never returns the full secret for short values', () => {
@@ -181,6 +183,6 @@ describe('secrets probe — redaction guarantees', () => {
     expect(finding).toBeDefined();
     expect(finding.redacted).toBe(true);
     expect(finding.issue).not.toContain(secret);
-    expect(finding.issue).toContain('••••');
+    expect(finding.issue).toContain('[redacted]');
   });
 });

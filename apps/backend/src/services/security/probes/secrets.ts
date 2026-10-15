@@ -12,16 +12,14 @@ import {
  * Looks for obvious secret formats (AWS/Google/OpenAI/Anthropic/GitHub/Slack/
  * Stripe keys, PEM private keys, credentials in URLs and connection strings)
  * plus generic high-entropy assignments. Every finding is **redacted**: the
- * issue text shows the key prefix and a mask, never the secret itself, so a
+ * issue text uses a constant mask, never any part of the secret, so a
  * leaked value cannot be copied straight out of a review comment or a stored
  * results blob.
  */
 
-/** Masks a secret to `first4••••last2`; falls back to `[redacted]` when short. */
-export function redact(secret: string): string {
-  const s = secret.trim();
-  if (s.length <= 6) return '[redacted]';
-  return `${s.slice(0, 4)}••••${s.slice(-2)}`;
+/** Do not expose secret prefixes, suffixes, or length in reports. */
+export function redact(_secret: string): string {
+  return '[redacted]';
 }
 
 /** Shannon entropy of a token, in bits per character. */

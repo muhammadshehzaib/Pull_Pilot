@@ -979,7 +979,7 @@ describe('analysis worker — security probes', () => {
     const [, , , , , , comment] = mockCreateReviewComment.mock.calls[0];
     expect(comment).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
     expect(comment).toContain('redacted');
-    expect(comment).toContain('••••');
+    expect(comment).toContain('[redacted]');
 
     const finalResults = mockJobUpdate.mock.calls
       .map((c: any[]) => c[0]?.data?.results)
