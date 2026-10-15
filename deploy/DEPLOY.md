@@ -154,7 +154,10 @@ manual review when needed. Roll back by pausing delivery rather than restarting
 an old worker that bypasses tracking. See [comment delivery](../docs/comment-delivery.md)
 for recovery, retention, and test-PR verification.
 
-- The backend container runs API + BullMQ worker + repo poller in one process.
+- API and BullMQ worker now run in separate containers. Deploy both `backend`
+  and `worker`; the API alone does not consume reviews. See
+  [worker isolation](../docs/worker-isolation.md) for local commands, progress
+  transport, resource budgets, and the RE2 pattern compatibility change.
 - Webhook signature verification is HMAC over the raw body; NODE_ENV=production
   fails closed if GITHUB_WEBHOOK_SECRET is unset.
 - Losing ENCRYPTION_KEY makes saved vault keys unrecoverable (users re-save).

@@ -6,6 +6,7 @@ import {
   FindingSeverity,
 } from './ai/finding-taxonomy';
 import { collectAddedLines, AddedLine } from './diff-lines';
+import { RE2 } from 're2-wasm';
 
 export type RuleEnforcement = 'LLM' | 'DETERMINISTIC' | 'BOTH';
 export type RuleCheckStatus = 'PASS' | 'FAIL' | 'SKIPPED';
@@ -163,6 +164,7 @@ export class RulesService {
   public static evaluateRules(rules: RuleRecord[], diff: string): RuleEvaluation {
     const checks: RuleCheckRecord[] = [];
     const violations: AiSuggestion[] = [];
+    const deadline = Date.now() + 1000;
 
     const addedLines = rules.some((rule) => rule.enforcement !== 'LLM')
       ? collectAddedLines(diff)
@@ -184,7 +186,9 @@ export class RulesService {
       }
 
       let count = 0;
+      let incomplete = false;
       for (const line of addedLines) {
+        if (Date.now() >= deadline) { incomplete = true; break; }
         if (count >= MAX_VIOLATIONS_PER_RULE) break;
         if (!compiled.regex.test(line.text)) continue;
         count += 1;
@@ -199,7 +203,7 @@ export class RulesService {
       checks.push({
         ruleId: rule.id,
         ruleName: rule.name,
-        status: count > 0 ? 'FAIL' : 'PASS',
+        status: incomplete ? 'SKIPPED' : count > 0 ? 'FAIL' : 'PASS',
         violationCount: count,
       });
     }
@@ -221,11 +225,12 @@ function readOptionalText(
   return { value: trimmed };
 }
 
-function compilePattern(pattern: string): { ok: true; regex: RegExp } | { ok: false; error: string } {
+function compilePattern(pattern: string): { ok: true; regex: RE2 } | { ok: false; error: string } {
   try {
-    return { ok: true, regex: new RegExp(pattern) };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    if (pattern.length > MAX_PATTERN) return { ok: false, error: 'Pattern exceeds the execution limit.' };
+    return { ok: true, regex: new RE2(pattern, 'u') };
+  } catch {
+    return { ok: false, error: 'Use supported RE2 syntax; backreferences and lookarounds are not supported.' };
   }
 }
 

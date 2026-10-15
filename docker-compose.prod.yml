@@ -33,6 +33,7 @@ services:
     restart: unless-stopped
 
   backend:
+    image: aipr-backend:local
     build:
       context: .
       dockerfile: apps/backend/Dockerfile
@@ -40,12 +41,14 @@ services:
     user: '1000:1000'
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    cpus: '1.0'
+    mem_limit: 1g
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
-    environment:
+    environment: &backend_environment
       NODE_ENV: production
       PORT: 4000
       BACKEND_URL: https://reviewerapi.shehzaib.com
@@ -78,6 +81,7 @@ services:
       GROK_MODEL: ${GROK_MODEL:-meta-llama/llama-4-scout-17b-16e-instruct}
       GROK_BASE_URL: ${GROK_BASE_URL:-https://api.groq.com/openai/v1}
       REPO_POLL_INTERVAL_MS: ${REPO_POLL_INTERVAL_MS:-60000}
+      REPO_POLL_ENABLED: ${REPO_POLL_ENABLED:-false}
       # --- Review context cache ---
       # 0 keeps cached code until its repository is disconnected. A positive
       # number of hours opts into automatic deletion. If you set this, set the
@@ -96,6 +100,28 @@ services:
       - '127.0.0.1:8090:4000'
     # Mount the GitHub App private key read-only. Required for multi-tenant auth;
     # without it the backend silently falls back to the PAT below.
+    volumes:
+      - ./secrets/github-app.pem:/run/secrets/github-app.pem:ro
+    restart: unless-stopped
+
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  worker:
+    image: aipr-backend:local
+    user: '1000:1000'
+    command: ['node', 'dist/worker.js']
+    environment: *backend_environment
+    depends_on:
+      backend:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: '2.0'
+    mem_limit: 2g
     volumes:
       - ./secrets/github-app.pem:/run/secrets/github-app.pem:ro
     restart: unless-stopped

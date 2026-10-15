@@ -7,6 +7,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:worker": "node dist/worker.js",
+    "dev:worker": "ts-node-dev --respawn --transpile-only src/worker.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "test": "vitest run",
@@ -35,6 +37,7 @@
     "morgan": "^1.10.1",
     "openai": "^6.37.0",
     "picomatch": "^4.0.7",
+    "re2-wasm": "1.0.2",
     "socket.io": "^4.8.3",
     "yaml": "^2.9.0"
   },

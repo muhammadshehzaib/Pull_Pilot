@@ -59,3 +59,8 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
   legacy compatibility, tampering, responsiveness, and overload tests pass.
   All 1,509 backend tests and backend TypeScript validation pass; 62 database
   integration tests remain skipped without disposable PostgreSQL infrastructure.
+- Customer patterns now use RE2 instead of JavaScript backtracking; unsupported
+  syntax is rejected/skipped and matching has a batch budget. API and workers
+  deploy separately, with Redis progress transport and distinct CPU/memory caps.
+  105 focused tests, backend TypeScript, and compose validation pass. Docker
+  containers were not started because the local engine is unavailable.

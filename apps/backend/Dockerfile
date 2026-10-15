@@ -38,5 +38,5 @@ COPY --chown=node:node apps/backend/prisma ./apps/backend/prisma
 EXPOSE 4000
 WORKDIR /app/apps/backend
 USER node
-# Apply pending migrations, then start the API (+ worker + poller, same process)
+# Apply pending migrations, then start the API. Reviews run in the worker service.
 CMD ["sh", "-c", "npx --no-install prisma migrate deploy --schema prisma/schema.prisma && node dist/index.js"]

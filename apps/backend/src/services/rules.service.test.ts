@@ -166,6 +166,21 @@ describe('RulesService.mergeGuidelines', () => {
 });
 
 describe('RulesService.evaluateRules', () => {
+  it('evaluates catastrophic-backtracking patterns with the linear-time engine', () => {
+    const diff = 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n+' + 'a'.repeat(100000) + '!';
+    const start = performance.now();
+    const result = RulesService.evaluateRules([makeRule({ pattern: '(a+)+$', enforcement: 'DETERMINISTIC' })], diff);
+    expect(result.checks[0].status).toBe('PASS');
+    expect(result.violations).toEqual([]);
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
+
+  it('rejects unsupported backreferences and skips unsupported persisted rules', () => {
+    const invalid = RulesService.validateRule({ name: 'unsafe syntax', enforcement: 'DETERMINISTIC', pattern: '(a)\\1' });
+    expect(invalid).toHaveProperty('error');
+    const result = RulesService.evaluateRules([makeRule({ pattern: '(?=a)', enforcement: 'DETERMINISTIC' })], 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n+a');
+    expect(result.checks[0].status).toBe('SKIPPED');
+  });
   const diffWithEval =
     'diff --git a/src/app.ts b/src/app.ts\n' +
     '--- a/src/app.ts\n' +

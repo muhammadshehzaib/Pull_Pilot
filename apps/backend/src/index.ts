@@ -28,12 +28,6 @@ async function startServer() {
     // Resolved here so the .env files above are in effect.
     const PORT = process.env.PORT || PORT_DEFAULT;
 
-    // Pre-initialize our background tasks immediately on boot, after env is loaded.
-    await import('./workers/analysis.worker');
-    const { startRepoPoller } = await import('./workers/repo-poller');
-    const { startJobRetentionSweep } = await import('./workers/job-retention');
-    const { startContextRetentionSweep } = await import('./workers/context-retention');
-
     // Wrap Express with HTTP Server required for WebSockets
     const server = http.createServer(app);
 
@@ -44,6 +38,7 @@ async function startServer() {
 
     // 2. Initialize Socket.IO layer
     SocketService.init(server);
+    await SocketService.startProgressSubscriber();
 
     // 3. Report which GitHub auth path is live (App vs PAT fallback)
     const { GitHubAppService } = await import('./services/github-app.service');
@@ -54,23 +49,6 @@ async function startServer() {
       console.log(`🚀 Server launched at http://localhost:${PORT}`);
     });
 
-    // 5. Poll webhook-less repos for new commits/PRs (local-dev webhook substitute)
-    startRepoPoller();
-
-    // 6. Drop aged-out failed jobs from Redis and the database
-    startJobRetentionSweep();
-
-    // 7. Enforce the configured retention on cached source blobs. With the
-    // default (indefinite) it collects rows left behind by an earlier finite
-    // policy; with a finite policy it deletes expired context. Either way this
-    // is what keeps cached review context from outliving its setting.
-    startContextRetentionSweep();
-    const { startBehavioralRetentionSweep } = await import('./workers/behavioral-retention');
-    startBehavioralRetentionSweep();
-    const { startHistoricalMaintenance } = await import('./workers/historical-maintenance');
-    startHistoricalMaintenance();
-    const { startAnalyticsRetentionSweep } = await import('./workers/analytics-retention');
-    startAnalyticsRetentionSweep();
   } catch (err) {
     console.error('❌ Failed to start server:', err);
     process.exit(1);

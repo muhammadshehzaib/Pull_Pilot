@@ -72,12 +72,20 @@ export class SocketService {
     this.io?.in(`session:${hash}`).disconnectSockets(true);
   }
 
+  static async startProgressSubscriber() {
+    const { subscribeReviewProgress } = await import('../services/review-progress.service');
+    return subscribeReviewProgress(progress => this.emitStatus(progress.userId, progress.jobId, progress.message, progress.status, progress.data));
+  }
+
   /**
    * Pushes live updates from workers to the job owner's clients only.
    */
   static async emitStatus(userId: string, jobId: string, message: string, status: string, data?: any) {
     if (!this.io) {
-      console.warn('⚠️ Cannot emit, Socket not initialized yet.');
+      try {
+        const { publishReviewProgress } = await import('../services/review-progress.service');
+        await publishReviewProgress({ userId, jobId, message, status, data });
+      } catch { console.warn('Review progress publication unavailable'); }
       return;
     }
 
