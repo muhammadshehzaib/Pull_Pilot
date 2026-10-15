@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { inspect } from 'node:util';
 
 const { mockAxiosPost, mockAxiosGet, mockUserUpsert, mockUserFind, mockUserCreate } =
   vi.hoisted(() => ({
@@ -15,6 +16,8 @@ vi.mock('axios', () => ({
 
 vi.mock('../config/prisma', () => ({
   default: {
+    installationClaim: { findFirst: vi.fn() },
+    installation: { findUnique: vi.fn() },
     user: {
       upsert: mockUserUpsert,
       findUnique: mockUserFind,
@@ -24,6 +27,9 @@ vi.mock('../config/prisma', () => ({
 }));
 
 import { AuthController } from './auth.controller';
+import { AuthService } from '../services/auth.service';
+import { GitHubAppService } from '../services/github-app.service';
+import prisma from '../config/prisma';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
 
 const OAUTH_STATE = 'a'.repeat(64);
@@ -88,6 +94,67 @@ describe('AuthController.startGitHubLogin', () => {
 });
 
 describe('AuthController.handleGitHubCallback', () => {
+  it.each(['token_exchange', 'profile_fetch', 'user_save', 'session_issue'])(
+    'keeps credentials out of logs and failure responses during %s', async stage => {
+      const clientSecret = 'fake-client-secret-must-stay-private';
+      const accessToken = 'fake-github-token-must-stay-private';
+      const oauthCode = 'fake-oauth-code-must-stay-private';
+      process.env.GITHUB_CLIENT_SECRET = clientSecret;
+      const sensitiveError = Object.assign(new Error(`Upstream echoed ${clientSecret} ${accessToken} ${oauthCode}`), {
+        code: 'ERR_BAD_RESPONSE',
+        config: {
+          url: `https://github.com/?code=${oauthCode}&state=${OAUTH_STATE}`,
+          data: JSON.stringify({ client_secret: clientSecret, code: oauthCode }),
+          headers: { Authorization: `Bearer ${accessToken}`, Cookie: 'private-session-cookie' },
+        },
+        response: { status: 502, data: { access_token: accessToken, client_secret: clientSecret } },
+        cause: new Error(`nested ${accessToken}`),
+      });
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const warnLog = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const infoLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+      if (stage === 'token_exchange') {
+        mockAxiosPost.mockRejectedValueOnce(sensitiveError);
+      } else {
+        mockAxiosPost.mockResolvedValueOnce({ data: { access_token: accessToken } });
+        if (stage === 'profile_fetch') {
+          mockAxiosGet.mockRejectedValueOnce(sensitiveError);
+        } else {
+          mockAxiosGet.mockResolvedValueOnce({ data: { id: 99, login: 'octocat' } });
+          if (stage === 'user_save') {
+            mockUserUpsert.mockRejectedValueOnce(sensitiveError);
+          } else {
+            mockUserUpsert.mockResolvedValueOnce({ id: 'u-1', githubId: '99' });
+            vi.spyOn(AuthService, 'issueToken').mockImplementationOnce(() => { throw sensitiveError; });
+          }
+        }
+      }
+      const res = mockRes();
+      await AuthController.handleGitHubCallback(oauthCallbackReq({ code: oauthCode }), res);
+
+      const output = inspect([errorLog.mock.calls, warnLog.mock.calls, infoLog.mock.calls, res.json.mock.calls], { depth: null });
+      for (const value of [clientSecret, accessToken, oauthCode, OAUTH_STATE, 'private-session-cookie', 'Upstream echoed', 'nested']) {
+        expect(output).not.toContain(value);
+      }
+      expect(errorLog).toHaveBeenCalledWith('GitHub OAuth callback failed', {
+        stage, status: 502, code: 'ERR_BAD_RESPONSE',
+      });
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({ error: 'OAuth exchange failed' });
+      expect(res.cookie).not.toHaveBeenCalled();
+      expect(res.redirect).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([new Error('private-error-message'), 'private-thrown-string', null])('does not log arbitrary thrown values: %#', async error => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockAxiosPost.mockRejectedValueOnce(error);
+    const res = mockRes();
+    await AuthController.handleGitHubCallback(oauthCallbackReq({ code: 'x' }), res);
+    expect(errorLog).toHaveBeenCalledWith('GitHub OAuth callback failed', { stage: 'token_exchange' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'OAuth exchange failed' });
+  });
+
   it('completes the flow: exchange code -> fetch profile -> upsert -> set cookie -> redirect', async () => {
     mockAxiosPost.mockResolvedValueOnce({ data: { access_token: 'gh-access-xyz' } });
     mockAxiosGet.mockResolvedValueOnce({
@@ -124,6 +191,18 @@ describe('AuthController.handleGitHubCallback', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith({ error: 'Missing OAuth code' });
+  });
+
+  it.each([undefined, 'b'.repeat(64), 'invalid-state'])('rejects invalid OAuth state before exchanging credentials: %#', async state => {
+    const res = mockRes();
+    await AuthController.handleGitHubCallback(mockReq({
+      query: { code: 'private-code', state }, cookies: { github_oauth_state: OAUTH_STATE },
+    }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Invalid or expired OAuth state' });
+    expect(mockAxiosPost).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 
   it('returns 500 when GitHub OAuth credentials are not configured', async () => {
@@ -173,6 +252,28 @@ describe('AuthController.handleGitHubCallback', () => {
     await AuthController.handleGitHubCallback(req, res);
 
     expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthController.completeGitHubAppInstall — safe failure logging', () => {
+  it('does not log GitHub App request credentials while linking an installation', async () => {
+    vi.mocked(prisma.installationClaim.findFirst).mockResolvedValueOnce({ id: 'claim', userId: 'u-1' } as any);
+    mockUserFind.mockResolvedValueOnce({ githubId: '99' });
+    vi.mocked(prisma.installation.findUnique).mockResolvedValueOnce({ createdByGithubId: '99' } as any);
+    const credential = 'fake-installation-bearer-token';
+    const error = Object.assign(new Error(credential), {
+      code: 'ERR_BAD_REQUEST',
+      request: { headers: { authorization: `Bearer ${credential}` } },
+      response: { status: 403, data: { message: credential } },
+    });
+    vi.spyOn(GitHubAppService, 'getInstallationDetails').mockRejectedValueOnce(error);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const res = mockRes();
+    await AuthController.completeGitHubAppInstall(mockReq({ query: { installation_id: '123', state: 'state' } }), res);
+    expect(inspect([errorLog.mock.calls, res.json.mock.calls], { depth: null })).not.toContain(credential);
+    expect(errorLog).toHaveBeenCalledWith('GitHub App installation linking failed', { status: 403, code: 'ERR_BAD_REQUEST' });
+    expect(res.status).toHaveBeenCalledWith(502);
     expect(res.redirect).not.toHaveBeenCalled();
   });
 });

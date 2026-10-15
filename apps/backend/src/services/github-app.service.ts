@@ -4,6 +4,7 @@ import { Octokit } from '@octokit/rest';
 import fs from 'fs';
 import path from 'path';
 import { GitHubService } from './github.service';
+import { safeErrorMetadata } from '../utils/safe-error';
 
 interface CachedToken {
   token: string;
@@ -133,8 +134,8 @@ export class GitHubAppService {
 
       this.tokenCache.set(cacheKey, { token, expiresAt });
       return token;
-    } catch (err: any) {
-      console.error(`Failed to generate installation token for installation ${installationId}:`, err?.response?.data || err.message);
+    } catch (err) {
+      console.error('GitHub App installation token exchange failed', safeErrorMetadata(err));
       throw new Error(`GitHub App installation token exchange failed for ID ${installationId}`);
     }
   }

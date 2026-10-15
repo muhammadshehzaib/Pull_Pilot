@@ -1,7 +1,7 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
+import { createAccessLogger } from './middlewares/access-log.middleware';
 import cookieParser from 'cookie-parser';
 import webhookRoutes from './routes/webhook.routes';
 import authRoutes from './routes/auth.routes';
@@ -35,7 +35,7 @@ app.use(
   }),
 );
 app.use(cookieParser());
-app.use(morgan('dev'));
+app.use(createAccessLogger());
 
 // 2. Health Check
 app.get('/health', (req: Request, res: Response) => {

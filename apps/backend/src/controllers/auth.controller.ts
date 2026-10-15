@@ -3,6 +3,7 @@ import axios from 'axios';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import prisma from '../config/prisma';
 import { AuthService } from '../services/auth.service';
+import { safeErrorMetadata } from '../utils/safe-error';
 import {
   BACKEND_URL,
   COOKIE_MAX_AGE_MS,
@@ -112,7 +113,7 @@ export class AuthController {
       });
       return res.redirect(`${FRONTEND_URL}/repositories?installation=success`);
     } catch (err) {
-      console.error('GitHub App installation linking failed:', err);
+      console.error('GitHub App installation linking failed', safeErrorMetadata(err));
       return res.status(502).json({ error: 'Could not link GitHub App installation. Please retry installation.' });
     }
   }
@@ -161,6 +162,7 @@ export class AuthController {
       return res.status(500).json({ error: 'GitHub OAuth not configured' });
     }
 
+    let stage: 'token_exchange' | 'profile_fetch' | 'user_save' | 'session_issue' = 'token_exchange';
     try {
       // 1. Exchange code for access token
       const tokenRes = await axios.post(
@@ -174,12 +176,14 @@ export class AuthController {
       }
 
       // 2. Fetch GitHub profile
+      stage = 'profile_fetch';
       const profileRes = await axios.get(GITHUB_USER_URL, {
         headers: { Authorization: `Bearer ${accessToken}`, 'User-Agent': 'ai-pr-reviewer' },
       });
       const profile = profileRes.data;
 
       // 3. Upsert user
+      stage = 'user_save';
       const user = await prisma.user.upsert({
         where: { githubId: String(profile.id) },
         create: {
@@ -196,6 +200,7 @@ export class AuthController {
       });
 
       // 4. Issue JWT and set cookie
+      stage = 'session_issue';
       const token = AuthService.issueToken({ userId: user.id, githubId: user.githubId });
       res.cookie(COOKIE_NAME, token, {
         httpOnly: true,
@@ -208,7 +213,7 @@ export class AuthController {
         ? `${BACKEND_URL}/api/auth/github-app/install`
         : `${FRONTEND_URL}/dashboard`);
     } catch (err) {
-      console.error('🔴 GitHub OAuth callback failure:', err);
+      console.error('GitHub OAuth callback failed', { stage, ...safeErrorMetadata(err) });
       return res.status(500).json({ error: 'OAuth exchange failed' });
     }
   }

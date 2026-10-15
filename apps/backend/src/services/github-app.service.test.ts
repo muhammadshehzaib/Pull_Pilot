@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import axios from 'axios';
+import { inspect } from 'node:util';
 import { GitHubAppService } from './github-app.service';
 
 vi.mock('axios');
@@ -28,6 +29,7 @@ describe('GitHubAppService', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     process.env = originalEnv;
   });
 
@@ -71,5 +73,19 @@ describe('GitHubAppService', () => {
 
     const octokit = await GitHubAppService.getInstallationOctokit();
     expect(octokit).toBeDefined();
+  });
+
+  it('does not log upstream bodies, messages, or tokens when installation token exchange fails', async () => {
+    const credential = 'fake-app-jwt-must-stay-private';
+    const error = Object.assign(new Error(credential), {
+      code: 'ERR_BAD_RESPONSE',
+      config: { headers: { Authorization: `Bearer ${credential}` } },
+      response: { status: 503, data: { message: credential, token: credential } },
+    });
+    vi.mocked(axios.post).mockRejectedValueOnce(error);
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(GitHubAppService.getInstallationToken(98765)).rejects.toThrow('GitHub App installation token exchange failed for ID 98765');
+    expect(inspect(errorLog.mock.calls, { depth: null })).not.toContain(credential);
+    expect(errorLog).toHaveBeenCalledWith('GitHub App installation token exchange failed', { status: 503, code: 'ERR_BAD_RESPONSE' });
   });
 });
