@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Pipeline tests exercise detector results without OS scheduling/fake-timer
+// interference. Dedicated isolated-probe and scan-limits tests run real threads.
+vi.mock('../services/security/isolated-probe', async () => {
+  const { scanSast } = await import('../services/security/probes/sast');
+  const { scanSecrets } = await import('../services/security/probes/secrets');
+  return { runIsolatedProbe: async (type: string, diff: string) => type === 'sast' ? scanSast(diff) : scanSecrets(diff) };
+});
+
 vi.mock('../services/historical/occurrence.service', async importOriginal => ({
   ...await importOriginal<typeof import('../services/historical/occurrence.service')>(),
   recordJobFindings: vi.fn(async (jobId: string, _repositoryId: string, _findings: unknown, results: unknown) => {

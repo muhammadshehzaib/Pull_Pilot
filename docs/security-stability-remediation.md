@@ -46,7 +46,8 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
   Database unavailability fails authentication/logout closed. Existing tokens
   remain usable until expiry or logout; logged-out tokens are denied immediately
   on later authentication and before further socket deliveries.
-- Remaining issues pending in the sequence above.
+- All listed issues now have pushed code changes or a verified, preserved
+  fail-closed mitigation. Runtime deployment checks remain explicitly unrun.
 - Full credential masking pushed as `130442e`; 140 scanner/worker tests passed.
 - Backend image now uses UID/GID 1000 with owned runtime files, dropped Linux
   capabilities, and no privilege escalation. Deployment key ownership instructions
@@ -68,3 +69,52 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
   Built-in SAST/secrets execute in terminable threads with time/memory limits.
   Omission, timeout, and failure produce partial coverage instead of a clean
   result. 70 focused scanner/worker tests and backend TypeScript checks pass.
+
+## Pushed issue commits
+
+| Issue | Commit |
+| --- | --- |
+| Preserve draft-only publication safety and reject setup-file bypass | `f6952c7` |
+| Persistent logout revocation, socket enforcement, and truthful retry UI | `f1d283e` |
+| Constant credential redaction with no visible suffix/prefix | `130442e` |
+| Unprivileged backend runtime and key permission instructions | `b4b321d` |
+| Digest-pinned browser image and required Chromium sandbox | `3c5002f` |
+| Safe registration/API error responses and logging | `1f2c69a` |
+| Async, bounded, backward-compatible key derivation | `c1d52c4` |
+| RE2 customer patterns and separate API/worker containers | `cacd0f7` |
+| Bounded scanner input and terminable probe threads | `6a4dce7` |
+
+## Final review and validation
+
+- Backend: **1,523 passed**, **62 skipped** database integration tests.
+- Frontend: **215 passed**. Browser runner: **19 passed**.
+- Backend production build and frontend TypeScript check passed.
+- Production compose syntax validated with `docker compose config --quiet`.
+- Compiled JavaScript scanner smoke passed: real isolated SAST/secrets findings,
+  no copied credentials, and explicit partial coverage for oversized input.
+- Real-thread tests cover valid scanners, termination of an infinite loop, and
+  failure without results. Pipeline unit tests use real detector functions with
+  thread startup mocked, avoiding OS scheduling interference with fake timers.
+- Review added an input guard before thread-data cloning and rejects unsupported
+  scanner names. No customer input chooses an executable module or script.
+
+## Required rollout checks
+
+1. Stop/drain the old combined backend worker. Apply session migration
+   `20261016010000_session_revocation` (normal production migration startup does
+   this) before serving the new authentication code.
+2. Ensure the mounted GitHub App key is owned/readable by UID 1000 with mode 600.
+   Redeploy backend, separate worker, and frontend. Verify non-root UID and key
+   access. Starting only the API will leave reviews queued.
+3. Run a disposable browser smoke test on the Linux host. Chromium must start
+   with its sandbox enabled and the supplied seccomp policy. Keep failure closed
+   when the host cannot support user namespaces; do not disable the sandbox.
+4. Run guarded PostgreSQL integration suites on a disposable test database,
+   including session replay and concurrent customer access. Docker's engine and
+   such a database were unavailable here, so those checks are not reported as
+   passed. No production load test or production deployment was performed.
+
+Generated tests remain editable/downloadable only; automatic publication is
+disabled. This is the safe mitigation for the listed CI exposure, not a claim
+that an arbitrary generated-test runner has been implemented. Large-customer
+capacity also remains subject to the staging checks in the capacity report.

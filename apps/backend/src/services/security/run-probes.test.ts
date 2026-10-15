@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
+// Orchestration semantics are independent of thread startup scheduling.
+vi.mock('./isolated-probe', async () => {
+  const { scanSast } = await import('./probes/sast');
+  const { scanSecrets } = await import('./probes/secrets');
+  return { runIsolatedProbe: async (type: string, diff: string) => type === 'sast' ? scanSast(diff) : scanSecrets(diff) };
+});
 import { runSecurityProbes } from './run-probes';
 import type { SecurityConfig } from '../config.service';
 
