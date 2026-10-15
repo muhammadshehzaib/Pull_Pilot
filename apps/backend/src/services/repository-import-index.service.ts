@@ -33,7 +33,7 @@ export class RepositoryImportCache implements ImportCache {
     for (const row of rows) {
       if (signal.aborted) break;
       try {
-        const value = JSON.parse(EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt));
+        const value = JSON.parse(await EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt));
         if (Array.isArray(value.specifiers) && value.specifiers.every((s: unknown) => typeof s === 'string')
           && typeof value.barrel === 'boolean' && typeof value.unsupported === 'boolean') {
           result.set(row.blobSha, value);
@@ -47,7 +47,7 @@ export class RepositoryImportCache implements ImportCache {
   }
 
   async put(repositoryId: string, blobSha: string, value: IndexedImports): Promise<void> {
-    const envelope = EncryptionService.encrypt(JSON.stringify(value));
+    const envelope = await EncryptionService.encrypt(JSON.stringify(value));
     const expiresAt = this.retentionMs > 0 ? new Date(Date.now() + this.retentionMs) : null;
     // A late operation after disconnect must not recreate derived source data.
     await prisma.$transaction(async tx => {

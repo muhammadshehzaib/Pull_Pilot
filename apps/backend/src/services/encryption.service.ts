@@ -1,10 +1,12 @@
-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'crypto';
 
 export class EncryptionService {
   private static readonly ALGORITHM = 'aes-256-gcm';
   private static readonly KEY_LENGTH = 32; // 256-bit key
   private static readonly IV_LENGTH = 16;
   private static readonly SALT_LENGTH = 16;
+  private static active = 0;
+  private static readonly waiting: Array<() => void> = [];
 
   /**
    * Reads the master key from the environment. There is deliberately NO
@@ -26,20 +28,32 @@ export class EncryptionService {
    * salt per record means the same ENCRYPTION_KEY never produces the same
    * derived key twice, which defeats precomputation across records.
    */
-  private static deriveKey(salt: Buffer): Buffer {
-    return scryptSync(this.getMasterKey(), salt, this.KEY_LENGTH);
+  private static async deriveKey(salt: Buffer): Promise<Buffer> {
+    const master = this.getMasterKey();
+    if (this.active >= 4) {
+      if (this.waiting.length >= 64) throw new Error('Encryption capacity exceeded');
+      await new Promise<void>(resolve => this.waiting.push(resolve));
+    } else { this.active++; }
+    try {
+      return await new Promise<Buffer>((resolve, reject) => {
+        scrypt(master, salt, this.KEY_LENGTH, (error, key) => error ? reject(error) : resolve(key));
+      });
+    } finally {
+      const next = this.waiting.shift();
+      if (next) next(); else this.active--;
+    }
   }
 
-  static encrypt(text: string): {
+  static async encrypt(text: string): Promise<{
     encryptedData: string;
     iv: string;
     authTag: string;
     salt: string;
-  } {
+  }> {
     try {
       const salt = randomBytes(this.SALT_LENGTH);
       const iv = randomBytes(this.IV_LENGTH);
-      const key = this.deriveKey(salt);
+      const key = await this.deriveKey(salt);
       const cipher = createCipheriv(this.ALGORITHM, key, iv);
 
       let encrypted = cipher.update(text, 'utf8', 'hex');
@@ -55,22 +69,22 @@ export class EncryptionService {
     } catch (error) {
       // Let configuration errors (missing key) surface as-is.
       if (error instanceof Error && error.message.startsWith('ENCRYPTION_KEY')) throw error;
-      console.error('Encryption Error:', error);
+      console.error('Encryption failed');
       throw new Error('Encryption failure occurred');
     }
   }
 
-  static decrypt(
+  static async decrypt(
     encryptedData: string,
     ivHex: string,
     authTagHex: string,
     saltHex: string,
-  ): string {
+  ): Promise<string> {
     try {
       const salt = Buffer.from(saltHex, 'hex');
       const iv = Buffer.from(ivHex, 'hex');
       const authTag = Buffer.from(authTagHex, 'hex');
-      const key = this.deriveKey(salt);
+      const key = await this.deriveKey(salt);
       const decipher = createDecipheriv(this.ALGORITHM, key, iv);
 
       decipher.setAuthTag(authTag);
@@ -81,7 +95,7 @@ export class EncryptionService {
       return decrypted;
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('ENCRYPTION_KEY')) throw error;
-      console.error('Decryption Error:', error);
+      console.error('Decryption failed');
       throw new Error('Decryption failure - key may be compromised or invalid.');
     }
   }

@@ -197,7 +197,7 @@ export const analysisWorker = new Worker(
       SocketService.emitStatus(userId, jobId, `🔐 Unlocking Security Vault [Provider: ${vault.provider}]`, 'FETCHING');
 
       // 3. DECRYPT THE KEY IN RAM TEMPORARILY
-      const rawApiKey = EncryptionService.decrypt(
+      const rawApiKey = await EncryptionService.decrypt(
         vault.encryptedGeminiKey,
         vault.iv,
         vault.authTag,

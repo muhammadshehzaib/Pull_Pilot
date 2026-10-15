@@ -27,13 +27,13 @@ function pendingError(rows: CommentDelivery[]) {
   return new DeliveryPendingError(undefined, leases.length ? Math.min(...leases) : undefined);
 }
 
-function open(row: { encryptedData: string | null; iv: string | null; authTag: string | null; salt: string | null }) {
+async function open(row: { encryptedData: string | null; iv: string | null; authTag: string | null; salt: string | null }) {
   if (!row.encryptedData || !row.iv || !row.authTag || !row.salt) throw new Error('Review delivery payload unavailable');
-  return EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
+  return await EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
 }
-function payload(id: string, body: string) {
+async function payload(id: string, body: string) {
   const text = `${body}\n\n${deliveryMarker(id)}`;
-  return { ...EncryptionService.encrypt(text), payloadHash: digest(text) };
+  return { ...await EncryptionService.encrypt(text), payloadHash: digest(text) };
 }
 
 async function lockedJob(tx: Prisma.TransactionClient, jobId: string, repositoryId: string) {
@@ -57,13 +57,14 @@ export async function prepareReviewDelivery(input: {
   if (!/^\d+$/.test(input.expectedAuthorId) || !Number.isSafeInteger(input.prNumber) || input.prNumber <= 0) throw new Error('Invalid review delivery destination');
   const suggestions = [...new Map(input.artifact.suggestions.map(f => [findingIdentity(f), f])).values()];
   const artifact: FrozenReview = { ...input.artifact, suggestions, summaryBase: input.summaryBase };
-  const sealed = EncryptionService.encrypt(JSON.stringify(artifact));
-  const rows = suggestions.map(f => {
+  const sealed = await EncryptionService.encrypt(JSON.stringify(artifact));
+  const rows: Prisma.CommentDeliveryUncheckedCreateWithoutPlanInput[] = [];
+  for (const f of suggestions) {
     const id = randomUUID(), findingKey = findingIdentity(f);
-    return { id, repositoryId: input.repositoryId, deliveryKey: `inline:v1:${findingKey}`, findingKey,
+    rows.push({ id, repositoryId: input.repositoryId, deliveryKey: `inline:v1:${findingKey}`, findingKey,
       kind: 'INLINE' as const, state: 'READY' as const, path: f.filePath, line: f.lineNumber,
-      ...payload(id, renderInlineComment(f)) };
-  });
+      ...await payload(id, renderInlineComment(f)) });
+  }
   return prisma.$transaction(async tx => {
     const job = await lockedJob(tx, input.jobId, input.repositoryId);
     if (job.repository.userId !== input.userId || job.eventType !== 'PULL_REQUEST' || job.referenceId !== String(input.prNumber) ||
@@ -111,7 +112,7 @@ export async function reconcileReviewDelivery(plan: Plan, gh: GitHubService, sig
 }
 
 export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?: AbortSignal) {
-  const artifact = JSON.parse(open(plan)) as FrozenReview;
+  const artifact = JSON.parse(await open(plan)) as FrozenReview;
   const finish = (rows: CommentDelivery[]) => {
     const { summaryBase: _summary, ...completion } = artifact;
     return { artifact: { ...completion, commentDelivery: commentDeliveryReport(rows),
@@ -149,7 +150,7 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
       return tx.commentDelivery.findFirst({ where: { id: row.id, state: 'SENDING', claimToken, claimExpiresAt: { gt: new Date() } } });
     });
     if (!allowed || signal?.aborted) return;
-    const body = open(row);
+    const body = await open(row);
     if (digest(body) !== row.payloadHash) throw new Error('Review delivery payload changed');
     // Do not race receipt persistence against cancellation: an accepted request can finish late.
     let result;
@@ -189,7 +190,7 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
     ].filter(Boolean).join('\n');
     await prisma.$transaction(async tx => {
       await lockedJob(tx, plan.analysisJobId, repositoryId);
-      await tx.commentDelivery.updateMany({ where: { id: summary.id, state: 'WAITING' }, data: { state: 'READY', ...payload(summary.id, body) } });
+      await tx.commentDelivery.updateMany({ where: { id: summary.id, state: 'WAITING' }, data: { state: 'READY', ...await payload(summary.id, body) } });
     });
   }
   if (summary) await send(await prisma.commentDelivery.findUniqueOrThrow({ where: { id: summary.id } }));

@@ -51,3 +51,11 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
 - Backend image now uses UID/GID 1000 with owned runtime files, dropped Linux
   capabilities, and no privilege escalation. Deployment key ownership instructions
   are updated. Docker runtime verification remains unavailable on this machine.
+- Browser sandbox/digest pin pushed as `3c5002f` (19 runner tests passed).
+- Safe registration/API error handling pushed as `1f2c69a` (62 tests passed).
+- Key derivation now uses asynchronous scrypt, with four active derivations and
+  a bounded waiting queue. All vault, worker, context-cache, import-cache, and
+  comment-delivery callers await results. Existing ciphertext remains readable;
+  legacy compatibility, tampering, responsiveness, and overload tests pass.
+  All 1,509 backend tests and backend TypeScript validation pass; 62 database
+  integration tests remain skipped without disposable PostgreSQL infrastructure.

@@ -155,7 +155,7 @@ describe('RepositoryContextCache', () => {
   describe('get()', () => {
     it('returns decrypted content on a hit', async () => {
       const plain = 'export const answer = 42;';
-      const sealed = EncryptionService.encrypt(plain);
+      const sealed = await EncryptionService.encrypt(plain);
       mockCachedFile.findUnique.mockResolvedValueOnce({
         id: 'row-1',
         encryptedData: sealed.encryptedData,
@@ -256,7 +256,7 @@ describe('RepositoryContextCache', () => {
 
     it('keeps serving a row that has no expiry', async () => {
       const plain = 'export const keep = true;';
-      const sealed = EncryptionService.encrypt(plain);
+      const sealed = await EncryptionService.encrypt(plain);
       mockCachedFile.findUnique.mockResolvedValueOnce({
         id: 'row-1',
         encryptedData: sealed.encryptedData,
@@ -273,7 +273,7 @@ describe('RepositoryContextCache', () => {
     it('still serves a no-expiry row after the setting is switched back to a window', async () => {
       // Otherwise a policy change would start dropping cached files mid-review.
       const plain = 'export const keep = true;';
-      const sealed = EncryptionService.encrypt(plain);
+      const sealed = await EncryptionService.encrypt(plain);
       mockCachedFile.findUnique.mockResolvedValueOnce({
         id: 'row-1',
         encryptedData: sealed.encryptedData,

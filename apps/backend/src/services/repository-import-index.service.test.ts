@@ -137,7 +137,7 @@ describe('encrypted parsed-import cache', () => {
     const row = database.cachedImport.upsert.mock.calls[0][0].create;
     expect(JSON.stringify(row)).not.toContain('./payment');
     expect(row.expiresAt.getTime()).toBeGreaterThan(Date.now());
-    expect(EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt)).toBe(JSON.stringify(value));
+    expect(await EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt)).toBe(JSON.stringify(value));
     database.cachedImport.findMany.mockResolvedValue([{ ...row, blobSha: 'sha' }]);
     expect((await cache.getMany('repo', ['sha'], new AbortController().signal)).get('sha')).toEqual(value);
   });

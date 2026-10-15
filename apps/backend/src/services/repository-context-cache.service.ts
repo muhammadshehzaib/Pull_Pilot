@@ -76,7 +76,7 @@ export class RepositoryContextCache {
     }
 
     try {
-      return EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
+      return await EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
     } catch {
       // A key rotation makes old rows undecryptable. Dropping one is safe
       // because the blob is still fetchable from GitHub.
@@ -104,7 +104,7 @@ export class RepositoryContextCache {
     });
     if (existing && (existing.expiresAt === null || existing.expiresAt.getTime() > Date.now())) return;
 
-    const sealed = EncryptionService.encrypt(content);
+    const sealed = await EncryptionService.encrypt(content);
 
     await prisma.$transaction(async tx => {
       const active = await tx.$queryRaw<Array<{ id: string }>>`

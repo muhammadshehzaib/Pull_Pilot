@@ -138,7 +138,7 @@ export class TestDraftController {
       return res.status(400).json({ error: 'No AI API key found. Save one in the API Key Vault first.' });
     }
 
-    const rawApiKey = EncryptionService.decrypt(
+    const rawApiKey = await EncryptionService.decrypt(
       vault.encryptedGeminiKey,
       vault.iv,
       vault.authTag,
