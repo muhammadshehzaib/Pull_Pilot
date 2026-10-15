@@ -35,7 +35,7 @@ export interface TestDraft {
 
 /** Shown wherever a draft is displayed or a PR is described. */
 export const AI_DRAFT_DISCLAIMER =
-  'AI-generated and unverified by this service. Review the draft and check the PR’s CI results before relying on it.';
+  'AI-generated and not executed by this service. Download and review the code, then test it in an isolated environment without secrets. Automatic PR creation is disabled to protect your CI credentials.';
 
 const TEST_DIR_SEGMENTS = new Set(['test', 'tests', '__tests__', 'spec', 'specs', '__specs__']);
 const EXCLUDED_SEGMENTS = new Set([
@@ -97,6 +97,11 @@ export function validateProposedTestPath(rawPath: string): PathCheck {
   }
 
   const base = path.split('/').pop() ?? '';
+  if (segments.some(segment => segment.startsWith('.')) ||
+      /^(?:conftest|__init__)\.py$/i.test(base) ||
+      /^(?:setup(?:Tests)?|global(?:Setup|Teardown)|(?:jest|vitest|pytest)\.config)(?:\.|$)/i.test(base)) {
+    return { ok: false, reason: 'Shared setup files, hidden directories, and execution configuration are not test drafts.' };
+  }
   const inTestDir = path
     .split('/')
     .slice(0, -1)
@@ -115,11 +120,10 @@ export function isDraftEditable(draft: TestDraft | null): boolean {
 }
 
 /**
- * The single gate for the "Create test PR" button: the draft must be pending
- * AND the developer must have ticked the explicit confirmation.
+ * Legacy UI gate. Confirmation does not establish safe CI execution.
  */
-export function canCreateTestPr(draft: TestDraft | null, confirmed: boolean): boolean {
-  return Boolean(draft && draft.status === 'DRAFT' && confirmed);
+export function canCreateTestPr(_draft: TestDraft | null, _confirmed: boolean): boolean {
+  return false;
 }
 
 export const DRAFT_STATUS_LABELS: Record<TestDraftStatus, string> = {

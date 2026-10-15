@@ -335,91 +335,31 @@ describe('TestDraftController.update / discard', () => {
 });
 
 describe('TestDraftController.createPr', () => {
-  it('requires explicit confirmation before any GitHub write', async () => {
-    const res = mockRes();
-    await TestDraftController.createPr(authedReq({ params: { id: 'draft-1' }, body: {} }), res);
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(mockDraftUpdate).not.toHaveBeenCalled();
-  });
+  it.each([{}, { confirmed: true }, { confirmed: true, isolated: true, sandboxPassed: true }])(
+    'never creates a GitHub branch or changes a draft from client confirmation: %j', async body => {
+      const res = mockRes();
+      await TestDraftController.createPr(authedReq({ params: { id: 'draft-1' }, body }), res);
+      expect(res.status).toHaveBeenCalledWith(body.confirmed ? 409 : 400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: body.confirmed ? 'write-disabled' : 'confirmation-required' }));
+      expect(mockGetInstallationService).not.toHaveBeenCalled();
+      expect(mockDraftUpdate).not.toHaveBeenCalled();
+    },
+  );
 
-  it('creates the PR and records its details', async () => {
-    const res = mockRes();
-    await TestDraftController.createPr(
-      authedReq({ params: { id: 'draft-1' }, body: { confirmed: true } }),
-      res,
-    );
-    expect(mockDraftUpdate).toHaveBeenCalledWith({
-      where: { id: 'draft-1' },
-      data: expect.objectContaining({ status: 'PR_CREATED', prNumber: 11, prUrl: 'https://gh/pr/11' }),
-    });
-    expect(res.json).toHaveBeenCalled();
-  });
-
-  it('is idempotent for an already-created draft', async () => {
-    mockDraftFindFirst.mockResolvedValueOnce({
-      ...draftRow,
-      status: 'PR_CREATED',
-      prNumber: 11,
-      prUrl: 'https://gh/pr/11',
-    });
+  it('keeps existing PR records readable without any GitHub writes', async () => {
+    mockDraftFindFirst.mockResolvedValueOnce({ ...draftRow, status: 'PR_CREATED', prNumber: 11, prUrl: 'https://gh/pr/11' });
     const res = mockRes();
     await TestDraftController.createPr(authedReq({ params: { id: 'draft-1' }, body: { confirmed: true } }), res);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ reused: true }));
     expect(mockGetInstallationService).not.toHaveBeenCalled();
   });
 
-  it('409s on a stale base and keeps the draft', async () => {
-    mockGetInstallationService.mockResolvedValueOnce({
-      getPullRequest: vi.fn(async () => ({ head: { sha: 'head-sha' } })),
-      findPullRequestByHead: vi.fn(async () => null),
-      getBranchHeadSha: vi.fn(async () => 'moved-sha'),
-    });
+  it('rejects foreign drafts before revealing publication state', async () => {
+    mockDraftFindFirst.mockResolvedValueOnce(null);
     const res = mockRes();
-    await TestDraftController.createPr(authedReq({ params: { id: 'draft-1' }, body: { confirmed: true } }), res);
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'stale-base' }));
-    // Draft preserved (error recorded, status untouched).
-    expect(mockDraftUpdate).toHaveBeenCalledWith({
-      where: { id: 'draft-1' },
-      data: { error: expect.any(String) },
-    });
-  });
-
-  it('502s a GitHub API error without marking the draft as created', async () => {
-    mockGetInstallationService.mockResolvedValueOnce({
-      getPullRequest: vi.fn(async () => ({ head: { sha: 'head-sha' } })),
-      findPullRequestByHead: vi.fn(async () => null),
-      getBranchHeadSha: vi.fn(async (_o: string, _r: string, branch: string) =>
-        branch === 'main' ? 'base-sha' : null,
-      ),
-      createBranch: vi.fn(async () => {}),
-      getFileContent: vi.fn(async () => null),
-      upsertFile: vi.fn(async () => 'commit-9'),
-      createPullRequest: vi.fn(async () => {
-        throw new Error('rate limited');
-      }),
-    });
-    const res = mockRes();
-    await TestDraftController.createPr(authedReq({ params: { id: 'draft-1' }, body: { confirmed: true } }), res);
-    expect(res.status).toHaveBeenCalledWith(502);
-    expect(mockDraftUpdate).toHaveBeenCalledWith({
-      where: { id: 'draft-1' },
-      data: { error: expect.stringContaining('rate limited') },
-    });
-  });
-
-  it('preserves the draft and reports installation lookup errors', async () => {
-    mockGetInstallationService.mockRejectedValueOnce(new Error('GitHub App installation unavailable'));
-    const res = mockRes();
-    await TestDraftController.createPr(
-      authedReq({ params: { id: 'draft-1' }, body: { confirmed: true } }),
-      res,
-    );
-
-    expect(res.status).toHaveBeenCalledWith(502);
-    expect(mockDraftUpdate).toHaveBeenCalledWith({
-      where: { id: 'draft-1' },
-      data: { error: 'GitHub App installation unavailable' },
-    });
+    await TestDraftController.createPr(authedReq({ params: { id: 'foreign' }, body: { confirmed: true } }), res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(mockGetInstallationService).not.toHaveBeenCalled();
+    expect(mockDraftUpdate).not.toHaveBeenCalled();
   });
 });

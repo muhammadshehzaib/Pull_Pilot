@@ -80,6 +80,11 @@ export function validateProposedTestPath(rawPath: unknown): PathValidation {
   }
 
   const base = segments[segments.length - 1];
+  if (segments.some(segment => segment.startsWith('.')) ||
+      /^(?:conftest|__init__)\.py$/i.test(base) ||
+      /^(?:setup(?:Tests)?|global(?:Setup|Teardown)|(?:jest|vitest|pytest)\.config)(?:\.|$)/i.test(base)) {
+    return { ok: false, reason: 'Shared setup files, hidden directories, and execution configuration are not test drafts.' };
+  }
   const inTestDirectory = segments
     .slice(0, -1)
     .some((segment) => ['test', 'tests', '__tests__', 'spec', 'specs', '__specs__'].includes(segment.toLowerCase()));

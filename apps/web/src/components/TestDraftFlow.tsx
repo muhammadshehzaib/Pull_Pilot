@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import {
   AI_DRAFT_DISCLAIMER,
-  canCreateTestPr,
   validateProposedTestPath,
   type TestDraft,
 } from '../lib/testDraft';
@@ -23,9 +22,9 @@ const errorMessage = (err: unknown, fallback: string): string => {
 
 /**
  * The Phase 5 flow for a single test-gap scenario: generate a draft, review and
- * edit it, then — only after explicit confirmation — open a test PR.
+ * edit it, then download it for isolated testing without triggering customer CI.
  *
- * Deliberately self-contained: it owns the generate → edit → confirm → create
+ * Deliberately self-contained: it owns the generate → edit → download
  * state machine and talks to the API directly, so it can be dropped next to any
  * scenario without threading state through the history page.
  */
@@ -33,8 +32,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
   const [draft, setDraft] = useState<TestDraft | null>(null);
   const [targetPath, setTargetPath] = useState('');
   const [content, setContent] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState<'idle' | 'generating' | 'saving' | 'creating'>('idle');
+  const [busy, setBusy] = useState<'idle' | 'generating' | 'saving'>('idle');
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -48,7 +46,6 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
     setDraft(null);
     setTargetPath('');
     setContent('');
-    setConfirmed(false);
     setError(null);
     setNotice(null);
 
@@ -95,7 +92,6 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
       setDraft(res.draft);
       setTargetPath(res.draft.targetPath);
       setContent(res.draft.targetContent);
-      setConfirmed(false);
       setNotice(res.draft.structuralNote);
     } catch (err) {
       setError((err as { error?: string }).error ?? 'Could not generate a draft.');
@@ -122,7 +118,6 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
       setTargetPath(res.draft.targetPath);
       setContent(res.draft.targetContent);
       setNotice(res.draft.structuralNote);
-      setConfirmed(false);
     } catch (err) {
       setError((err as { error?: string }).error ?? 'Could not save the draft.');
     } finally {
@@ -145,21 +140,20 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
     }
   };
 
-  const createPr = async () => {
-    if (!draft || !canCreateTestPr(draft, confirmed)) return;
-    setBusy('creating');
-    setError(null);
-    try {
-      const res = await api<{ draft: TestDraft }>(`/api/test-drafts/${draft.id}/create-pr`, {
-        method: 'POST',
-        body: JSON.stringify({ confirmed: true }),
-      });
-      setDraft(res.draft);
-    } catch (err) {
-      setError((err as { error?: string }).error ?? 'Could not create the test PR.');
-    } finally {
-      setBusy('idle');
+  const download = () => {
+    const check = validateProposedTestPath(targetPath);
+    if (!check.ok || !content.trim()) {
+      setError(check.reason ?? 'Draft content is empty.');
+      return;
     }
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = targetPath.split('/').pop()!;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const created = draft?.status === 'PR_CREATED';
@@ -208,7 +202,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
             <input
               type="text"
               value={targetPath}
-              onChange={(e) => { setTargetPath(e.target.value); setConfirmed(false); }}
+              onChange={(e) => { setTargetPath(e.target.value); }}
               disabled={created || busy !== 'idle'}
               className="mono"
               style={{ display: 'block', width: '100%', marginTop: '0.2rem' }}
@@ -219,7 +213,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
             Test contents
             <textarea
               value={content}
-              onChange={(e) => { setContent(e.target.value); setConfirmed(false); }}
+              onChange={(e) => { setContent(e.target.value); }}
               rows={12}
               disabled={created || busy !== 'idle'}
               className="mono"
@@ -259,17 +253,7 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
             </div>
           ) : (
             <>
-              <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', fontSize: '0.8rem', marginTop: '0.7rem' }}>
-                <input
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(e) => setConfirmed(e.target.checked)}
-                />
-                <span>
-                  I understand this creates a new branch and pull request containing AI-generated,
-                  unverified tests, and that CI has not run.
-                </span>
-              </label>
+
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
                 <button type="button" className="btn-secondary" onClick={save} disabled={busy !== 'idle'}>
@@ -281,10 +265,10 @@ export function TestDraftFlow({ jobId, scenario }: { jobId: string; scenario: Te
                 <button
                   type="button"
                   className="btn-primary"
-                  onClick={createPr}
-                  disabled={!canCreateTestPr(draft, confirmed) || busy !== 'idle'}
+                  onClick={download}
+                  disabled={busy !== 'idle' || !validateProposedTestPath(targetPath).ok || !content.trim()}
                 >
-                  {busy === 'creating' ? 'Creating PR…' : 'Create test PR'}
+                  Download draft
                 </button>
               </div>
             </>

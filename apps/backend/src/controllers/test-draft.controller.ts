@@ -5,10 +5,7 @@ import { EncryptionService } from '../services/encryption.service';
 import { GitHubAppService } from '../services/github-app.service';
 import { AiProviderFactory } from '../services/ai/ai-factory';
 import { generateTestDraftForScenario } from '../services/test-gap/draft-generation.service';
-import {
-  createTestPullRequest,
-  TestPrError,
-} from '../services/test-gap/test-pr.service';
+import { TEST_DRAFT_PUBLICATION_BLOCKED_REASON } from '../services/test-gap/test-pr.service';
 import { validateProposedTestPath, validateDraftContent } from '../services/test-gap/draft-validation';
 import { isInsufficient } from '../services/test-gap/test-draft-types';
 import type { TestGapConfidence, TestGapScenario } from '../services/test-gap/test-gap-types';
@@ -302,7 +299,7 @@ export class TestDraftController {
     return res.json({ drafts: drafts.map(toTestDraftDto) });
   }
 
-  /** POST /api/test-drafts/:id/create-pr — the only GitHub write in Phase 5. */
+  /** POST /api/test-drafts/:id/create-pr — publication is blocked until execution is isolated. */
   static async createPr(req: Request, res: Response) {
     const draft = await findOwnedDraft(String(req.params.id), req.auth!.userId);
     if (!draft) return res.status(404).json({ error: 'Draft not found' });
@@ -315,68 +312,10 @@ export class TestDraftController {
       return res.status(409).json({ error: 'This draft was discarded.' });
     }
 
-    const confirmed = (req.body ?? {}).confirmed === true;
-    const repo = draft.repository;
-    const [owner, repoName] = repo.fullName.split('/');
-    const scenario = (draft.scenario ?? {}) as Record<string, unknown>;
-
-    try {
-      const ghService = await GitHubAppService.getInstallationService(
-        repo.installation?.githubInstallationId?.toString(),
-      );
-      const result = await createTestPullRequest({
-        ghService,
-        owner,
-        repo: repoName,
-        confirmed,
-        draft: {
-          id: draft.id,
-          targetPath: draft.targetPath,
-          targetContent: draft.targetContent,
-          sourcePath: draft.sourcePath,
-          baseBranch: draft.baseBranch,
-          baseSha: draft.baseSha,
-          sourceHeadSha: draft.sourceHeadSha,
-          sourcePrNumber: draft.sourcePrNumber,
-          scenarioLabel: typeof scenario.scenario === 'string' ? scenario.scenario : undefined,
-        },
-      });
-
-      const updated = await prisma.testDraft.update({
-        where: { id: draft.id },
-        data: {
-          status: TestDraftStatus.PR_CREATED,
-          branchName: result.branchName,
-          commitSha: result.commitSha,
-          prNumber: result.prNumber,
-          prUrl: result.prUrl,
-          error: null,
-        },
-      });
-
-      return res.json({ draft: toTestDraftDto(updated), reused: result.reused });
-    } catch (err) {
-      if (err instanceof TestPrError) {
-        const status =
-          err.code === 'confirmation-required'
-            ? 400
-            : err.code === 'stale-base' || err.code === 'stale-source' || err.code === 'base-branch-missing' || err.code === 'write-disabled'
-              ? 409
-              : 502;
-        // Keep the draft (and record why) so the developer can retry without
-        // regenerating. Confirmation is a client mistake, not a draft failure.
-        if (err.code !== 'confirmation-required') {
-          await prisma.testDraft
-            .update({ where: { id: draft.id }, data: { error: err.message } })
-            .catch(() => {});
-        }
-        return res.status(status).json({ error: err.message, code: err.code });
-      }
-      const message = (err as Error).message || 'GitHub request failed.';
-      await prisma.testDraft
-        .update({ where: { id: draft.id }, data: { error: message } })
-        .catch(() => {});
-      return res.status(502).json({ error: message });
+    if ((req.body ?? {}).confirmed !== true) {
+      return res.status(400).json({ error: 'Creating a test PR requires explicit confirmation.', code: 'confirmation-required' });
     }
+    // Refuse before acquiring a token or performing any GitHub writes.
+    return res.status(409).json({ error: TEST_DRAFT_PUBLICATION_BLOCKED_REASON, code: 'write-disabled' });
   }
 }

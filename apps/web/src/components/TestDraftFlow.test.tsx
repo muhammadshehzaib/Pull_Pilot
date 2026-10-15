@@ -54,19 +54,30 @@ describe('TestDraftFlow', () => {
     expect(mockApi).toHaveBeenCalledWith('/api/jobs/job-1/test-drafts');
   });
 
-  it('requires confirmation for the current draft contents', async () => {
+  it('downloads the current edited contents without creating a branch or PR', async () => {
     mockApi.mockResolvedValueOnce({ drafts: [draft] });
+    const blobs: Blob[] = [];
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(blob => { blobs.push(blob as Blob); return 'blob:draft'; });
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     const user = userEvent.setup();
     render(<TestDraftFlow jobId="job-1" scenario={scenario} />);
-
-    const createButton = await screen.findByRole('button', { name: 'Create test PR' });
-    expect(createButton).toBeDisabled();
-
-    const confirmation = screen.getByRole('checkbox');
-    await user.click(confirmation);
-    expect(createButton).toBeEnabled();
-
-    await user.type(screen.getByLabelText('Test contents'), '\n// reviewed edit');
-    await waitFor(() => expect(createButton).toBeDisabled());
+    try {
+      const download = await screen.findByRole('button', { name: 'Download draft' });
+      expect(screen.queryByRole('button', { name: 'Create test PR' })).toBeNull();
+      expect(screen.queryByRole('checkbox')).toBeNull();
+      await user.type(screen.getByLabelText('Test contents'), '\n// reviewed edit');
+      await user.click(download);
+      expect(click).toHaveBeenCalledOnce();
+      expect(await blobs[0].text()).toContain('// reviewed edit');
+      expect(mockApi).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:draft'));
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+      click.mockRestore();
+    }
   });
 });

@@ -6,6 +6,11 @@ import {
 } from './draft-validation';
 
 describe('validateProposedTestPath', () => {
+  it.each(['tests/conftest.py', 'tests/__init__.py', 'tests/setup.ts', 'tests/setupTests.js', 'tests/jest.config.js', 'tests/vitest.config.ts', 'tests/globalSetup.ts', '.github/workflows/foo.test.ts'])(
+    'rejects shared setup and execution configuration: %s', path => {
+      expect(validateProposedTestPath(path).ok).toBe(false);
+    },
+  );
   it('accepts a repo-relative test path and normalizes it', () => {
     const result = validateProposedTestPath('src/__tests__/foo.test.ts');
     expect(result).toEqual({ ok: true, path: 'src/__tests__/foo.test.ts' });

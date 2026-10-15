@@ -4,6 +4,11 @@ An AI-powered GitHub Pull Request reviewer. Connect a repo, drop in an AI API ke
 
 Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** out of the box.
 
+AI-generated tests are available as editable, downloadable drafts. Automatic test
+PR creation is disabled because customer CI isolation has not been established.
+See the [customer safety and capacity verification](docs/customer-safety-capacity-verification.md)
+for checked isolation boundaries, test results, and outstanding launch requirements.
+
 <p align="center">
   <a href="https://REPLACE-WITH-YOUR-VPS-URL"><img src="https://img.shields.io/badge/Live%20Demo-Visit-2ea44f?style=for-the-badge&logo=vercel&logoColor=white" alt="Live Demo"></a>
   <a href="https://github.com/muhammadshehzaib/ai-pr-reviewer"><img src="https://img.shields.io/badge/Source-GitHub-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
