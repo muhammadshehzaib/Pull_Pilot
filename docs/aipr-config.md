@@ -127,6 +127,12 @@ dependencies to **OSV.dev**, and SAST to **Semgrep** (opt-in).
 | `semgrep` | `false` | Run the external **Semgrep** scanner as an extra SAST pass. Requires the `semgrep` binary; when it is absent the SAST probe is marked `DEGRADED` and the built-in rules still run. |
 | `block_on_critical_secret` | `true` | When a hardcoded credential is found, the review verdict is `BLOCK`. |
 
+The secrets probe checks added lines in included files, including comments.
+Words such as `disable`, `noprotect`, and `noinspection`, and unrelated directives
+such as `eslint-disable-line`, do not suppress credential scanning. Recognized
+credentials are reported with redacted values. Existing generic-secret checks
+still exclude recognizable placeholders, pure hex values, and low-entropy values.
+
 **Probe statuses.** Each probe records one durable outcome per job. The
 dashboard renders the status verbatim, and a status is never upgraded to a clean
 pass when coverage was partial:

@@ -106,9 +106,70 @@ describe('secrets probe — generic high-entropy detection', () => {
     expect(keys(diffWith('env.ts', [line]))).not.toContain('secrets-high-entropy');
   });
 
-  it('skips comment lines entirely', () => {
+  it('flags secret assignments in comments', () => {
     const line = '# const PASSWORD = "QweR9ty2Uiop5asdFgh7jkL"';
-    expect(scanSecrets(diffWith('env.py', [line])).findings).toHaveLength(0);
+    expect(keys(diffWith('env.py', [line]))).toContain('secrets-high-entropy');
+  });
+});
+
+describe.each([
+  { name: 'GitHub token', secret: `ghp_${'C'.repeat(36)}`, ruleKey: 'secrets-github-pat' },
+  { name: 'generic secret', secret: 'QweR9ty2Uiop5asdFgh7jkL', ruleKey: 'secrets-high-entropy' },
+])('secrets probe — bypass protection for $name', ({ secret, ruleKey }) => {
+  const assignment = `const TOKEN = "${secret}";`;
+
+  it.each([
+    ['hash comment', `# ${assignment}`],
+    ['slash comment', `// ${assignment}`],
+    ['block comment', `/* ${assignment} */`],
+    ['block comment continuation', ` * ${assignment}`],
+    ['indented comment', `  // ${assignment}`],
+    ['eslint directive', `${assignment} // eslint-disable-line`],
+    ['disable word', `${assignment} // disable`],
+    ['mixed-case disable word', `${assignment} // DiSaBlE`],
+    ['noprotect word', `${assignment} // noprotect`],
+    ['noinspection directive', `${assignment} // noinspection`],
+    ['disable in unrelated text', `const action = "disable"; ${assignment}`],
+  ])('detects and redacts credentials in %s', (_name, line) => {
+    const result = scanSecrets(diffWith('src/env.ts', [line]));
+
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        filePath: 'src/env.ts', lineNumber: 2, ruleKey, source: 'SECRETS', redacted: true,
+      }),
+    ]));
+    expect(result.checks[0]).toMatchObject({ probe: 'SECRETS', status: 'FAIL' });
+    expect(JSON.stringify(result)).not.toContain(secret);
+    expect(result.findings.find(f => f.ruleKey === ruleKey)!.issue).toContain(redact(secret));
+  });
+});
+
+describe('secrets probe — scan scope and harmless text', () => {
+  it('does not flag ordinary comments, directives, placeholders, or hex hashes', () => {
+    const result = scanSecrets(diffWith('env.ts', [
+      '// disable this feature during maintenance',
+      '/* noinspection: this is a documentation example */',
+      'const enabled = false; // eslint-disable-line',
+      '// const PASSWORD = "your_password_here";',
+      '# const TOKEN = "placeholder";',
+      '/* const PASSWORD = "deadbeefdeadbeefdeadbeef"; */',
+    ]));
+    expect(result.findings).toEqual([]);
+    expect(result.checks[0]).toMatchObject({ probe: 'SECRETS', status: 'PASS' });
+  });
+
+  it('does not scan unchanged or deleted secret comments', () => {
+    const secret = `ghp_${'C'.repeat(36)}`;
+    const diff = [
+      'diff --git a/env.ts b/env.ts',
+      '--- a/env.ts',
+      '+++ b/env.ts',
+      '@@ -1,2 +1,2 @@',
+      ` // TOKEN = "${secret}";`,
+      `-// TOKEN = "${secret}";`,
+      '+// Removed an obsolete credential.',
+    ].join('\n');
+    expect(scanSecrets(diff).findings).toEqual([]);
   });
 });
 

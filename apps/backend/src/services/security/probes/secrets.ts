@@ -47,15 +47,6 @@ export function isPlaceholder(token: string): boolean {
   return /^(your_)?[a-z_]+_(?:here|token|key|secret|hash)$/i.test(t);
 }
 
-/** Skip comment lines — annotations, doc examples, and inline `noSecret` mentions. */
-function isCommentLine(text: string): boolean {
-  const trimmed = text.trimStart();
-  if (trimmed.startsWith('#') || trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
-    return true;
-  }
-  return /\b(?:noprotect|noinspection|disable)\b/i.test(trimmed);
-}
-
 interface SecretsRule {
   key: string;
   name: string;
@@ -201,15 +192,14 @@ function validateGenericSecret(candidate: string): boolean {
 }
 
 /**
- * Scans the added lines of a diff for hardcoded credentials.
+ * Scans every added line of a diff for hardcoded credentials, including comments.
+ * Comment markers and unrelated tool directives never suppress this scan.
  */
 export function scanSecrets(diff: string): SecurityProbeResult {
   const findings: SecuritySuggestion[] = [];
   const counts = new Map<string, number>();
 
   for (const line of collectAddedLines(diff)) {
-    if (isCommentLine(line.text)) continue;
-
     for (const rule of SECRETS_RULES) {
       const match = rule.pattern.exec(line.text);
       if (!match) continue;
