@@ -11,7 +11,8 @@ const { mockAxiosPost, mockAxiosGet, mockUserUpsert, mockUserFind, mockUserCreat
   }));
 
 vi.mock('axios', () => ({
-  default: { post: mockAxiosPost, get: mockAxiosGet },
+  default: {
+    revokedSession: { findUnique: vi.fn(async () => null), upsert: vi.fn(async () => ({})), deleteMany: vi.fn(async () => ({})) }, post: mockAxiosPost, get: mockAxiosGet },
 }));
 
 vi.mock('../config/prisma', () => ({
@@ -317,13 +318,21 @@ describe('AuthController.getMe', () => {
 });
 
 describe('AuthController.logout', () => {
+  it('does not report success or clear the cookie when revocation fails', async () => {
+    vi.spyOn(AuthService, 'revokeToken').mockRejectedValueOnce(new Error('database failed with private data'));
+    const res = mockRes();
+    await AuthController.logout(mockReq({ cookies: { auth_token: 'session' } }), res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.clearCookie).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ error: 'Sign out could not be completed. Please retry.' });
+  });
   it('clears the auth_token cookie and returns OK', async () => {
     const req = mockReq();
     const res = mockRes();
 
     await AuthController.logout(req, res);
 
-    expect(res.clearCookie).toHaveBeenCalledWith('auth_token');
+    expect(res.clearCookie).toHaveBeenCalledWith('auth_token', expect.objectContaining({ path: '/' }));
     expect(res.json).toHaveBeenCalledWith({ status: 'OK' });
   });
 });

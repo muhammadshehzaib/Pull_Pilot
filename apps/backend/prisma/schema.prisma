@@ -25,6 +25,15 @@ model User {
   @@map("users")
 }
 
+/// Only token hashes are retained, until their signed expiration time.
+model RevokedSession {
+  tokenHash String @id
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("revoked_sessions")
+}
+
 /// One-time state linking an authenticated user to a GitHub App setup callback.
 model InstallationClaim {
   id        String   @id @default(uuid())

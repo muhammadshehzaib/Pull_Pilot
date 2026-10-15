@@ -147,22 +147,14 @@ describe('<Sidebar />', () => {
       expect(mockReplace).toHaveBeenCalledWith('/');
     });
 
-    it('redirects to / even if the logout API call rejects (best-effort)', async () => {
-      // handleLogout uses try/finally without catch, so the rejected api() call
-      // surfaces as an unhandled rejection. We swallow it here so vitest's
-      // unhandled-rejection guard doesn't fail the test.
-      const swallow = () => {};
-      process.on('unhandledRejection', swallow);
-      try {
-        mockApi.mockImplementation(() => Promise.reject(new Error('500')));
-
-        render(<Sidebar user={user} />);
-        await userEvent.click(screen.getByRole('button', { name: /Sign out/i }));
-
-        expect(mockReplace).toHaveBeenCalledWith('/');
-      } finally {
-        process.off('unhandledRejection', swallow);
-      }
+    it('keeps the user signed in and offers a retry when logout fails', async () => {
+      mockApi.mockRejectedValueOnce(new Error('500')).mockResolvedValueOnce(null);
+      render(<Sidebar user={user} />);
+      await userEvent.click(screen.getByRole('button', { name: /Sign out/i }));
+      expect(mockReplace).not.toHaveBeenCalled();
+      expect(await screen.findByRole('alert')).toHaveTextContent('You are still signed in');
+      await userEvent.click(screen.getByRole('button', { name: /Sign out/i }));
+      expect(mockReplace).toHaveBeenCalledWith('/');
     });
   });
 });

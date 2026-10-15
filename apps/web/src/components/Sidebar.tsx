@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Activity, Key, GitBranch, LogOut, History, ShieldCheck } from 'lucide-react';
 import { api } from '../lib/api';
@@ -30,12 +31,19 @@ const NAV: NavItem[] = [
 export function Sidebar({ user, isConnected }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   async function handleLogout() {
+    setLoggingOut(true);
+    setLogoutError(null);
     try {
       await api('/api/auth/logout', { method: 'POST' });
-    } finally {
       router.replace('/');
+    } catch {
+      setLogoutError('Sign out failed. You are still signed in. Please retry.');
+    } finally {
+      setLoggingOut(false);
     }
   }
 
@@ -105,7 +113,8 @@ export function Sidebar({ user, isConnected }: SidebarProps) {
               >
                 {user.username}
               </div>
-              <button onClick={handleLogout} className="link-button">
+              {logoutError && <p role="alert">{logoutError}</p>}
+              <button onClick={handleLogout} className="link-button" disabled={loggingOut}>
                 <LogOut size={11} /> Sign out
               </button>
             </div>

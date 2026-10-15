@@ -38,5 +38,12 @@ References: [Playwright Docker](https://playwright.dev/docs/docker),
 
 ## Progress
 
-- Draft-only safety previously pushed as `2d1a2b6`; revalidation pending.
+- Draft-only safety revalidated and pushed as `f6952c7` (49 tests passed).
+- Logout: persistent hashed-token revocation, unique login tokens, HTTP/socket
+  enforcement, socket expiration/disconnection, and truthful retry UI. 127 backend
+  and 13 frontend tests passed; both TypeScript checks passed. Apply migration
+  `20261016010000_session_revocation` before serving requests with this code.
+  Database unavailability fails authentication/logout closed. Existing tokens
+  remain usable until expiry or logout; logged-out tokens are denied immediately
+  on later authentication and before further socket deliveries.
 - Remaining issues pending in the sequence above.

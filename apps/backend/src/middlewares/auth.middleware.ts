@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { AuthService, AuthTokenPayload } from '../services/auth.service';
+import { AuthService, AuthTokenPayload, SessionUnavailableError } from '../services/auth.service';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   const cookieToken = req.cookies?.auth_token;
   const headerToken = (() => {
     const h = req.headers.authorization;
@@ -24,9 +24,10 @@ export const requireAuth = (req: Request, res: Response, next: NextFunction) => 
   }
 
   try {
-    req.auth = AuthService.verifyToken(token);
+    req.auth = await AuthService.verifySession(token);
     return next();
-  } catch {
+  } catch (error) {
+    if (error instanceof SessionUnavailableError) return res.status(503).json({ error: error.message });
     return res.status(401).json({ error: 'Unauthorized: invalid token' });
   }
 };

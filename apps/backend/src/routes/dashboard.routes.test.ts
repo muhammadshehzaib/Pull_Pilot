@@ -3,7 +3,7 @@ import express from 'express';
 import type { Server } from 'node:http';
 const { read } = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock('../services/analytics/dashboard.service', () => ({ engineeringHealth: read }));
-vi.mock('../services/auth.service', () => ({ AuthService: { verifyToken: (token: string) => {
+vi.mock('../services/auth.service', () => ({ SessionUnavailableError: class extends Error {}, AuthService: { verifySession: (token: string) => {
   if (token !== 'owner-token') throw new Error('invalid'); return { userId: 'owner' };
 } } }));
 import dashboardRoutes from './dashboard.routes';

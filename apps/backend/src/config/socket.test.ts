@@ -1,9 +1,11 @@
+vi.mock('../config/prisma', () => ({ default: { revokedSession: { findUnique: vi.fn(async () => null) } } }));
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { io, type Socket } from 'socket.io-client';
 import { SocketService } from './socket';
 import { AuthService } from '../services/auth.service';
+import prisma from './prisma';
 
 const server = createServer();
 let origin: string;
@@ -16,7 +18,7 @@ beforeAll(async () => {
   await new Promise<void>(resolve => { server.listen(0, '127.0.0.1', resolve); });
   origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
-afterEach(() => { for (const client of clients.splice(0)) client.disconnect(); });
+afterEach(() => { for (const client of clients.splice(0)) client.disconnect(); vi.mocked(prisma.revokedSession.findUnique).mockResolvedValue(null); });
 afterAll(async () => {
   await new Promise<void>(resolve => { socketServer.close(() => resolve()); });
   vi.restoreAllMocks();
@@ -33,6 +35,18 @@ function connect(token?: string): Promise<Socket> {
 }
 
 describe('live socket customer isolation', () => {
+  it('rejects a revoked session and disconnects a connected session before delivering private updates', async () => {
+    const token = AuthService.issueToken({ userId: 'alice', githubId: '7' });
+    const connected = await connect(token);
+    const privateUpdate = vi.fn();
+    connected.on('job-update:private', privateUpdate);
+    const disconnected = new Promise<void>(resolve => { connected.once('disconnect', () => resolve()); });
+    vi.mocked(prisma.revokedSession.findUnique).mockResolvedValue({ tokenHash: 'revoked', expiresAt: new Date() });
+    await SocketService.emitStatus('alice', 'private', 'private-data', 'RUNNING');
+    await disconnected;
+    expect(privateUpdate).not.toHaveBeenCalled();
+    await expect(connect(token)).rejects.toThrow('Unauthorized');
+  });
   it.each([undefined, 'forged-token'])('rejects missing or forged credentials: %#', async token => {
     await expect(connect(token)).rejects.toThrow('Unauthorized');
   });

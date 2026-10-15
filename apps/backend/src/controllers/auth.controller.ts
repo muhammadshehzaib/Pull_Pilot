@@ -2,7 +2,8 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import prisma from '../config/prisma';
-import { AuthService } from '../services/auth.service';
+import { AuthService, SessionUnavailableError, sessionHash } from '../services/auth.service';
+import { SocketService } from '../config/socket';
 import { safeErrorMetadata } from '../utils/safe-error';
 import {
   BACKEND_URL,
@@ -28,8 +29,9 @@ export class AuthController {
       return res.redirect(`${BACKEND_URL}/api/auth/github`);
     }
     try {
-      req.auth = AuthService.verifyToken(token);
-    } catch {
+      req.auth = await AuthService.verifySession(token);
+    } catch (error) {
+      if (error instanceof SessionUnavailableError) return res.status(503).json({ error: error.message });
       res.clearCookie(COOKIE_NAME);
       return res.redirect(`${BACKEND_URL}/api/auth/github`);
     }
@@ -227,8 +229,17 @@ export class AuthController {
     return res.json({ user });
   }
 
-  static async logout(_req: Request, res: Response) {
-    res.clearCookie(COOKIE_NAME);
+  static async logout(req: Request, res: Response) {
+    const token = req.cookies?.[COOKIE_NAME] || (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : undefined);
+    try {
+      if (token) {
+        await AuthService.revokeToken(token);
+        SocketService.disconnectSession(sessionHash(token));
+      }
+    } catch {
+      return res.status(503).json({ error: 'Sign out could not be completed. Please retry.' });
+    }
+    res.clearCookie(COOKIE_NAME, { path: '/', httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     return res.json({ status: 'OK' });
   }
 }

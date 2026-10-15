@@ -11,7 +11,7 @@ vi.mock('../config/prisma', () => ({ default: {
   repository: { findFirst: findRepo }, analysisJob: { findFirst: findJob }, testDraft: { findFirst: findDraft },
 } }));
 vi.mock('../services/github-app.service', () => ({ GitHubAppService: { getInstallationService: async () => ({ getRepoForUser: verify }) } }));
-vi.mock('../services/auth.service', () => ({ AuthService: { verifyToken: (token: string) => {
+vi.mock('../services/auth.service', () => ({ SessionUnavailableError: class extends Error {}, AuthService: { verifySession: (token: string) => {
   if (token === 'other-signed-in') return { userId: 'other-owner', githubId: '8' };
   if (token !== 'signed-in') throw new Error('invalid');
   return { userId: 'owner', githubId: '7' };

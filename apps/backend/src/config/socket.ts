@@ -1,6 +1,6 @@
 import { Server, Socket } from 'socket.io';
 import { Server as HttpServer } from 'http';
-import { AuthService, AuthTokenPayload } from '../services/auth.service';
+import { AuthService, AuthTokenPayload, sessionHash } from '../services/auth.service';
 
 /**
  * Sockets authenticate with the same JWT as the REST API: the `auth_token`
@@ -35,11 +35,13 @@ export class SocketService {
 
     // Reject unauthenticated sockets at the handshake — job updates carry
     // per-user data and must never reach anonymous clients.
-    this.io.use((socket, next) => {
-      const token = extractToken(socket);
-      if (!token) return next(new Error('Unauthorized: missing credentials'));
+    this.io.use(async (socket, next) => {
       try {
-        socket.data.auth = AuthService.verifyToken(token);
+        const token = extractToken(socket);
+        if (!token) return next(new Error('Unauthorized: missing credentials'));
+        socket.data.auth = await AuthService.verifySession(token);
+        socket.data.sessionToken = token;
+        socket.data.sessionHash = sessionHash(token);
         return next();
       } catch {
         return next(new Error('Unauthorized: invalid token'));
@@ -50,9 +52,14 @@ export class SocketService {
       const auth = socket.data.auth as AuthTokenPayload;
       // One room per user, so workers can emit to the job owner only.
       socket.join(`user:${auth.userId}`);
+      socket.join(`session:${socket.data.sessionHash}`);
+      const expires = (AuthService.verifyToken(socket.data.sessionToken) as AuthTokenPayload & { exp: number }).exp;
+      const expiration = setTimeout(() => socket.disconnect(true), Math.max(0, expires * 1000 - Date.now()));
+      expiration.unref();
       console.log(`⚡ Websocket Client Connected: ${socket.id} (user ${auth.userId})`);
 
       socket.on('disconnect', () => {
+        clearTimeout(expiration);
         console.log(`🔌 Client Disconnected: ${socket.id}`);
       });
     });
@@ -61,10 +68,14 @@ export class SocketService {
     return this.io;
   }
 
+  static disconnectSession(hash: string) {
+    this.io?.in(`session:${hash}`).disconnectSockets(true);
+  }
+
   /**
    * Pushes live updates from workers to the job owner's clients only.
    */
-  static emitStatus(userId: string, jobId: string, message: string, status: string, data?: any) {
+  static async emitStatus(userId: string, jobId: string, message: string, status: string, data?: any) {
     if (!this.io) {
       console.warn('⚠️ Cannot emit, Socket not initialized yet.');
       return;
@@ -72,14 +83,13 @@ export class SocketService {
 
     const room = `user:${userId}`;
 
-    this.io.to(room).emit(`job-update:${jobId}`, {
-      message,
-      status,
-      timestamp: new Date(),
-      ...data,
-    });
-
-    // Also emit to the owner's activities feed
-    this.io.to(room).emit('dashboard:activity', { jobId, message, status });
+    await Promise.all([...this.io.sockets.adapter.rooms.get(room) ?? []].map(async id => {
+      const socket = this.io.sockets.sockets.get(id);
+      if (!socket) return;
+      try { await AuthService.verifySession(socket.data.sessionToken); }
+      catch { socket.disconnect(true); return; }
+      socket.emit(`job-update:${jobId}`, { message, status, timestamp: new Date(), ...data });
+      socket.emit('dashboard:activity', { jobId, message, status });
+    }));
   }
 }
