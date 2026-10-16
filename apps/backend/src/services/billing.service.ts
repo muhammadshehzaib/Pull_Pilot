@@ -1,5 +1,5 @@
 import prisma from '../config/prisma';
-import { PlanTier } from '@prisma/client';
+import { PlanTier, Prisma } from '@prisma/client';
 import { createPolar, webhooks } from '@polar-sh/sdk/2026-10';
 import { QuotaService } from './quota.service';
 
@@ -331,8 +331,8 @@ export class BillingService {
    * write path for entitlement, so the gate stays a cheap lookup with no extra
    * joins on the hot path.
    */
-  static async syncEntitlements(userId: string): Promise<PlanTier> {
-    const active = await prisma.subscription.findFirst({
+  static async syncEntitlements(userId: string, tx: Prisma.TransactionClient = prisma): Promise<PlanTier> {
+    const active = await tx.subscription.findFirst({
       where: { userId, status: { in: [...ENTITLING_STATUSES] } },
       orderBy: [{ updatedAt: 'desc' }],
     });
@@ -340,7 +340,7 @@ export class BillingService {
     const tier: PlanTier =
       active?.plan === 'TEAM' ? 'TEAM' : active?.plan === 'INDIE' ? 'INDIE' : 'FREE';
 
-    await prisma.installation.updateMany({
+    await tx.installation.updateMany({
       where: { userId },
       data: { plan: tier },
     });

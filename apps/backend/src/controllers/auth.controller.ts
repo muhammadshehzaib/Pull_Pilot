@@ -5,6 +5,7 @@ import prisma from '../config/prisma';
 import { AuthService, SessionUnavailableError, sessionHash } from '../services/auth.service';
 import { SocketService } from '../config/socket';
 import { safeErrorMetadata } from '../utils/safe-error';
+import { BillingService } from '../services/billing.service';
 import {
   BACKEND_URL,
   COOKIE_MAX_AGE_MS,
@@ -92,6 +93,9 @@ export class AuthController {
             avatarUrl: details.account?.avatar_url || null,
           },
         });
+        // A customer may subscribe before installing, or add another org later.
+        // Apply their entitlement atomically with the ownership link.
+        await BillingService.syncEntitlements(claim.userId, tx);
         for (const repo of repositories) {
           const githubRepoId = BigInt(repo.id);
           const existingRepo = await tx.repository.findFirst({ where: { githubRepoId } });

@@ -17,6 +17,7 @@ vi.mock('axios', () => ({
 
 vi.mock('../config/prisma', () => ({
   default: {
+    $transaction: vi.fn(),
     installationClaim: { findFirst: vi.fn() },
     installation: { findUnique: vi.fn() },
     user: {
@@ -258,6 +259,24 @@ describe('AuthController.handleGitHubCallback', () => {
 });
 
 describe('AuthController.completeGitHubAppInstall — safe failure logging', () => {
+  it.each(['TEAM', 'INDIE', 'FREE'])('applies %s access when linking a new installation', async plan => {
+    vi.mocked(prisma.installationClaim.findFirst).mockResolvedValueOnce({ id: 'claim', userId: 'u-1' } as any);
+    mockUserFind.mockResolvedValueOnce({ githubId: '99' });
+    vi.mocked(prisma.installation.findUnique).mockResolvedValueOnce({ createdByGithubId: '99' } as any);
+    vi.spyOn(GitHubAppService, 'getInstallationDetails').mockResolvedValueOnce({ account: { login: 'org' } });
+    vi.spyOn(GitHubAppService, 'getInstallationRepositories').mockResolvedValueOnce([]);
+    const tx = {
+      installationClaim: { deleteMany: vi.fn(async () => ({ count: 1 })) },
+      installation: { update: vi.fn(async () => ({ id: 'new-org' })), updateMany: vi.fn() },
+      subscription: { findFirst: vi.fn(async () => plan === 'FREE' ? null : ({ plan, status: 'active' })) },
+    };
+    vi.mocked(prisma.$transaction).mockImplementationOnce(async (callback: any) => callback(tx));
+    const res = mockRes();
+    await AuthController.completeGitHubAppInstall(mockReq({ query: { installation_id: '123', state: 'state' } }), res);
+    expect(tx.installation.updateMany).toHaveBeenCalledWith({ where: { userId: 'u-1' }, data: { plan } });
+    expect(res.redirect).toHaveBeenCalledWith('http://frontend.test/repositories?installation=success');
+  });
+
   it('does not log GitHub App request credentials while linking an installation', async () => {
     vi.mocked(prisma.installationClaim.findFirst).mockResolvedValueOnce({ id: 'claim', userId: 'u-1' } as any);
     mockUserFind.mockResolvedValueOnce({ githubId: '99' });
