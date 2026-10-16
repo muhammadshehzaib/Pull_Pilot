@@ -24,12 +24,13 @@ function diffFor(filePath, before, after) {
 
 function buildCorpus() {
   const records = [];
-  const seeded = require('./seeded.cjs');
+  const seeded = [...require('./seeded.cjs'), ...require('./domains/support.cjs').loadDomains()];
   for (const item of seeded) {
     for (const variant of ['bug', 'clean']) {
       const before = variant === 'bug' ? item.safe : item.buggy;
       const after = variant === 'bug' ? item.buggy : item.safe;
-      records.push({ id: `seed-${item.id}-${variant}`, family: 'seeded', pairId: item.id, variant,
+      records.push({ id: `seed-${item.id}-${variant}`, family: item.domain ? 'domain' : 'seeded', pairId: item.id, variant,
+        ...(item.domain ? { domain: item.domain } : {}),
         category: item.category, contract: item.contract,
         diff: diffFor(item.path, before, after),
         context: item.context,

@@ -2222,6 +2222,585 @@
       }
     },
     {
+      "id": "seed-payments-client-amount-bug",
+      "family": "domain",
+      "pairId": "payments-client-amount",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Charge the server-owned order total in integer cents. The request body is untrusted.",
+      "diff": "diff --git a/src/payments/checkout.js b/src/payments/checkout.js\nindex b18989b..4eeffdc 100644\n--- a/src/payments/checkout.js\n+++ b/src/payments/checkout.js\n@@ -1,3 +1,3 @@\n export async function charge(order, body, gateway) {\n-  return gateway.charge({ orderId: order.id, amountCents: order.totalCents });\n+  return gateway.charge({ orderId: order.id, amountCents: body.amountCents });\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/checkout.js",
+          "before": "export async function charge(order, body, gateway) {\n  return gateway.charge({ orderId: order.id, amountCents: order.totalCents });\n}\n",
+          "after": "export async function charge(order, body, gateway) {\n  return gateway.charge({ orderId: order.id, amountCents: body.amountCents });\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-client-amount",
+          "description": "A buyer submits amountCents=1 for a server-priced 2500-cent order and is charged one cent.",
+          "filePath": "src/payments/checkout.js",
+          "terms": [
+            "amount",
+            "client",
+            "price",
+            "untrusted"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-client-amount-clean",
+      "family": "domain",
+      "pairId": "payments-client-amount",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Charge the server-owned order total in integer cents. The request body is untrusted.",
+      "diff": "diff --git a/src/payments/checkout.js b/src/payments/checkout.js\nindex 4eeffdc..b18989b 100644\n--- a/src/payments/checkout.js\n+++ b/src/payments/checkout.js\n@@ -1,3 +1,3 @@\n export async function charge(order, body, gateway) {\n-  return gateway.charge({ orderId: order.id, amountCents: body.amountCents });\n+  return gateway.charge({ orderId: order.id, amountCents: order.totalCents });\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/checkout.js",
+          "before": "export async function charge(order, body, gateway) {\n  return gateway.charge({ orderId: order.id, amountCents: body.amountCents });\n}\n",
+          "after": "export async function charge(order, body, gateway) {\n  return gateway.charge({ orderId: order.id, amountCents: order.totalCents });\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-retry-idempotency-bug",
+      "family": "domain",
+      "pairId": "payments-retry-idempotency",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Retries of the same order must create one charge. The gateway deduplicates by idempotencyKey; randomId returns a new ID each call.",
+      "diff": "diff --git a/src/payments/charge.js b/src/payments/charge.js\nindex dd58a54..7958860 100644\n--- a/src/payments/charge.js\n+++ b/src/payments/charge.js\n@@ -1,3 +1,3 @@\n export async function pay(order, gateway, randomId) {\n-  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: order.id });\n+  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: randomId() });\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/charge.js",
+          "before": "export async function pay(order, gateway, randomId) {\n  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: order.id });\n}\n",
+          "after": "export async function pay(order, gateway, randomId) {\n  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: randomId() });\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-retry-idempotency",
+          "description": "Retrying an order uses a new gateway key and creates a second charge.",
+          "filePath": "src/payments/charge.js",
+          "terms": [
+            "retry",
+            "idempot",
+            "duplicate",
+            "charge"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-retry-idempotency-clean",
+      "family": "domain",
+      "pairId": "payments-retry-idempotency",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Retries of the same order must create one charge. The gateway deduplicates by idempotencyKey; randomId returns a new ID each call.",
+      "diff": "diff --git a/src/payments/charge.js b/src/payments/charge.js\nindex 7958860..dd58a54 100644\n--- a/src/payments/charge.js\n+++ b/src/payments/charge.js\n@@ -1,3 +1,3 @@\n export async function pay(order, gateway, randomId) {\n-  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: randomId() });\n+  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: order.id });\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/charge.js",
+          "before": "export async function pay(order, gateway, randomId) {\n  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: randomId() });\n}\n",
+          "after": "export async function pay(order, gateway, randomId) {\n  return gateway.charge({ amountCents: order.totalCents, idempotencyKey: order.id });\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-signature-bypass-bug",
+      "family": "domain",
+      "pairId": "payments-signature-bypass",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "security",
+      "contract": "Verify the webhook signature against rawBody before marking any order paid. verify returns a boolean.",
+      "diff": "diff --git a/src/payments/webhooks.js b/src/payments/webhooks.js\nindex 5b7d783..22751f2 100644\n--- a/src/payments/webhooks.js\n+++ b/src/payments/webhooks.js\n@@ -1,5 +1,4 @@\n export async function webhook(rawBody, signature, verify, markPaid) {\n-  if (!verify(rawBody, signature)) throw new Error(\"invalid signature\");\n   const event = JSON.parse(rawBody);\n   return markPaid(event.orderId);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/webhooks.js",
+          "before": "export async function webhook(rawBody, signature, verify, markPaid) {\n  if (!verify(rawBody, signature)) throw new Error(\"invalid signature\");\n  const event = JSON.parse(rawBody);\n  return markPaid(event.orderId);\n}\n",
+          "after": "export async function webhook(rawBody, signature, verify, markPaid) {\n  const event = JSON.parse(rawBody);\n  return markPaid(event.orderId);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-signature-bypass",
+          "description": "An unsigned forged webhook marks an unpaid order paid.",
+          "filePath": "src/payments/webhooks.js",
+          "terms": [
+            "signature",
+            "webhook",
+            "forg",
+            "verify"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-signature-bypass-clean",
+      "family": "domain",
+      "pairId": "payments-signature-bypass",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "security",
+      "contract": "Verify the webhook signature against rawBody before marking any order paid. verify returns a boolean.",
+      "diff": "diff --git a/src/payments/webhooks.js b/src/payments/webhooks.js\nindex 22751f2..5b7d783 100644\n--- a/src/payments/webhooks.js\n+++ b/src/payments/webhooks.js\n@@ -1,4 +1,5 @@\n export async function webhook(rawBody, signature, verify, markPaid) {\n+  if (!verify(rawBody, signature)) throw new Error(\"invalid signature\");\n   const event = JSON.parse(rawBody);\n   return markPaid(event.orderId);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/webhooks.js",
+          "before": "export async function webhook(rawBody, signature, verify, markPaid) {\n  const event = JSON.parse(rawBody);\n  return markPaid(event.orderId);\n}\n",
+          "after": "export async function webhook(rawBody, signature, verify, markPaid) {\n  if (!verify(rawBody, signature)) throw new Error(\"invalid signature\");\n  const event = JSON.parse(rawBody);\n  return markPaid(event.orderId);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-declined-as-paid-bug",
+      "family": "domain",
+      "pairId": "payments-declined-as-paid",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "The gateway resolves declined payments with status=\"declined\". Only status=\"succeeded\" may mark an order paid.",
+      "diff": "diff --git a/src/payments/confirmation.js b/src/payments/confirmation.js\nindex a217b6e..2a38793 100644\n--- a/src/payments/confirmation.js\n+++ b/src/payments/confirmation.js\n@@ -1,6 +1,5 @@\n export async function confirm(order, gateway, markPaid) {\n   const payment = await gateway.charge(order);\n-  if (payment.status !== \"succeeded\") return false;\n   await markPaid(order.id);\n   return true;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/confirmation.js",
+          "before": "export async function confirm(order, gateway, markPaid) {\n  const payment = await gateway.charge(order);\n  if (payment.status !== \"succeeded\") return false;\n  await markPaid(order.id);\n  return true;\n}\n",
+          "after": "export async function confirm(order, gateway, markPaid) {\n  const payment = await gateway.charge(order);\n  await markPaid(order.id);\n  return true;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-declined-as-paid",
+          "description": "A resolved declined gateway result still marks the order paid.",
+          "filePath": "src/payments/confirmation.js",
+          "terms": [
+            "declin",
+            "status",
+            "paid",
+            "success"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-declined-as-paid-clean",
+      "family": "domain",
+      "pairId": "payments-declined-as-paid",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "The gateway resolves declined payments with status=\"declined\". Only status=\"succeeded\" may mark an order paid.",
+      "diff": "diff --git a/src/payments/confirmation.js b/src/payments/confirmation.js\nindex 2a38793..a217b6e 100644\n--- a/src/payments/confirmation.js\n+++ b/src/payments/confirmation.js\n@@ -1,5 +1,6 @@\n export async function confirm(order, gateway, markPaid) {\n   const payment = await gateway.charge(order);\n+  if (payment.status !== \"succeeded\") return false;\n   await markPaid(order.id);\n   return true;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/confirmation.js",
+          "before": "export async function confirm(order, gateway, markPaid) {\n  const payment = await gateway.charge(order);\n  await markPaid(order.id);\n  return true;\n}\n",
+          "after": "export async function confirm(order, gateway, markPaid) {\n  const payment = await gateway.charge(order);\n  if (payment.status !== \"succeeded\") return false;\n  await markPaid(order.id);\n  return true;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-partial-refund-limit-bug",
+      "family": "domain",
+      "pairId": "payments-partial-refund-limit",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Sequential partial refunds must not exceed capturedCents in total. refund updates refundedCents after a successful gateway call.",
+      "diff": "diff --git a/src/payments/refunds.js b/src/payments/refunds.js\nindex 4980883..e0c466c 100644\n--- a/src/payments/refunds.js\n+++ b/src/payments/refunds.js\n@@ -1,5 +1,5 @@\n export async function refund(payment, amountCents, gateway) {\n-  if (amountCents > payment.capturedCents - payment.refundedCents) throw new Error(\"refund exceeds remaining\");\n+  if (amountCents > payment.capturedCents) throw new Error(\"refund exceeds captured\");\n   await gateway.refund(amountCents);\n   payment.refundedCents += amountCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/refunds.js",
+          "before": "export async function refund(payment, amountCents, gateway) {\n  if (amountCents > payment.capturedCents - payment.refundedCents) throw new Error(\"refund exceeds remaining\");\n  await gateway.refund(amountCents);\n  payment.refundedCents += amountCents;\n}\n",
+          "after": "export async function refund(payment, amountCents, gateway) {\n  if (amountCents > payment.capturedCents) throw new Error(\"refund exceeds captured\");\n  await gateway.refund(amountCents);\n  payment.refundedCents += amountCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-partial-refund-limit",
+          "description": "After refunding 700 of 1000 cents, a second 700-cent refund is accepted.",
+          "filePath": "src/payments/refunds.js",
+          "terms": [
+            "refund",
+            "remaining",
+            "cumul",
+            "captur"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-partial-refund-limit-clean",
+      "family": "domain",
+      "pairId": "payments-partial-refund-limit",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Sequential partial refunds must not exceed capturedCents in total. refund updates refundedCents after a successful gateway call.",
+      "diff": "diff --git a/src/payments/refunds.js b/src/payments/refunds.js\nindex e0c466c..4980883 100644\n--- a/src/payments/refunds.js\n+++ b/src/payments/refunds.js\n@@ -1,5 +1,5 @@\n export async function refund(payment, amountCents, gateway) {\n-  if (amountCents > payment.capturedCents) throw new Error(\"refund exceeds captured\");\n+  if (amountCents > payment.capturedCents - payment.refundedCents) throw new Error(\"refund exceeds remaining\");\n   await gateway.refund(amountCents);\n   payment.refundedCents += amountCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/refunds.js",
+          "before": "export async function refund(payment, amountCents, gateway) {\n  if (amountCents > payment.capturedCents) throw new Error(\"refund exceeds captured\");\n  await gateway.refund(amountCents);\n  payment.refundedCents += amountCents;\n}\n",
+          "after": "export async function refund(payment, amountCents, gateway) {\n  if (amountCents > payment.capturedCents - payment.refundedCents) throw new Error(\"refund exceeds remaining\");\n  await gateway.refund(amountCents);\n  payment.refundedCents += amountCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-currency-mismatch-bug",
+      "family": "domain",
+      "pairId": "payments-currency-mismatch",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "A settled payment must match both the order currency and its integer minor-unit amount.",
+      "diff": "diff --git a/src/payments/reconciliation.js b/src/payments/reconciliation.js\nindex f46c3b3..eba76b1 100644\n--- a/src/payments/reconciliation.js\n+++ b/src/payments/reconciliation.js\n@@ -1,3 +1,3 @@\n export function matches(order, payment) {\n-  return payment.amount === order.amount && payment.currency === order.currency;\n+  return payment.amount === order.amount;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/reconciliation.js",
+          "before": "export function matches(order, payment) {\n  return payment.amount === order.amount && payment.currency === order.currency;\n}\n",
+          "after": "export function matches(order, payment) {\n  return payment.amount === order.amount;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-currency-mismatch",
+          "description": "A 1000 JPY payment is accepted for a 1000 USD-minor-unit order.",
+          "filePath": "src/payments/reconciliation.js",
+          "terms": [
+            "currency",
+            "amount",
+            "match"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-currency-mismatch-clean",
+      "family": "domain",
+      "pairId": "payments-currency-mismatch",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "A settled payment must match both the order currency and its integer minor-unit amount.",
+      "diff": "diff --git a/src/payments/reconciliation.js b/src/payments/reconciliation.js\nindex eba76b1..f46c3b3 100644\n--- a/src/payments/reconciliation.js\n+++ b/src/payments/reconciliation.js\n@@ -1,3 +1,3 @@\n export function matches(order, payment) {\n-  return payment.amount === order.amount;\n+  return payment.amount === order.amount && payment.currency === order.currency;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/reconciliation.js",
+          "before": "export function matches(order, payment) {\n  return payment.amount === order.amount;\n}\n",
+          "after": "export function matches(order, payment) {\n  return payment.amount === order.amount && payment.currency === order.currency;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-out-of-order-webhook-bug",
+      "family": "domain",
+      "pairId": "payments-out-of-order-webhook",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Payment status succeeded is terminal; a delayed processing event must not downgrade it.",
+      "diff": "diff --git a/src/payments/status.js b/src/payments/status.js\nindex a0e11c7..59313c1 100644\n--- a/src/payments/status.js\n+++ b/src/payments/status.js\n@@ -1,4 +1,3 @@\n export function applyEvent(payment, event) {\n-  if (payment.status === \"succeeded\" && event.status !== \"succeeded\") return;\n   payment.status = event.status;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/status.js",
+          "before": "export function applyEvent(payment, event) {\n  if (payment.status === \"succeeded\" && event.status !== \"succeeded\") return;\n  payment.status = event.status;\n}\n",
+          "after": "export function applyEvent(payment, event) {\n  payment.status = event.status;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-out-of-order-webhook",
+          "description": "A delayed processing event changes a succeeded payment back to processing.",
+          "filePath": "src/payments/status.js",
+          "terms": [
+            "event",
+            "order",
+            "downgrad",
+            "terminal"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-out-of-order-webhook-clean",
+      "family": "domain",
+      "pairId": "payments-out-of-order-webhook",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Payment status succeeded is terminal; a delayed processing event must not downgrade it.",
+      "diff": "diff --git a/src/payments/status.js b/src/payments/status.js\nindex 59313c1..a0e11c7 100644\n--- a/src/payments/status.js\n+++ b/src/payments/status.js\n@@ -1,3 +1,4 @@\n export function applyEvent(payment, event) {\n+  if (payment.status === \"succeeded\" && event.status !== \"succeeded\") return;\n   payment.status = event.status;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/status.js",
+          "before": "export function applyEvent(payment, event) {\n  payment.status = event.status;\n}\n",
+          "after": "export function applyEvent(payment, event) {\n  if (payment.status === \"succeeded\" && event.status !== \"succeeded\") return;\n  payment.status = event.status;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-zero-decimal-currency-bug",
+      "family": "domain",
+      "pairId": "payments-zero-decimal-currency",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Amounts are major currency units. JPY has zero decimal places; USD has two. Return integer gateway minor units.",
+      "diff": "diff --git a/src/payments/currency.js b/src/payments/currency.js\nindex b322d64..c9bb062 100644\n--- a/src/payments/currency.js\n+++ b/src/payments/currency.js\n@@ -1,4 +1,3 @@\n export function minorUnits(amount, currency) {\n-  const factor = currency === \"JPY\" ? 1 : 100;\n-  return Math.round(amount * factor);\n+  return Math.round(amount * 100);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/currency.js",
+          "before": "export function minorUnits(amount, currency) {\n  const factor = currency === \"JPY\" ? 1 : 100;\n  return Math.round(amount * factor);\n}\n",
+          "after": "export function minorUnits(amount, currency) {\n  return Math.round(amount * 100);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-zero-decimal-currency",
+          "description": "A 2500 JPY purchase is charged 250000 JPY.",
+          "filePath": "src/payments/currency.js",
+          "terms": [
+            "JPY",
+            "decimal",
+            "100",
+            "currency"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-zero-decimal-currency-clean",
+      "family": "domain",
+      "pairId": "payments-zero-decimal-currency",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Amounts are major currency units. JPY has zero decimal places; USD has two. Return integer gateway minor units.",
+      "diff": "diff --git a/src/payments/currency.js b/src/payments/currency.js\nindex c9bb062..b322d64 100644\n--- a/src/payments/currency.js\n+++ b/src/payments/currency.js\n@@ -1,3 +1,4 @@\n export function minorUnits(amount, currency) {\n-  return Math.round(amount * 100);\n+  const factor = currency === \"JPY\" ? 1 : 100;\n+  return Math.round(amount * factor);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/currency.js",
+          "before": "export function minorUnits(amount, currency) {\n  return Math.round(amount * 100);\n}\n",
+          "after": "export function minorUnits(amount, currency) {\n  const factor = currency === \"JPY\" ? 1 : 100;\n  return Math.round(amount * factor);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-webhook-replay-bug",
+      "family": "domain",
+      "pairId": "payments-webhook-replay",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Sequential deliveries of the same gateway event ID must fulfill its order once. fulfill resolves after completion.",
+      "diff": "diff --git a/src/payments/fulfillment.js b/src/payments/fulfillment.js\nindex dbf631b..323c912 100644\n--- a/src/payments/fulfillment.js\n+++ b/src/payments/fulfillment.js\n@@ -1,5 +1,4 @@\n export async function processEvent(event, seen, fulfill) {\n-  if (seen.has(event.id)) return;\n   await fulfill(event.orderId);\n   seen.add(event.id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/fulfillment.js",
+          "before": "export async function processEvent(event, seen, fulfill) {\n  if (seen.has(event.id)) return;\n  await fulfill(event.orderId);\n  seen.add(event.id);\n}\n",
+          "after": "export async function processEvent(event, seen, fulfill) {\n  await fulfill(event.orderId);\n  seen.add(event.id);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-webhook-replay",
+          "description": "A retried signed event fulfills and ships the same order twice.",
+          "filePath": "src/payments/fulfillment.js",
+          "terms": [
+            "replay",
+            "duplicate",
+            "fulfill",
+            "event"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-webhook-replay-clean",
+      "family": "domain",
+      "pairId": "payments-webhook-replay",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "Sequential deliveries of the same gateway event ID must fulfill its order once. fulfill resolves after completion.",
+      "diff": "diff --git a/src/payments/fulfillment.js b/src/payments/fulfillment.js\nindex 323c912..dbf631b 100644\n--- a/src/payments/fulfillment.js\n+++ b/src/payments/fulfillment.js\n@@ -1,4 +1,5 @@\n export async function processEvent(event, seen, fulfill) {\n+  if (seen.has(event.id)) return;\n   await fulfill(event.orderId);\n   seen.add(event.id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/fulfillment.js",
+          "before": "export async function processEvent(event, seen, fulfill) {\n  await fulfill(event.orderId);\n  seen.add(event.id);\n}\n",
+          "after": "export async function processEvent(event, seen, fulfill) {\n  if (seen.has(event.id)) return;\n  await fulfill(event.orderId);\n  seen.add(event.id);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-negative-refund-bug",
+      "family": "domain",
+      "pairId": "payments-negative-refund",
+      "variant": "bug",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "A refund amount must be a positive safe integer number of cents before any gateway call.",
+      "diff": "diff --git a/src/payments/refund-validation.js b/src/payments/refund-validation.js\nindex 326c484..e432377 100644\n--- a/src/payments/refund-validation.js\n+++ b/src/payments/refund-validation.js\n@@ -1,4 +1,4 @@\n export async function refund(amountCents, gateway) {\n-  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error(\"invalid amount\");\n+  if (!Number.isSafeInteger(amountCents)) throw new Error(\"invalid amount\");\n   return gateway.refund(amountCents);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/refund-validation.js",
+          "before": "export async function refund(amountCents, gateway) {\n  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error(\"invalid amount\");\n  return gateway.refund(amountCents);\n}\n",
+          "after": "export async function refund(amountCents, gateway) {\n  if (!Number.isSafeInteger(amountCents)) throw new Error(\"invalid amount\");\n  return gateway.refund(amountCents);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "payments-negative-refund",
+          "description": "A negative refund amount reaches the gateway and can reverse the intended accounting direction.",
+          "filePath": "src/payments/refund-validation.js",
+          "terms": [
+            "negative",
+            "positive",
+            "refund",
+            "amount"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-payments-negative-refund-clean",
+      "family": "domain",
+      "pairId": "payments-negative-refund",
+      "variant": "clean",
+      "domain": "payments",
+      "category": "payments",
+      "contract": "A refund amount must be a positive safe integer number of cents before any gateway call.",
+      "diff": "diff --git a/src/payments/refund-validation.js b/src/payments/refund-validation.js\nindex e432377..326c484 100644\n--- a/src/payments/refund-validation.js\n+++ b/src/payments/refund-validation.js\n@@ -1,4 +1,4 @@\n export async function refund(amountCents, gateway) {\n-  if (!Number.isSafeInteger(amountCents)) throw new Error(\"invalid amount\");\n+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error(\"invalid amount\");\n   return gateway.refund(amountCents);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/payments/refund-validation.js",
+          "before": "export async function refund(amountCents, gateway) {\n  if (!Number.isSafeInteger(amountCents)) throw new Error(\"invalid amount\");\n  return gateway.refund(amountCents);\n}\n",
+          "after": "export async function refund(amountCents, gateway) {\n  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error(\"invalid amount\");\n  return gateway.refund(amountCents);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
       "id": "real-axios-axios-7369-bug",
       "family": "historical-pr",
       "pairId": "axios-axios-7369",

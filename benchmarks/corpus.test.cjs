@@ -7,10 +7,11 @@ const { execFileSync } = require('node:child_process');
 const { sha } = require('./lib.cjs');
 const { inputFor } = require('./run.cjs');
 const corpus = require('./corpus.json');
-test('92 unique cases contain 40 authored and 6 pinned historical bug/fix pairs', () => {
-  assert.equal(corpus.cases.length, 92);
-  assert.equal(new Set(corpus.cases.map(c => c.id)).size, 92);
-  assert.equal(corpus.cases.reduce((n, c) => n + c.expectedBugs.length, 0), 46);
+test('corpus contains every authored, domain and pinned historical bug/fix pair', () => {
+  const pairs = require('./seeded.cjs').length + require('./domains/support.cjs').loadDomains().length + require('./real-pr-snapshots.json').length;
+  assert.equal(corpus.cases.length, pairs * 2);
+  assert.equal(new Set(corpus.cases.map(c => c.id)).size, pairs * 2);
+  assert.equal(corpus.cases.reduce((n, c) => n + c.expectedBugs.length, 0), pairs);
   for (const item of corpus.cases) {
     const twin = corpus.cases.find(c => c.pairId === item.pairId && c.variant !== item.variant);
     assert.ok(twin);
