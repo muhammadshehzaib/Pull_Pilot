@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+vi.mock('../workers/review-recovery', () => ({ cancelDisconnectedReviews: vi.fn(async () => {}) }));
 
 vi.mock('../workers/historical-maintenance', () => ({ clearRepositoryHistory: vi.fn() }));
 vi.mock('../services/comment-delivery.service', () => ({ purgeRepositoryDeliveryPayloads: vi.fn(async () => {}) }));
@@ -505,6 +506,7 @@ describe('RepositoryController.triggerAnalysis', () => {
         eventType: 'PULL_REQUEST',
         payloadSnapshot: { headSha: 'head-sha', baseSha: 'base-sha' },
       }),
+      { jobId: 'job-1' },
     );
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({ jobId: 'job-1', status: 'QUEUED' });
@@ -533,6 +535,7 @@ describe('RepositoryController.triggerAnalysis', () => {
     expect(mockQueueAdd).toHaveBeenCalledWith(
       'manual-PUSH-h',
       expect.objectContaining({ payloadSnapshot: { headSha: 'h', baseSha: 'b' } }),
+      { jobId: 'job-branch' },
     );
     expect(res.status).toHaveBeenCalledWith(202);
   });
@@ -557,6 +560,7 @@ describe('RepositoryController.triggerAnalysis', () => {
     expect(mockQueueAdd).toHaveBeenCalledWith(
       'manual-PUSH-h',
       expect.objectContaining({ eventType: 'PUSH' }),
+      { jobId: 'job-2' },
     );
     expect(res.status).toHaveBeenCalledWith(202);
   });

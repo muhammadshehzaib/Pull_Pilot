@@ -1,4 +1,5 @@
 import prisma from '../config/prisma';
+import type { Prisma } from '@prisma/client';
 
 export const FREE_TIER_PRIVATE_LIMIT = 50;
 
@@ -27,8 +28,8 @@ export class QuotaService {
   /**
    * Retrieves or initializes the monthly usage ledger for an installation.
    */
-  public static async getOrCreateLedger(installationId: string, monthKey: string = this.getCurrentBillingMonth()) {
-    return await prisma.usageLedger.upsert({
+  public static async getOrCreateLedger(installationId: string, monthKey: string = this.getCurrentBillingMonth(), tx: Prisma.TransactionClient = prisma) {
+    return await tx.usageLedger.upsert({
       where: {
         installationId_billingMonth: {
           installationId,
@@ -134,18 +135,54 @@ export class QuotaService {
     };
   }
 
-  /** Atomically claims one review slot. Enqueueing the review consumes quota. */
+  /** Charge and receipt share the job lock and transaction, including enqueue linkage. */
   public static async reserveReview(
+    installationId: string | null | undefined, isPrivate: boolean, userId: string | undefined, jobId: string,
+  ): Promise<QuotaCheckResult> {
+    return prisma.$transaction(async tx => {
+      // Same repository -> job lock order as delivery/completion.
+      await tx.$queryRaw`SELECT id FROM repositories WHERE id = (SELECT "repositoryId" FROM analysis_jobs WHERE id = ${jobId}) FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM analysis_jobs WHERE id = ${jobId} FOR UPDATE`;
+      const job = await tx.analysisJob.findUnique({ where: { id: jobId }, include: { repository: true } });
+      if (!job || !userId || job.repository.userId !== userId || !job.repository.isActive ||
+          (job.repository.installationId ?? null) !== (installationId ?? null) ||
+          !['QUEUED', 'FETCHING', 'ANALYZING', 'GENERATING', 'POSTING', 'RUNNING', 'RETRYING'].includes(job.status)) {
+        throw new Error('Review is unavailable for quota reservation');
+      }
+      if (job.quotaLedgerId) {
+        if (job.quotaRefundedAt || job.quotaIsPrivate !== isPrivate) throw new Error('Review reservation is no longer available');
+        const ledger = await tx.usageLedger.findUniqueOrThrow({ where: { id: job.quotaLedgerId } });
+        const installation = installationId ? await tx.installation.findUnique({ where: { id: installationId } }) : null;
+        const subscription = !installationId ? await tx.subscription.findFirst({ where: { userId, status: { in: ['active', 'trialing', 'past_due'] } }, orderBy: { updatedAt: 'desc' } }) : null;
+        const tier = installation?.plan || subscription?.plan || 'FREE';
+        return { allowed: true, usage: { current: isPrivate ? ledger.privateReviewsCount : ledger.publicReviewsCount,
+          limit: isPrivate && tier === 'FREE' ? FREE_TIER_PRIVATE_LIMIT : null, tier, isPrivate, billingMonth: ledger.billingMonth } };
+      }
+      const result = await this.reserveWithin(tx, installationId, isPrivate, userId);
+      if (result.allowed) {
+        const ledger = await tx.usageLedger.findUniqueOrThrow({ where: installationId
+          ? { installationId_billingMonth: { installationId, billingMonth: result.usage.billingMonth } }
+          : { userId_billingMonth: { userId, billingMonth: result.usage.billingMonth } } });
+        await tx.analysisJob.update({ where: { id: jobId }, data: {
+          quotaLedgerId: ledger.id, quotaIsPrivate: isPrivate, queueJobId: jobId,
+        } });
+      }
+      return result;
+    });
+  }
+
+  private static async reserveWithin(
+    tx: Prisma.TransactionClient,
     installationId: string | null | undefined,
     isPrivate: boolean,
     userId?: string,
   ): Promise<QuotaCheckResult> {
     const billingMonth = this.getCurrentBillingMonth();
     const installation = installationId
-      ? await prisma.installation.findUnique({ where: { id: installationId } })
+      ? await tx.installation.findUnique({ where: { id: installationId } })
       : null;
     const activeSubscription = !installationId && userId
-      ? await prisma.subscription.findFirst({
+      ? await tx.subscription.findFirst({
           where: { userId, status: { in: ['active', 'trialing', 'past_due'] } },
           orderBy: { updatedAt: 'desc' },
         })
@@ -161,9 +198,9 @@ export class QuotaService {
     }
 
     if (installationId) {
-      await this.getOrCreateLedger(installationId, billingMonth);
+      await this.getOrCreateLedger(installationId, billingMonth, tx);
     } else {
-      await prisma.usageLedger.upsert({
+      await tx.usageLedger.upsert({
         where: { userId_billingMonth: { userId: userId!, billingMonth } },
         update: {},
         create: { userId: userId!, billingMonth, publicReviewsCount: 0, privateReviewsCount: 0 },
@@ -171,7 +208,7 @@ export class QuotaService {
     }
 
     if (limit !== null) {
-      const reserved = await prisma.usageLedger.updateMany({
+      const reserved = await tx.usageLedger.updateMany({
         where: {
           ...(installationId ? { installationId } : { userId }),
           billingMonth,
@@ -180,8 +217,8 @@ export class QuotaService {
         data: { privateReviewsCount: { increment: 1 } },
       });
       const ledger = installationId
-        ? await this.getOrCreateLedger(installationId, billingMonth)
-        : await prisma.usageLedger.findUniqueOrThrow({
+        ? await this.getOrCreateLedger(installationId, billingMonth, tx)
+        : await tx.usageLedger.findUniqueOrThrow({
             where: { userId_billingMonth: { userId: userId!, billingMonth } },
           });
       if (reserved.count === 0) {
@@ -198,7 +235,7 @@ export class QuotaService {
     }
 
     const field = isPrivate ? 'privateReviewsCount' : 'publicReviewsCount';
-    const updated = await prisma.usageLedger.update({
+    const updated = await tx.usageLedger.update({
       where: installationId
         ? { installationId_billingMonth: { installationId, billingMonth } }
         : { userId_billingMonth: { userId: userId!, billingMonth } },

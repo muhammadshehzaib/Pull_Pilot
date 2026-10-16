@@ -162,9 +162,15 @@ for recovery, retention, and test-PR verification.
   fails closed if GITHUB_WEBHOOK_SECRET is unset.
 - Losing ENCRYPTION_KEY makes saved vault keys unrecoverable (users re-save).
 - Postgres data persists in the `aipr_pgdata` volume; it is never exposed publicly.
-- The BullMQ queue persists in `aipr_redisdata` with `appendonly yes`. If a job is
-  ever lost, the matching Postgres row stays QUEUED with no reaper to retry it —
-  re-trigger the review from the UI rather than restarting the backend.
+- The BullMQ queue persists in `aipr_redisdata` with `appendonly yes`. Review
+  recovery checks for abandoned jobs on worker startup and every minute. Lost
+  queue jobs are marked failed after a grace period and tracked quota is returned;
+  recovery never automatically reposts comments or regenerates the review.
+- Apply `20261022010000_review_recovery` before updated API/workers start. Drain
+  old producers/workers during cutover and keep PostgreSQL/Redis volumes. New
+  reviews record their exact quota charge for atomic one-time refunds; historical
+  untracked charges need an operator audit. See
+  [recovery and quota plan](../docs/abandoned-review-recovery-plan.md).
 - Failed jobs are retained for `JOB_RETENTION_DAYS` (default 7) in both Redis and
   Postgres, then removed by the sweep that runs every `JOB_SWEEP_INTERVAL_MS`.
   Completed jobs are never swept — they are the review history. Raising

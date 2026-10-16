@@ -373,6 +373,19 @@ describe('parseJobStatus', () => {
 });
 
 describe('JobController.get', () => {
+  it('keeps internal queue and quota receipts out of the public review response', async () => {
+    mockJobFindFirst.mockResolvedValueOnce({ id: 'job', status: 'COMPLETED', createdAt: new Date(), results: [],
+      repository: { id: 'repo', fullName: 'o/r' }, ruleChecks: [], securityChecks: [],
+      queueJobId: 'private-queue-id', queueVersion: 1, quotaLedgerId: 'private-ledger-id', quotaIsPrivate: true,
+      quotaRefundedAt: new Date(), lastHeartbeatAt: new Date(),
+    });
+    const res = mockRes();
+    await JobController.get(authedReq({ params: { id: 'job' } }), res);
+    const result = res.json.mock.calls[0][0];
+    for (const field of ['queueJobId', 'queueVersion', 'quotaLedgerId', 'quotaIsPrivate', 'quotaRefundedAt', 'lastHeartbeatAt']) {
+      expect(result.job).not.toHaveProperty(field);
+    }
+  });
   it('normalizes versioned adaptation conservatively, preserving protected and legacy findings', async () => {
     const { findingIdentity } = await import('../services/historical/occurrence.service');
     const finding = { filePath: 'src/a.ts', lineNumber: 1, agentType: 'STYLE' as const, priority: 'LOW' as const, issue: 'Naming', suggestion: 'Use conventions' };

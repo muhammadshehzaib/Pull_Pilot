@@ -273,6 +273,7 @@ describe('analysis worker — durable delivery entry', () => {
     mockJobFindUnique.mockResolvedValue({ status: 'POSTING', repositoryId: 'r-1', repository: { isActive: false, userId: 'u-owner' } });
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('unavailable');
     expect(deliverReviewPlan).not.toHaveBeenCalled(); expect(mockAnalyzeCode).not.toHaveBeenCalled();
+    expect(mockJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'CANCELLED' }) }));
   });
 });
 

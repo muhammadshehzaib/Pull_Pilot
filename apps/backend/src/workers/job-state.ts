@@ -1,5 +1,6 @@
 import prisma from '../config/prisma';
 import { SocketService } from '../config/socket';
+import { refundReviewQuota } from '../services/review-quota';
 
 /**
  * Review lifecycle, as a set of states rather than a single RUNNING flag.
@@ -68,7 +69,7 @@ export function isTerminalStatus(value: unknown): boolean {
  * States where a review is still doing (or about to do) work, and is therefore
  * the only set for which cancelling is meaningful.
  */
-const IN_PROGRESS_REVIEW_STATUSES: readonly string[] = [
+export const IN_PROGRESS_REVIEW_STATUSES = [
   'QUEUED',
   'FETCHING',
   'ANALYZING',
@@ -76,10 +77,10 @@ const IN_PROGRESS_REVIEW_STATUSES: readonly string[] = [
   'POSTING',
   'RETRYING',
   'RUNNING',
-];
+] as const;
 
 export function isInProgressStatus(value: unknown): boolean {
-  return typeof value === 'string' && IN_PROGRESS_REVIEW_STATUSES.includes(value);
+  return typeof value === 'string' && (IN_PROGRESS_REVIEW_STATUSES as readonly string[]).includes(value);
 }
 
 export function isSupersededStatus(value: unknown): boolean {
@@ -117,21 +118,24 @@ export async function markReviewTerminal(
   status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'TIMEOUT',
   message: string,
   results?: Record<string, unknown>,
+  expected?: { status: string; updatedAt: Date },
 ): Promise<boolean> {
-  const changed = await persistState(jobId, status, results);
+  const changed = await persistState(jobId, status, results, expected);
   if (changed) SocketService.emitStatus(userId, jobId, message, status);
   return changed;
 }
 
 /** Lock the job so failures/cancellation preserve findings and cannot overwrite completion. */
-async function persistState(jobId: string, status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'TIMEOUT' | 'RETRYING', metadata?: Record<string, unknown>) {
+async function persistState(jobId: string, status: 'COMPLETED' | 'FAILED' | 'SKIPPED' | 'CANCELLED' | 'TIMEOUT' | 'RETRYING', metadata?: Record<string, unknown>, expected?: { status: string; updatedAt: Date }) {
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT id FROM analysis_jobs WHERE id = ${jobId} FOR UPDATE`;
     const row = await tx.analysisJob.findUnique({ where: { id: jobId } });
     if (!row || isTerminalStatus(row.status)) return false;
+    if (expected && (row.status !== expected.status || row.updatedAt.getTime() !== expected.updatedAt.getTime())) return false;
     const previous = row.results && typeof row.results === 'object' && !Array.isArray(row.results) ? row.results : {};
     await tx.analysisJob.update({ where: { id: jobId }, data: { status,
       ...(metadata ? { results: JSON.parse(JSON.stringify({ ...previous, ...metadata })) } : {}) } });
+    if (status !== 'COMPLETED' && status !== 'RETRYING') await refundReviewQuota(tx, row);
     return true;
   });
 }

@@ -177,6 +177,8 @@ export class RepositoryController {
       where: { id: repo.id },
       data: { isActive: false, webhookId: null },
     });
+    const { cancelDisconnectedReviews } = await import('../workers/review-recovery');
+    await cancelDisconnectedReviews(repo.id);
 
     // Disconnecting a repository is the promise to delete the code we copied
     // from it. Deactivating alone leaves every cached file in the database
@@ -254,7 +256,7 @@ export class RepositoryController {
       },
     });
 
-    const reservation = await QuotaService.reserveReview(repo.installationId, repo.isPrivate, repo.userId);
+    const reservation = await QuotaService.reserveReview(repo.installationId, repo.isPrivate, repo.userId, job.id);
     if (!reservation.allowed) {
       await prisma.analysisJob.update({
         where: { id: job.id },
@@ -274,7 +276,7 @@ export class RepositoryController {
       installationId: repo.installationId,
       isPrivate: repo.isPrivate,
       payloadSnapshot: { headSha: resolvedHead, baseSha: resolvedBase },
-    });
+    }, { jobId: job.id });
 
     return res.status(202).json({ jobId: job.id, status: 'QUEUED' });
   }

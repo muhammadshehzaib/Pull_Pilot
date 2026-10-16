@@ -236,7 +236,7 @@ export class WebhookController {
 
       // Reserve only after the unique job insert so redelivered webhooks do not
       // spend another slot. The conditional ledger increment closes quota races.
-      const reservation = await QuotaService.reserveReview(dbRepo.installationId, isPrivate, dbRepo.userId);
+      const reservation = await QuotaService.reserveReview(dbRepo.installationId, isPrivate, dbRepo.userId, newJob.id);
       if (!reservation.allowed) {
         await prisma.analysisJob.update({
           where: { id: newJob.id },
@@ -260,7 +260,7 @@ export class WebhookController {
           headSha: commitSha,
           baseSha: jobType === 'PULL_REQUEST' ? payload.pull_request?.base?.sha : payload.before,
         },
-      });
+      }, { jobId: newJob.id });
 
       console.log(`✅ Job queued successfully. ID: ${newJob.id}`);
       return res.status(202).json({
@@ -320,7 +320,9 @@ export class WebhookController {
         });
         const cache = new RepositoryContextCache();
         await prisma.repository.updateMany({ where: { installation: { githubInstallationId } }, data: { isActive: false } });
+        const { cancelDisconnectedReviews } = await import('../workers/review-recovery');
         for (const repo of repos) {
+          await cancelDisconnectedReviews(repo.id);
           await cache.clearRepository(repo.id);
         }
       }
@@ -401,7 +403,9 @@ export class WebhookController {
             where: { githubRepoId: BigInt(repo.id) },
             data: { isActive: false },
           });
+          const { cancelDisconnectedReviews } = await import('../workers/review-recovery');
           for (const row of affected) {
+            await cancelDisconnectedReviews(row.id);
             await cache.clearRepository(row.id);
           }
         }

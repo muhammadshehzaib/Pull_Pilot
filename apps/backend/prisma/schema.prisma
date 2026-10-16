@@ -375,6 +375,14 @@ enum JobStatus {
 }
 
 model AnalysisJob {
+  /// Existing numeric-ID queue jobs are 0; new stable-ID producers are 1.
+  queueVersion    Int @default(1)
+  queueJobId      String?
+  lastHeartbeatAt DateTime?
+  /// Exact original usage charge, independent of later repository/month changes.
+  quotaLedgerId   String?
+  quotaIsPrivate  Boolean?
+  quotaRefundedAt DateTime?
   /// Existing jobs are migrated as 0; new jobs opt into durable delivery.
   deliveryVersion Int @default(1)
   deliveryPlan ReviewDeliveryPlan?
@@ -403,6 +411,7 @@ model AnalysisJob {
   @@unique([repositoryId, eventType, referenceId, commitSha])
   @@index([commitSha])
   @@index([repositoryId, status, createdAt])
+  @@index([status, id])
   @@map("analysis_jobs")
 }
 

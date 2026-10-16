@@ -102,6 +102,7 @@ describe('repo poller — default branch', () => {
         userId: 'u-1',
         payloadSnapshot: { headSha: 'sha-B', baseSha: 'sha-A' },
       }),
+      { jobId: 'job-1' },
     );
     expect(mockRepoUpdate).toHaveBeenCalledWith({
       where: { id: 'r-1' },
@@ -139,6 +140,7 @@ describe('repo poller — pull requests', () => {
         referenceId: '7',
         payloadSnapshot: { headSha: 'pr-head', baseSha: 'pr-base' },
       }),
+      { jobId: 'job-1' },
     );
     expect(mockRedisSet).toHaveBeenCalledWith('pr-scanned:r-1:7:pr-head', '1');
   });
@@ -233,7 +235,7 @@ describe('repo poller — resilience', () => {
 
     await pollRepositoriesOnce(gh);
 
-    expect(mockQueueAdd).toHaveBeenCalledWith('poll-PUSH-sha-B', expect.anything());
+    expect(mockQueueAdd).toHaveBeenCalledWith('poll-PUSH-sha-B', expect.anything(), { jobId: 'job-1' });
   });
 
   it('bails out silently when the bot token is not configured', async () => {

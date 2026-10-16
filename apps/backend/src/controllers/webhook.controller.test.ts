@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+vi.mock('../workers/review-recovery', () => ({ cancelDisconnectedReviews: vi.fn(async () => {}) }));
 vi.mock('../services/comment-delivery.service', () => ({ purgeRepositoryDeliveryPayloads: vi.fn(async () => {}) }));
 
 const {
@@ -290,6 +291,7 @@ describe('WebhookController.handleGitHubEvent — pull_request', () => {
         eventType: 'PULL_REQUEST',
         referenceId: '7',
       }),
+      { jobId: 'job-1' },
     );
     expect(res.status).toHaveBeenCalledWith(202);
     expect(res.json).toHaveBeenCalledWith({
@@ -368,6 +370,7 @@ expect(mockJobCreate).toHaveBeenCalledWith({
         jobId: 'job-push-1',
         referenceId: 'after-sha',
       }),
+      { jobId: 'job-push-1' },
     );
     expect(res.status).toHaveBeenCalledWith(202);
   });

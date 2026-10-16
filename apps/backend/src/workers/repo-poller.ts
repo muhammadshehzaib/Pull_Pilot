@@ -118,7 +118,7 @@ async function queueReview(
     return;
   }
 
-  const reservation = await QuotaService.reserveReview(repo.installationId, repo.isPrivate, repo.user.id);
+  const reservation = await QuotaService.reserveReview(repo.installationId, repo.isPrivate, repo.user.id, job.id);
   if (!reservation.allowed) {
     await prisma.analysisJob.update({
       where: { id: job.id },
@@ -138,7 +138,7 @@ async function queueReview(
     installationId: repo.installationId,
     isPrivate: repo.isPrivate,
     payloadSnapshot,
-  });
+  }, { jobId: job.id });
 
   console.log(`🛰️ Poller queued ${eventType} review for ${repo.fullName} (${referenceId})`);
 }

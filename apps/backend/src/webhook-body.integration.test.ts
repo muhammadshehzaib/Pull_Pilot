@@ -95,7 +95,7 @@ describe('production GitHub webhook request parsing', () => {
     expect(queueAdd).toHaveBeenCalledExactlyOnceWith(expect.any(String), expect.objectContaining({
       userId: 'customer-1', eventType: event === 'push' ? 'PUSH' : 'PULL_REQUEST',
       payloadSnapshot: { headSha: 'head-sha', baseSha: 'base-sha' },
-    }));
+    }), { jobId: 'job-1' });
   });
 
   it('accepts a correctly signed payload at the exact 25 MiB limit', async () => {

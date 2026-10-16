@@ -145,7 +145,9 @@ export class JobController {
     const rawObj = (job.results && typeof job.results === 'object' && !Array.isArray(job.results))
       ? (job.results as Record<string, unknown>)
       : {};
-    const { behavioralRuns, findingOccurrences, deliveryPlan, ...publicJob } = job;
+    const { behavioralRuns, findingOccurrences, deliveryPlan, queueJobId: _queueJobId, queueVersion: _queueVersion,
+      quotaLedgerId: _quotaLedgerId, quotaIsPrivate: _quotaIsPrivate, quotaRefundedAt: _quotaRefundedAt,
+      lastHeartbeatAt: _lastHeartbeatAt, ...publicJob } = job;
     const occurrencesByKey = new Map((findingOccurrences ?? []).map(occ => [occ.findingKey, occ]));
     const findingsWithFeedback = normalizedFindings.map(finding => {
       const occurrence = occurrencesByKey.get(findingIdentity(finding));

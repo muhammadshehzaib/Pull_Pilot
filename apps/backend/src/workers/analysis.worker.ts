@@ -35,6 +35,8 @@ import { PermanentJobError, isPermanentJobError } from '../errors/permanent-job.
 import { RepositoryAccessError } from '../errors/repository-access.error';
 import { advanceReview, markReviewTerminal, wasSuperseded, isTerminalStatus, persistReviewFailure } from './job-state';
 import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS, CLAUDE_MODEL, GROK_MODEL } from '../utils/constants';
+import { IN_PROGRESS_REVIEW_STATUSES } from './job-state';
+import { settleFailedQueueJob } from './review-recovery';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -60,6 +62,7 @@ export const analysisWorker = new Worker(
      * a PR the user cancelled or a review already written off as timed out.
      */
     let superseded = false;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
 
     /**
      * Cancels any in-flight provider request once the attempt is abandoned. A
@@ -139,10 +142,25 @@ export const analysisWorker = new Worker(
       // Resume saved delivery before requiring an AI key or invoking a provider.
       const persisted = await prisma.analysisJob.findUnique({ where: { id: jobId },
         include: { repository: { include: { installation: true, user: { select: { githubId: true } } } } } });
-      if (!persisted || !persisted.repository.isActive || persisted.repository.userId !== userId || persisted.repositoryId !== repositoryId) {
+      if (!persisted || persisted.repository.userId !== userId || persisted.repositoryId !== repositoryId) {
         throw new UnrecoverableError('Review or repository unavailable');
       }
       if (isTerminalStatus(persisted.status)) return { status: 'already-terminal' };
+      if (!persisted.repository.isActive) {
+        await markReviewTerminal(jobId, userId, 'CANCELLED', 'Review or repository unavailable: repository disconnected.', { reason: 'repository-disconnected' });
+        throw new UnrecoverableError('Review or repository unavailable');
+      }
+      let heartbeating = false;
+      heartbeat = setInterval(() => {
+        if (heartbeating) return;
+        heartbeating = true;
+        void prisma.analysisJob.updateMany({ where: { id: jobId, repositoryId,
+          repository: { userId, isActive: true }, status: { in: [...IN_PROGRESS_REVIEW_STATUSES] } },
+          data: { lastHeartbeatAt: new Date(), queueJobId: String(job.id) } })
+          .catch(() => { console.warn('Review heartbeat unavailable; recovery will recheck'); })
+          .finally(() => { heartbeating = false; });
+      }, 30_000);
+      heartbeat.unref();
       if (persisted.eventType === 'PULL_REQUEST' && persisted.deliveryVersion !== 1) {
         await markReviewTerminal(jobId, userId, 'SKIPPED', 'Legacy review delivery is untracked; start a new review.', { reason: 'legacy-delivery-untracked' });
         throw new UnrecoverableError('Legacy review delivery is untracked');
@@ -618,6 +636,7 @@ export const analysisWorker = new Worker(
       // armed behind it; otherwise the process holds the job open and the timer
       // later writes TIMEOUT over an already-COMPLETED review.
       clearTimeout(deadline);
+      clearInterval(heartbeat);
     }
   },
   {
@@ -628,3 +647,7 @@ export const analysisWorker = new Worker(
 );
 
 analysisWorker.on('ready', () => console.log(`👷 Multi-tenant Background worker fleet active.`));
+analysisWorker.on('failed', job => {
+  void settleFailedQueueJob(job).catch(() => { console.warn('Queue failure settlement pending; recovery will retry'); });
+});
+analysisWorker.on('error', () => { console.warn('Review queue worker error; recovery will reconcile interrupted jobs'); });
