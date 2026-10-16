@@ -48,6 +48,14 @@ async function open() {
   return user;
 }
 describe('Phase 8 history page integration', () => {
+  it('does not claim history is empty when loading fails and supports retry', async () => {
+    mockApi.mockRejectedValueOnce(new Error('offline'));
+    const user = userEvent.setup(); render(<HistoryPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('history could not be loaded');
+    expect(screen.queryByText(/No reviews yet/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Retry reviews' }));
+    expect(await screen.findByRole('button', { name: /owner\/repo/i })).toBeInTheDocument();
+  });
   it.each([false, true])('shows the stored failure even when saved findings exist: %s', async withFindings => {
     job = { ...job, status: 'FAILED', results: withFindings ? job.results : [], metadata: { error: 'Your AI provider quota is exhausted.' } };
     const user = userEvent.setup(); render(<HistoryPage />);

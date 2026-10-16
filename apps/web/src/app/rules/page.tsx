@@ -66,6 +66,8 @@ export default function EngineeringRulesPage() {
   const [rules, setRules] = useState<RepositoryRule[]>([]);
   /** Which repository `rules` belongs to; null until the first fetch settles. */
   const [rulesRepoId, setRulesRepoId] = useState<string | null>(null);
+  const [rulesError, setRulesError] = useState<{ repoId: string; text: string } | null>(null);
+  const [rulesLoadAttempt, setRulesLoadAttempt] = useState(0);
   const [form, setForm] = useState<RuleForm>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingRevision, setEditingRevision] = useState(0);
@@ -76,6 +78,7 @@ export default function EngineeringRulesPage() {
   // repository have not arrived yet, `rulesRepoId` still names the previous
   // one (or nothing), which is exactly the loading condition.
   const loadingRules = reposLoading || (repoId !== '' && rulesRepoId !== repoId);
+  const activeRulesError = rulesError?.repoId === repoId ? rulesError.text : '';
 
   // Load the connected repositories once, honouring a ?repo=<id> deep link
   // (the Repositories page links here per row). window.location is read in
@@ -109,8 +112,9 @@ export default function EngineeringRulesPage() {
       const res = await api<{ rules: RepositoryRule[] }>(`/api/repositories/${id}/rules`);
       setRules(res.rules);
       setRulesRepoId(id);
+      setRulesError(null);
     } catch {
-      // Keep the previous list on a transient failure rather than blanking it.
+      setRulesError({ repoId: id, text: 'Rules could not be loaded. Please retry.' });
     }
   };
 
@@ -122,13 +126,15 @@ export default function EngineeringRulesPage() {
       .then((res) => {
         setRules(res.rules);
         setRulesRepoId(repoId);
+        setRulesError(null);
       })
       .catch(() => {
         // Mark the fetch as settled even on failure so the page shows the
         // last-known list instead of spinning forever.
         setRulesRepoId(repoId);
+        setRulesError({ repoId, text: 'Rules could not be loaded. Please retry.' });
       });
-  }, [repoId]);
+  }, [repoId, rulesLoadAttempt]);
 
   function resetForm() {
     setForm(EMPTY_FORM);
@@ -418,19 +424,21 @@ export default function EngineeringRulesPage() {
           )}
 
           <div>
-            <button type="submit" disabled={busy || !repoId} className="btn-primary">
+            <button type="submit" disabled={busy || !repoId || loadingRules || !!activeRulesError} className="btn-primary">
               <Save size={16} /> {busy ? 'Saving…' : editingId ? 'Save changes' : 'Add rule'}
             </button>
           </div>
         </form>
 
         <div className="section-label" style={{ marginBottom: '1rem' }}>
-          {loadingRules ? 'Loading rules…' : `Rules (${rules.length})`}
+          {activeRulesError ? 'Rules unavailable' : loadingRules ? 'Loading rules…' : repoId ? `Rules (${rules.length})` : 'Choose a repository to view its rules'}
         </div>
 
-        {loadingRules ? (
+        {activeRulesError ? <div role="alert">{activeRulesError} <button type="button" onClick={() => {
+          setRulesError(null); setRulesRepoId(null); setRulesLoadAttempt(n => n + 1);
+        }}>Retry rules</button></div> : loadingRules ? (
           <div className="glass-card" style={{ height: 90 }} />
-        ) : rules.length === 0 ? (
+        ) : !repoId ? null : rules.length === 0 ? (
           <div className="glass-card" style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-secondary)' }}>
             <ShieldCheck size={20} style={{ marginBottom: '0.75rem' }} />
             <p>No rules for this repository yet. Add one above.</p>

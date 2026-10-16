@@ -29,6 +29,7 @@ export default function RepositoriesPage() {
   const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [activeCount, setActiveCount] = useState(0);
@@ -48,6 +49,7 @@ export default function RepositoriesPage() {
         activeCount: number;
       }>(`/api/repositories?page=${targetPage}&limit=50`);
       setRepos(res.repositories);
+      setLoadError('');
       setPagination(res.pagination);
       setActiveCount(res.activeCount);
       // Disconnecting the last row of the last page leaves an empty page —
@@ -56,7 +58,7 @@ export default function RepositoriesPage() {
         setPage(res.pagination.totalPages);
       }
     } catch {
-      // ignore
+      setLoadError('Repositories could not be loaded. Please retry.');
     } finally {
       setLoadingRepos(false);
     }
@@ -222,6 +224,10 @@ export default function RepositoriesPage() {
           </div>
         </form>
 
+        {loadError && <div role="alert">{loadError} <button type="button" onClick={() => {
+          setLoadingRepos(true); void refresh();
+        }}>Retry repositories</button></div>}
+
         {message && (
           <div className={message.kind === 'ok' ? 'flash flash-ok' : 'flash flash-err'} style={{ marginBottom: '1.5rem' }}>
             {message.text}
@@ -232,7 +238,7 @@ export default function RepositoriesPage() {
           {loadingRepos ? (
             <div className="skeleton" style={{ width: 120, height: 16 }} />
           ) : (
-            `Connected (${activeCount})`
+            loadError ? 'Connection count unavailable' : `Connected (${activeCount})`
           )}
         </div>
 
@@ -241,7 +247,7 @@ export default function RepositoriesPage() {
             <RepositorySkeleton />
             <RepositorySkeleton />
           </div>
-        ) : repos.length === 0 ? (
+        ) : repos.length === 0 && !loadError ? (
           <div className="glass-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
             <GitBranch size={20} style={{ marginBottom: '0.75rem' }} />
             <p>No repositories connected yet.</p>

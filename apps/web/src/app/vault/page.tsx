@@ -24,6 +24,8 @@ const PROVIDERS: { value: Provider; label: string; hint: string }[] = [
 export default function VaultPage() {
   const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [vault, setVault] = useState<VaultRecord | null>(null);
+  const [vaultLoad, setVaultLoad] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [provider, setProvider] = useState<Provider>('OPENAI');
   const [apiKey, setApiKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -31,16 +33,21 @@ export default function VaultPage() {
 
   useEffect(() => {
     if (!user) return;
-    api<{ vault: VaultRecord | null }>('/api/vault')
+    const controller = new AbortController();
+    api<{ vault: VaultRecord | null }>('/api/vault', { signal: controller.signal })
       .then((res) => {
+        if (controller.signal.aborted) return;
         setVault(res.vault);
         if (res.vault) setProvider(res.vault.provider);
+        setVaultLoad('ready');
       })
-      .catch(() => {});
-  }, [user]);
+      .catch(() => { if (!controller.signal.aborted) setVaultLoad('error'); });
+    return () => controller.abort();
+  }, [user, loadAttempt]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    if (vaultLoad !== 'ready') return;
     if (!apiKey.trim()) {
       setMessage({ kind: 'err', text: 'API key is required.' });
       return;
@@ -63,6 +70,7 @@ export default function VaultPage() {
   }
 
   async function remove() {
+    if (vaultLoad !== 'ready') return;
     if (!confirm('Delete the saved API key? Reviews will stop running until you save a new one.')) return;
     setBusy(true);
     setMessage(null);
@@ -96,7 +104,15 @@ export default function VaultPage() {
           </p>
         </header>
 
-        {vault && (
+        {vaultLoad === 'loading' && <p role="status">Loading your saved key…</p>}
+        {vaultLoad === 'error' && <div className="glass-card" role="alert">
+          <p>Your saved key could not be loaded. Retry before making changes.</p>
+          <button type="button" className="btn-secondary" onClick={() => {
+            setVaultLoad('loading'); setLoadAttempt(n => n + 1);
+          }}>Retry vault</button>
+        </div>}
+
+        {vaultLoad === 'ready' && vault && (
           <div className="glass-card" style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <ShieldCheck size={20} color="var(--success)" />
             <div style={{ flex: 1 }}>
@@ -113,7 +129,7 @@ export default function VaultPage() {
           </div>
         )}
 
-        <form onSubmit={save} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {vaultLoad === 'ready' && <form onSubmit={save} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Key size={16} />
             <h3 className="card-title">{vault ? 'Update key' : 'Add your first key'}</h3>
@@ -160,7 +176,7 @@ export default function VaultPage() {
               <Save size={16} /> {busy ? 'Saving…' : vault ? 'Update key' : 'Save key'}
             </button>
           </div>
-        </form>
+        </form>}
       </main>
     </div>
   );

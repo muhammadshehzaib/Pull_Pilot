@@ -37,3 +37,16 @@ deep links show an explanation and leave the picker unselected; Add remains
 disabled until selection. Repository load failures show an error and retry.
 Validation: four rules-page tests cover later-page deep links, missing/inactive
 targets, explicit selection, and failed loading/retry. Web typecheck and lint passed.
+
+## 34 — Failed loads versus empty data
+
+Plan: make loading, successful empty responses, and read failures distinct. Do
+not offer vault writes until the existing key state has been read successfully.
+
+Implemented: the vault hides its edit/create/delete controls until a successful
+read and offers retry on error. History, repository, and rules lists now show
+retryable errors instead of empty-state invitations on failed reads. Rules list
+errors are attributed to their requested repository.
+Validation: 22 page tests passed, including pending vault reads, failed reads,
+existing-key recovery, and genuinely empty responses. Web typecheck and lint of
+the vault/rules pages passed.

@@ -91,6 +91,7 @@ export default function HistoryPage() {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [selected, setSelected] = useState<JobDetail | null>(null);
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState('');
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailError, setDetailError] = useState('');
   // 1-based page into the filtered list. Backend clamps out-of-range values,
@@ -133,6 +134,7 @@ export default function HistoryPage() {
         `/api/jobs?${params.toString()}`,
       );
       setJobs(res.jobs);
+      setListError('');
       setPagination(res.pagination);
       // Filters can shrink the list underneath the current page (cleared PR,
       // retention sweep). Land on the last page that still exists rather than
@@ -149,6 +151,7 @@ export default function HistoryPage() {
       });
       return res.jobs;
     } catch {
+      setListError('Review history could not be loaded. Please retry.');
       return [];
     } finally {
       setLoadingList(false);
@@ -265,6 +268,9 @@ export default function HistoryPage() {
         </header>
 
         {detailError && <p role="alert">{detailError}</p>}
+        {listError && <div role="alert">{listError} <button type="button" onClick={() => {
+          setLoadingList(true); void fetchJobs();
+        }}>Retry reviews</button></div>}
         <div
           className="history-filter-bar"
           style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}
@@ -339,7 +345,7 @@ export default function HistoryPage() {
                 <HistoryRowSkeleton />
                 <HistoryRowSkeleton />
               </div>
-            ) : jobs.length === 0 ? (
+            ) : jobs.length === 0 && !listError ? (
               <div className="glass-card" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
                 <History size={20} strokeWidth={2} style={{ marginBottom: '1rem' }} />
                 <p>

@@ -14,6 +14,19 @@ beforeEach(() => { mockApi.mockReset(); window.history.replaceState(null, '', '/
 afterEach(() => window.history.replaceState(null, '', '/rules'));
 
 describe('rules repository selection', () => {
+  it('reports a rules load failure without showing an empty list and retries', async () => {
+    let failed = true;
+    mockApi.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/repositories?')) return page([repo('first')]);
+      if (failed) throw new Error('offline');
+      return { rules: [] };
+    });
+    const user = userEvent.setup(); render(<RulesPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Rules could not be loaded');
+    expect(screen.queryByText(/No rules for this repository/)).toBeNull();
+    failed = false; await user.click(screen.getByRole('button', { name: 'Retry rules' }));
+    expect(await screen.findByText(/No rules for this repository/)).toBeInTheDocument();
+  });
   it('resolves a deep link beyond the newest 50 repositories without opening the first repo', async () => {
     window.history.replaceState(null, '', '/rules?repo=target');
     let finish!: (value: unknown) => void;
