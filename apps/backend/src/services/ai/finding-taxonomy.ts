@@ -33,6 +33,8 @@ export type FindingCategory = (typeof FINDING_CATEGORIES)[number];
 export type FindingSource = 'LLM' | 'SAST' | 'SECRETS' | 'DEPENDENCIES' | 'RULES';
 
 export interface AiSuggestion {
+  /** Server-verified exact added-line citation; never accept this field from a model directly. */
+  verifiedAnchor?: string;
   filePath: string;
   lineNumber: number;
   agentType: FindingCategory;
@@ -160,7 +162,7 @@ export function normalizeSuggestions(raw: unknown): AiSuggestion[] {
     // Without these the finding cannot be rendered or acted on.
     if (!filePath || !issue || !suggestion) continue;
 
-    const lineNumber = Number.isFinite(s.lineNumber) ? Math.trunc(Number(s.lineNumber)) : 0;
+    const lineNumber = Number.isSafeInteger(s.lineNumber) && Number(s.lineNumber) > 0 && Number(s.lineNumber) <= 2147483647 ? Number(s.lineNumber) : 0;
 
     // An unrecognised severity is treated as INFO rather than dropped: the
     // reviewer still sees the finding, and INFO is below the default
@@ -185,6 +187,7 @@ export function normalizeStoredSuggestions(raw: unknown): AiSuggestion[] {
     const normalized = normalizeSuggestions([value])[0];
     if (!normalized) return [];
     const stored = value as Record<string, unknown>;
+    if (typeof stored.verifiedAnchor === 'string' && /^a1_[a-f0-9]{32}$/.test(stored.verifiedAnchor)) normalized.verifiedAnchor = stored.verifiedAnchor;
     if (allowed.includes(stored.source as FindingSource)) normalized.source = stored.source as FindingSource;
     if (Array.isArray(stored.sources)) normalized.sources = [...new Set(stored.sources.filter((s): s is FindingSource => allowed.includes(s as FindingSource)))];
     if (stored.corroborated === true) normalized.corroborated = true;

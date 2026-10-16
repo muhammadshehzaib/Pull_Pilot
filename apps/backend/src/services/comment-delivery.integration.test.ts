@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { GitHubService, DeliveredGitHubComment, CommentPostResult } from './github.service';
 import { scanSast } from './security/probes/sast';
 import { scanSecrets } from './security/probes/secrets';
+import { verifiedLocationFixture } from '../test-utils/comment-locations';
 
 const url = process.env.DELIVERY_TEST_DATABASE_URL;
 describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
@@ -29,9 +30,10 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
 
   async function input(summarize = false, count = 1) {
     const job = await db.analysisJob.create({ data: { repositoryId, eventType: 'PULL_REQUEST', referenceId: '42' } });
+    const { suggestions, reviewedDiff } = verifiedLocationFixture(Array.from({ length: count }, (_, i) => ({ ...finding, lineNumber: 3 + i })));
     return { jobId: job.id, repositoryId, userId, headSha: 'head', baseSha: 'base', fullName: 'delivery/test', prNumber: 42,
-      expectedAuthorId: '7', summaryBase: '## Saved review summary',
-      artifact: { suggestions: Array.from({ length: count }, (_, i) => ({ ...finding, lineNumber: 3 + i })), config: { summarize }, contextDiscovery: { status: 'PARTIAL' } } };
+      expectedAuthorId: '7', summaryBase: '## Saved review summary', reviewedDiff,
+      artifact: { suggestions, config: { summarize }, contextDiscovery: { status: 'PARTIAL' } } };
   }
   function github() {
     const comments: (DeliveredGitHubComment & { kind: string })[] = [];
@@ -72,6 +74,28 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     expect(fake.gh.createReviewComment).toHaveBeenCalledTimes(2); expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
     expect(again.artifact.contextDiscovery).toEqual({ status: 'PARTIAL' });
     expect(again.artifact.commentDelivery.delivered).toBe(2);
+  });
+  it('keeps an unverified location in one durable summary even when routine summaries are disabled', async () => {
+    const data = await input(false); delete data.artifact.suggestions[0]!.verifiedAnchor;
+    const plan = await service.prepareReviewDelivery(data), fake = github();
+    expect(plan.deliveries.find(row => row.kind === 'INLINE')).toMatchObject({ state: 'OMITTED', reason: 'location-unverified' });
+    const { artifact } = await service.deliverReviewPlan(plan, fake.api);
+    await record(data.jobId, repositoryId, artifact.suggestions, artifact);
+    await service.deliverReviewPlan(await reload(data.jobId));
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled(); expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
+    expect(await db.findingOccurrence.count({ where: { analysisJobId: data.jobId } })).toBe(1);
+  });
+  it('recovers a legacy omission crash with one fallback summary under concurrent retries', async () => {
+    const data = await input(false), plan = await service.prepareReviewDelivery(data), fake = github();
+    const { EncryptionService } = await import('./encryption.service');
+    await db.reviewDeliveryPlan.update({ where: { id: plan.id }, data: await EncryptionService.encrypt(JSON.stringify({ ...data.artifact, summaryBase: data.summaryBase })) });
+    await db.commentDelivery.updateMany({ where: { planId: plan.id, kind: 'INLINE' }, data: { state: 'OMITTED', reason: 'location-unverified' } });
+    await Promise.allSettled([service.deliverReviewPlan(await reload(data.jobId), fake.api), service.deliverReviewPlan(await reload(data.jobId), fake.api)]);
+    const { artifact } = await service.deliverReviewPlan(await reload(data.jobId), fake.api);
+    await record(data.jobId, repositoryId, artifact.suggestions, artifact);
+    expect((await reload(data.jobId)).deliveries.filter(row => row.kind === 'SUMMARY')).toHaveLength(1);
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled(); expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
   });
   it('recovers an accepted comment whose HTTP response was lost', async () => {
     const data = await input(false, 2), plan = await service.prepareReviewDelivery(data), fake = github();
@@ -218,7 +242,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     const findings = (probe === 'SAST' ? scanSast(diff) : scanSecrets(diff)).findings;
     expect(findings).toHaveLength(1);
     const initial = await input(true);
-    const data = { ...initial, artifact: { ...initial.artifact, suggestions: findings } };
+    const data = { ...initial, reviewedDiff: diff, artifact: { ...initial.artifact, suggestions: findings } };
     const plan = await service.prepareReviewDelivery(data), fake = github();
     const { artifact } = await service.deliverReviewPlan(plan, fake.api);
     await record(data.jobId, repositoryId, artifact.suggestions, artifact);
@@ -237,7 +261,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     const diff = 'diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -0,0 +1 @@\n+eval(req.body.code);\n';
     const findings = scanSast(diff).findings;
     const initial = await input();
-    const data = { ...initial, artifact: { ...initial.artifact, suggestions: findings } };
+    const data = { ...initial, reviewedDiff: diff, artifact: { ...initial.artifact, suggestions: findings } };
     const plan = await service.prepareReviewDelivery(data);
     const { EncryptionService } = await import('./encryption.service');
     const { snapshotIdentity, findingIdentity } = await import('./historical/occurrence.service');
@@ -249,7 +273,8 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     await record(data.jobId, repositoryId, artifact.suggestions, artifact);
     expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
     expect((await reload(data.jobId)).artifactHash).toBe(originalHash);
-    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+    expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
   });
   it('preserves findings on failure/cancellation and blocks completion races', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
@@ -263,12 +288,14 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     await persistReviewFailure(data.jobId, userId, 'FAILED', 'late failure');
     expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe(saved.status);
   });
-  it('rolls back preparation if saving results fails after creating the plan', async () => {
+  it('rolls back preparation when the persisted destination violates a database constraint', async () => {
     const data = await input();
     // A database constraint violation inside the transaction must roll back all rows.
-    const invalid = { ...data, artifact: { ...data.artifact, suggestions: [{ ...finding, lineNumber: 2 ** 40 }] } };
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { referenceId: String(2 ** 40) } });
+    const invalid = { ...data, prNumber: 2 ** 40 };
     await expect(service.prepareReviewDelivery(invalid)).rejects.toThrow();
     expect(await service.loadReviewDelivery(data.jobId)).toBeNull();
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { referenceId: '42' } });
     expect((await service.prepareReviewDelivery(data)).deliveries).toHaveLength(1);
   });
   it('keeps a late accepted receipt after cancellation without completing the cancelled job', async () => {

@@ -43,6 +43,18 @@ plans saved before this normalization fix, completion verifies the authenticated
 frozen findings against the original hash before accepting their normalized
 equivalent. Existing plan hashes, comment keys, and receipts are preserved.
 
+Inline locations now require server-generated added-line labels. AI citations
+are checked against the exact reviewed line and discarded before persistence;
+deterministic findings also require added-line membership. Invalid numbers are
+not rounded to a neighbour. Deduplication preserves distinct verified locations.
+Findings without location proof remain in history and one tracked fallback
+summary, even if the optional routine summary is disabled. Earlier pending plans
+without this proof omit unsent inline comments; confirmed and uncertain sends
+keep their existing conservative receipt/reconciliation rules. The fallback is
+recoverable even after a crash between omission and summary-slot creation.
+See [comment location validation](comment-line-validation-plan.md) for limits,
+tests, and deployment. Verified locations do not prove an AI's reasoning correct.
+
 The endpoint is `POST /api/jobs/:id/comments/reconcile`, restricted to the owning
 user and an active repository, with the existing request rate limiter.
 

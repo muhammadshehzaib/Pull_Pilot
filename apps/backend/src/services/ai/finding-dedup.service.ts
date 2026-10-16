@@ -118,14 +118,17 @@ export function deduplicate(findings: AiSuggestion[]): AiSuggestion[] {
     const exact = exactKey(finding);
     const loose = looseKey(finding);
 
-    const exactHit = kept.findIndex((k) => exactKey(k) === exact);
+    const sameAnchor = (k: AiSuggestion) => !(k.verifiedAnchor || finding.verifiedAnchor) ||
+      (k.filePath === finding.filePath && k.lineNumber === finding.lineNumber &&
+        (!k.verifiedAnchor || !finding.verifiedAnchor || k.verifiedAnchor === finding.verifiedAnchor));
+    const exactHit = kept.findIndex((k) => exactKey(k) === exact && sameAnchor(k));
     if (exactHit !== -1) {
       kept[exactHit] = merge(kept[exactHit], finding);
       continue;
     }
 
     const looseHit = byLooseKey.get(loose);
-    if (looseHit !== undefined) {
+    if (looseHit !== undefined && sameAnchor(kept[looseHit]!)) {
       kept[looseHit] = merge(kept[looseHit], finding);
       continue;
     }
@@ -133,6 +136,7 @@ export function deduplicate(findings: AiSuggestion[]): AiSuggestion[] {
     // Not an exact repeat, but the same file + category within a few lines is
     // the model reporting one problem across a multi-line block.
     const nearby = kept.findIndex((k) => {
+      if (!sameAnchor(k)) return false;
       if (normalizePath(k.filePath) !== normalizePath(finding.filePath)) return false;
       if (k.agentType !== finding.agentType) return false;
       return Math.abs((k.lineNumber || 0) - (finding.lineNumber || 0)) <= NEARBY_LINE_WINDOW;
@@ -183,6 +187,7 @@ function merge(existing: AiSuggestion, incoming: AiSuggestion): AiSuggestion {
     issue: existing.issue.length >= incoming.issue.length ? existing.issue : incoming.issue,
     suggestion: existing.suggestion.length >= incoming.suggestion.length ? existing.suggestion : incoming.suggestion,
     priority: strongestSeverity(existing.priority, incoming.priority),
+    ...((existing.verifiedAnchor ?? incoming.verifiedAnchor) ? { verifiedAnchor: existing.verifiedAnchor ?? incoming.verifiedAnchor } : {}),
     // A deterministic report of the same defect stays deterministically sourced
     // even if the model mentioned it first.
     source: strongerSource(existing.source, incoming.source),

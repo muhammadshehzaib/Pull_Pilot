@@ -164,14 +164,14 @@ describe('normalizeSuggestions', () => {
     expect(out[0].priority).toBe('INFO');
   });
 
-  it('repairs a non-integer or invalid line number instead of dropping the finding', () => {
+  it('preserves findings with invalid numbers for summaries without guessing an integer line', () => {
     const out = normalizeSuggestions([
       { ...base, lineNumber: 12.9, agentType: 'BUG', priority: 'LOW' },
       { ...base, lineNumber: 'abc', agentType: 'BUG', priority: 'LOW' },
     ]);
 
     expect(out).toHaveLength(2);
-    expect(out[0].lineNumber).toBe(12);
+    expect(out[0].lineNumber).toBe(0);
     expect(out[1].lineNumber).toBe(0);
   });
 

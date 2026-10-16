@@ -3,6 +3,10 @@ import type { CommentDelivery } from '@prisma/client';
 export const DELIVERY_TERMINAL_STATES = ['DELIVERED', 'REJECTED', 'OMITTED'] as const;
 export type DeliveryReport = ReturnType<typeof commentDeliveryReport>;
 
+export function needsLocationSummary(rows: Pick<CommentDelivery, 'kind' | 'reason'>[]) {
+  return rows.some(row => row.kind === 'INLINE' && row.reason === 'location-unverified') && !rows.some(row => row.kind === 'SUMMARY');
+}
+
 export function commentDeliveryReport(rows: Pick<CommentDelivery, 'kind' | 'state' | 'reason' | 'githubUrl'>[]) {
   const inline = rows.filter(r => r.kind === 'INLINE');
   const summary = rows.find(r => r.kind === 'SUMMARY');

@@ -269,6 +269,14 @@ describe('analysis worker — durable delivery entry', () => {
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(prepareReviewDelivery).not.toHaveBeenCalled();
     expect(mockJobUpdate).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SKIPPED' }) }));
   });
+  it('keeps the GitHub connector when a saved plan still needs its location fallback summary', async () => {
+    mockJobFindUnique.mockResolvedValue({ status: 'POSTING', deliveryVersion: 1, eventType: 'PULL_REQUEST', repositoryId: 'r-1', repository: authorizedRepository });
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ deliveries: [{ kind: 'INLINE', state: 'OMITTED', reason: 'location-unverified' }], artifact: { suggestions: [] } } as any);
+    vi.mocked(deliverReviewPlan).mockResolvedValueOnce({ artifact: { suggestions: [], commentFailures: [], summaryPosted: true } });
+    await capturedHandler.fn!(makeJobPayload());
+    expect(deliverReviewPlan).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ getPostingAuthorId: expect.anything() }), expect.any(AbortSignal));
+    expect(mockGetProvider).not.toHaveBeenCalled();
+  });
   it('does not restart a review belonging to an inactive repository', async () => {
     mockJobFindUnique.mockResolvedValue({ status: 'POSTING', repositoryId: 'r-1', repository: { isActive: false, userId: 'u-owner' } });
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow('unavailable');
@@ -375,6 +383,7 @@ describe('analysis worker — happy path', () => {
     expect(mockDecrypt).toHaveBeenCalledWith('ENC', 'IV', 'TAG', 'SALT');
     expect(mockGetProvider).toHaveBeenCalledWith('CLAUDE', 'sk-decrypted');
     expect(mockFetchDiff).toHaveBeenCalledWith('octo', 'cat', 'base-sha', 'head-sha');
+    expect(prepareReviewDelivery).toHaveBeenCalledWith(expect.objectContaining({ reviewedDiff: mockAnalyzeCode.mock.calls[0]![0] }));
     expect(mockCreateReviewComment).toHaveBeenCalledOnce();
     expect(result).toEqual({ status: 'success', findingCount: 1 });
   });

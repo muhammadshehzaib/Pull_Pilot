@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
+import { BaseAiProvider, AiSuggestion, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 
 export class GeminiProvider extends BaseAiProvider {
@@ -34,15 +34,15 @@ export class GeminiProvider extends BaseAiProvider {
         ${contextBlock}
         Here is the GIT DIFF to review:
         
-        ${diff}
+        ${this.renderReviewDiff(diff)}
       `;
 
       const result = await model.generateContent(prompt, { signal: options?.signal });
       const responseText = result.response.text();
 
-      const rawData = JSON.parse(responseText);
+      const rawData = this.parseReviewResponse(responseText);
       const normalized = Array.isArray(rawData) ? rawData : Object.values(rawData)[0];
-      return normalizeSuggestions(normalized);
+      return this.normalizeReviewFindings(normalized, diff);
       
     } catch (error) {
       console.error('🔴 Gemini Provider Error:', error);

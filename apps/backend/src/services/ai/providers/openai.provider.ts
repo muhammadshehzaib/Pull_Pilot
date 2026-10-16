@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
+import { BaseAiProvider, AiSuggestion, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 
 export class OpenAiProvider extends BaseAiProvider {
@@ -23,7 +23,7 @@ export class OpenAiProvider extends BaseAiProvider {
         model: 'gpt-4o', // Utilizing top-tier omni model for extreme reasoning
         messages: [
           { role: 'system', content: this.getSystemPrompt(customRules) },
-          { role: 'user', content: `${contextBlock}Here is the code diff:\n\n${diff}` }
+          { role: 'user', content: `${contextBlock}Here is the code diff:\n\n${this.renderReviewDiff(diff)}` }
         ],
         response_format: { type: 'json_object' }, // Enforce output structure parity
       }, { signal: options?.signal });
@@ -32,12 +32,12 @@ export class OpenAiProvider extends BaseAiProvider {
       
       // Depending on internal prompts, OpenAI sometimes nests the array inside an object
       // Let's handle standard parsing.
-      const rawData = JSON.parse(content);
+      const rawData = this.parseReviewResponse(content);
       
       // Normalize to array if model wrapped it in a parent key like "suggestions"
       const result = Array.isArray(rawData) ? rawData : Object.values(rawData)[0];
       
-      return normalizeSuggestions(result);
+      return this.normalizeReviewFindings(result, diff);
 
     } catch (error) {
       console.error('🔴 OpenAI Provider Error:', error);

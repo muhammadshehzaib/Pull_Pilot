@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { BaseAiProvider, AiSuggestion, normalizeSuggestions, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
+import { BaseAiProvider, AiSuggestion, type AnalyzeOptions, type JsonCompletionRequest } from './base.provider';
 import { type ReviewContext } from '../context-prompt';
 import { CLAUDE_MODEL } from '../../../utils/constants';
 
@@ -28,7 +28,7 @@ export class ClaudeProvider extends BaseAiProvider {
         messages: [
           // Context precedes the diff so the model reads surrounding code
           // first, then the change it is meant to judge.
-          { role: 'user', content: `${contextBlock}Here is the GIT DIFF to review:\n\n${diff}` },
+          { role: 'user', content: `${contextBlock}Here is the GIT DIFF to review:\n\n${this.renderReviewDiff(diff)}` },
         ],
       }, { signal: options?.signal });
 
@@ -37,10 +37,10 @@ export class ClaudeProvider extends BaseAiProvider {
 
       // Anthropic has no native JSON-mode toggle — strip stray code fences defensively.
       const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
-      const parsed = JSON.parse(cleaned);
+      const parsed = this.parseReviewResponse(cleaned);
 
       const result = Array.isArray(parsed) ? parsed : (Object.values(parsed)[0] as unknown);
-      return normalizeSuggestions(result);
+      return this.normalizeReviewFindings(result, diff);
     } catch (error) {
       console.error('🔴 Claude Provider Error:', error);
       throw new Error(`Claude API request failed: ${(error as Error).message}`);

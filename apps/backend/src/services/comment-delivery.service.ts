@@ -7,7 +7,8 @@ import { lockHistoricalRepository, historyCutoff } from './historical/state';
 import { renderFindingListItem, renderInlineComment } from './ai/finding-format';
 import { normalizeStoredSuggestions, type AiSuggestion } from './ai/finding-taxonomy';
 import type { GitHubService } from './github.service';
-import { commentDeliveryReport, DELIVERY_TERMINAL_STATES } from './comment-delivery-report';
+import { commentDeliveryReport, DELIVERY_TERMINAL_STATES, needsLocationSummary } from './comment-delivery-report';
+import { bindFindingAnchors } from './ai/review-anchors';
 
 // The artifact contains existing versioned review metadata in addition to findings.
 export type FrozenReview = Record<string, any> & { suggestions: AiSuggestion[] };
@@ -52,20 +53,22 @@ export async function loadReviewDelivery(jobId: string): Promise<Plan | null> {
 
 export async function prepareReviewDelivery(input: {
   jobId: string; repositoryId: string; userId: string; headSha: string; baseSha: string;
-  fullName: string; prNumber: number; expectedAuthorId: string; artifact: FrozenReview; summaryBase: string;
+  fullName: string; prNumber: number; expectedAuthorId: string; artifact: FrozenReview; summaryBase: string; reviewedDiff?: string;
 }): Promise<Plan> {
   if (!/^\d+$/.test(input.expectedAuthorId) || !Number.isSafeInteger(input.prNumber) || input.prNumber <= 0) throw new Error('Invalid review delivery destination');
   // Freeze the same trusted representation that completion publishes. Scanner
   // ruleKey aliases and other cleanup must happen before any identity is saved.
-  const suggestions = [...new Map(normalizeStoredSuggestions(input.artifact.suggestions).map(f => [findingIdentity(f), f])).values()];
-  const artifact: FrozenReview = { ...input.artifact, suggestions, summaryBase: input.summaryBase };
+  const bound = bindFindingAnchors(normalizeStoredSuggestions(input.artifact.suggestions), input.reviewedDiff ?? '');
+  const suggestions = [...new Map(bound.map(f => [findingIdentity(f), f])).values()];
+  const artifact: FrozenReview = { ...input.artifact, suggestions, summaryBase: input.summaryBase, commentLocationVersion: 1 };
   const sealed = await EncryptionService.encrypt(JSON.stringify(artifact));
   const rows: Prisma.CommentDeliveryUncheckedCreateWithoutPlanInput[] = [];
   for (const f of suggestions) {
     const id = randomUUID(), findingKey = findingIdentity(f);
     rows.push({ id, repositoryId: input.repositoryId, deliveryKey: `inline:v1:${findingKey}`, findingKey,
-      kind: 'INLINE' as const, state: 'READY' as const, path: f.filePath, line: f.lineNumber,
-      ...await payload(id, renderInlineComment(f)) });
+      kind: 'INLINE' as const, state: f.verifiedAnchor ? 'READY' as const : 'OMITTED' as const,
+      reason: f.verifiedAnchor ? null : 'location-unverified', path: f.filePath, line: f.lineNumber,
+      ...(f.verifiedAnchor ? await payload(id, renderInlineComment(f)) : {}) });
   }
   return prisma.$transaction(async tx => {
     const job = await lockedJob(tx, input.jobId, input.repositoryId);
@@ -78,7 +81,7 @@ export async function prepareReviewDelivery(input: {
     const plan = await tx.reviewDeliveryPlan.create({ data: {
       analysisJobId: input.jobId, artifactHash: snapshotIdentity(suggestions), headSha: input.headSha, baseSha: input.baseSha,
       fullName: input.fullName, prNumber: input.prNumber, expectedAuthorId: input.expectedAuthorId, ...sealed,
-      deliveries: { create: [...rows, ...(artifact.config?.summarize ? [{ id: randomUUID(), repositoryId: input.repositoryId,
+      deliveries: { create: [...rows, ...((artifact.config?.summarize || rows.some(r => r.reason === 'location-unverified')) ? [{ id: randomUUID(), repositoryId: input.repositoryId,
         deliveryKey: 'summary', kind: 'SUMMARY' as const, state: 'WAITING' as const }] : [])] },
     }, include: { deliveries: true } });
     const { summaryBase: _summaryBase, ...results } = artifact;
@@ -122,7 +125,7 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
       summaryPosted: !rows.some(r => r.kind === 'SUMMARY') || rows.some(r => r.kind === 'SUMMARY' && r.state === 'DELIVERED') } as FrozenReview };
   };
   const savedRows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
-  if (savedRows.every(r => terminal(r.state))) return finish(savedRows);
+  if (savedRows.every(r => terminal(r.state)) && !needsLocationSummary(savedRows)) return finish(savedRows);
   if (!gh) throw new Error('GitHub connector required for pending delivery');
   const job = await prisma.analysisJob.findUniqueOrThrow({ where: { id: plan.analysisJobId } });
   const repositoryId = job.repositoryId;
@@ -139,6 +142,18 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
   const send = async (row: CommentDelivery) => {
     if (signal?.aborted) throw new Error('Review delivery aborted');
     if (row.state !== 'READY') return;
+    if (row.kind === 'INLINE') {
+      const finding = artifact.suggestions.find(f => findingIdentity(f) === row.findingKey);
+      if (artifact.commentLocationVersion !== 1 || !finding?.verifiedAnchor ||
+          finding.filePath !== row.path || finding.lineNumber !== row.line) {
+        await prisma.$transaction(async tx => {
+          await lockedJob(tx, plan.analysisJobId, repositoryId);
+          await tx.commentDelivery.updateMany({ where: { id: row.id, state: 'READY' },
+            data: { state: 'OMITTED', reason: 'location-unverified' } });
+        });
+        return;
+      }
+    }
     if (row.nextAttemptAt && row.nextAttemptAt.getTime() > Date.now()) throw new DeliveryPendingError('GitHub requested delivery backoff', row.nextAttemptAt.getTime());
     const claimToken = randomUUID();
     const claimed = await prisma.$transaction(async tx => {
@@ -181,14 +196,29 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
   if (rows.some(r => r.kind === 'INLINE' && !terminal(r.state))) {
     throw pendingError(rows);
   }
+  if (needsLocationSummary(rows)) {
+    // Older plans may have disabled summaries. Add one tracked fallback slot
+    // under the job lock; never replace or repeat an existing summary receipt.
+    await prisma.$transaction(async tx => {
+      await lockedJob(tx, plan.analysisJobId, repositoryId);
+      if (!await tx.commentDelivery.findFirst({ where: { planId: plan.id, kind: 'SUMMARY' } })) {
+        await tx.commentDelivery.create({ data: { id: randomUUID(), planId: plan.id, repositoryId,
+          deliveryKey: 'summary', kind: 'SUMMARY', state: 'WAITING' } });
+      }
+    });
+    rows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
+  }
   const summary = rows.find(r => r.kind === 'SUMMARY');
   if (summary?.state === 'WAITING') {
     const rejected = new Set(rows.filter(r => r.kind === 'INLINE' && r.state === 'REJECTED').map(r => r.findingKey));
     const fallback = artifact.suggestions.filter(f => rejected.has(findingIdentity(f)));
+    const unverified = new Set(rows.filter(r => r.kind === 'INLINE' && r.reason === 'location-unverified').map(r => r.findingKey));
+    const uncertain = artifact.suggestions.filter(f => unverified.has(findingIdentity(f)));
     const report = commentDeliveryReport(rows);
     const body = [artifact.summaryBase, `- **Comments Posted Inline**: ${report.delivered}/${report.expected}`,
-      report.omitted ? `- **Comments omitted**: ${report.omitted} (reviewed head changed)` : '',
+      report.omitted ? `- **Comments omitted inline**: ${report.omitted}` : '',
       fallback.length ? '\n## Findings that could not be attached inline\n\n' + fallback.map(renderFindingListItem).join('\n') : '',
+      uncertain.length ? '\n## Findings without a verified code location\n\nThe reported file and line below could not be confirmed. These findings were not attached inline.\n\n' + uncertain.map(renderFindingListItem).join('\n') : '',
     ].filter(Boolean).join('\n');
     await prisma.$transaction(async tx => {
       await lockedJob(tx, plan.analysisJobId, repositoryId);

@@ -23,7 +23,7 @@ import type { TestGapReport } from '../services/test-gap/test-gap-types';
 import { prepareReviewDelivery, loadReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
 import type { GitHubService } from '../services/github.service';
 import { reviewBackoff } from '../services/review-backoff';
-import { DELIVERY_TERMINAL_STATES } from '../services/comment-delivery-report';
+import { DELIVERY_TERMINAL_STATES, needsLocationSummary } from '../services/comment-delivery-report';
 import { recordJobFindings } from '../services/historical/occurrence.service';
 import { RISK_ALGORITHM_VERSION } from '../services/analytics/facts';
 import { retrieveFeedbackAdaptation, adaptationAttribution } from '../services/feedback-loop/adaptation.service';
@@ -37,6 +37,7 @@ import { advanceReview, markReviewTerminal, wasSuperseded, isTerminalStatus, per
 import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS, CLAUDE_MODEL, GROK_MODEL } from '../utils/constants';
 import { IN_PROGRESS_REVIEW_STATUSES } from './job-state';
 import { settleFailedQueueJob } from './review-recovery';
+import { bindFindingAnchors } from '../services/ai/review-anchors';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -189,7 +190,7 @@ export const analysisWorker = new Worker(
       }
       const savedPlan = await loadReviewDelivery(jobId);
       if (savedPlan) {
-        const finished = savedPlan.deliveries?.every(r => (DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state));
+        const finished = savedPlan.deliveries?.every(r => (DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state)) && !needsLocationSummary(savedPlan.deliveries);
         const service = finished ? undefined : authorizedGitHub;
         return await finishDelivery(savedPlan, service);
       }
@@ -411,11 +412,11 @@ export const analysisWorker = new Worker(
       // behind a repo-wide threshold would make a DETERMINISTIC control silently
       // optional.
       const mergedFindings = sortBySeverity(
-        deduplicate([
+        deduplicate(bindFindingAnchors([
           ...rawSuggestions.filter((s) => DiffFilterService.isSeverityMet(s.priority, repoConfig.min_severity)),
           ...ruleEvaluation.violations,
           ...securityScan.findings,
-        ]),
+        ], filteredDiff)),
       );
 
       // The risk engine turns the merged list into one number and verdict, and
@@ -585,7 +586,7 @@ export const analysisWorker = new Worker(
       if (eventType === 'PULL_REQUEST') {
         const plan = await guard(prepareReviewDelivery({ jobId, repositoryId, userId, headSha, baseSha, fullName,
           prNumber: Number(referenceId), expectedAuthorId: await guard(ghService.getPostingAuthorId(abort.signal)),
-          artifact, summaryBase }));
+          artifact, summaryBase, reviewedDiff: filteredDiff }));
         return await finishDelivery(plan, ghService);
       }
       await recordJobFindings(jobId, repositoryId, suggestions, JSON.parse(JSON.stringify(artifact)));
