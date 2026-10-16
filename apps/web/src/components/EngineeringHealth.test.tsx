@@ -30,6 +30,51 @@ beforeEach(() => { vi.clearAllMocks(); data = report(); mockApi.mockImplementati
 }); });
 
 describe('engineering health dashboard', () => {
+  it('preserves both pages and the metric when a completion refresh supplies a new snapshot', async () => {
+    data.reviews.pagination = { page: 1, limit: 10, total: 30, totalPages: 3 };
+    data.repositories.pagination = { page: 1, limit: 10, total: 30, totalPages: 3 };
+    mockApi.mockImplementation(async (path: string) => {
+      const params = new URL(path, 'http://test').searchParams;
+      if (path.startsWith('/api/dashboard/reviews?')) return { reviews: { ...data.reviews, pagination: { ...data.reviews.pagination, page: Number(params.get('page')) } } };
+      if (path.startsWith('/api/dashboard/repositories?')) return { repositories: { ...data.repositories, pagination: { ...data.repositories.pagination, page: Number(params.get('page')) } } };
+      return data;
+    });
+    const user = userEvent.setup(); const { rerender } = render(<EngineeringHealth refreshKey={0} />);
+    await screen.findByRole('link', { name: 'owner/repo #42' });
+    await user.click(screen.getByRole('button', { name: 'Security findings detected' }));
+    await screen.findByText('Supporting reviews · security');
+    await user.click(screen.getAllByRole('button', { name: 'Next page' })[0]);
+    await screen.findByText(/Page 2 of 3/);
+    await user.click(screen.getAllByRole('button', { name: 'Next page' })[1]);
+    await waitFor(() => expect(screen.getAllByText(/Page 2 of 3/)).toHaveLength(2));
+    const checkpoint = mockApi.mock.calls.length;
+    const end = '2026-10-11T13:00:00.000Z';
+    data = { ...data, scope: { ...data.scope, end } };
+    rerender(<EngineeringHealth refreshKey={1} />);
+    await waitFor(() => expect(screen.getAllByText(/Page 2 of 3/)).toHaveLength(2));
+    const detailCalls = mockApi.mock.calls.slice(checkpoint).map(([path]) => path as string);
+    expect(detailCalls.some(path => path.startsWith('/api/dashboard/reviews?') && path.includes('metric=security') && path.includes('page=2') && path.includes(`asOf=${encodeURIComponent(end)}`))).toBe(true);
+    expect(detailCalls.some(path => path.startsWith('/api/dashboard/repositories?') && path.includes('page=2') && path.includes(`asOf=${encodeURIComponent(end)}`))).toBe(true);
+    await user.selectOptions(screen.getByLabelText('Reporting period'), '7d');
+    await waitFor(() => expect(screen.getAllByText(/Page 1 of 3/)).toHaveLength(2));
+    expect(screen.getByText('Supporting reviews · all')).toBeInTheDocument();
+  });
+
+  it('clamps only a page that disappeared from the refreshed snapshot', async () => {
+    data.reviews.pagination = { page: 1, limit: 10, total: 20, totalPages: 2 };
+    mockApi.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/dashboard/reviews?')) return { reviews: { ...data.reviews, pagination: { ...data.reviews.pagination, page: 2 } } };
+      return data;
+    });
+    const user = userEvent.setup(); const { rerender } = render(<EngineeringHealth refreshKey={0} />);
+    await screen.findByRole('link', { name: 'owner/repo #42' });
+    await user.click(screen.getAllByRole('button', { name: 'Next page' })[1]);
+    await screen.findByText(/Page 2 of 2/);
+    data = { ...data, reviews: { ...data.reviews, pagination: { page: 1, limit: 10, total: 1, totalPages: 1 } } };
+    rerender(<EngineeringHealth refreshKey={1} />);
+    await waitFor(() => expect(screen.getAllByText(/Page 1 of 1/)).toHaveLength(2));
+    expect(screen.queryByText(/Page 2 of/)).toBeNull();
+  });
   it('shows evidence limits, unavailable metrics and exact review links without prevention claims', async () => {
     render(<EngineeringHealth />);
     expect(await screen.findByText(/Partial evidence:/)).toBeInTheDocument();

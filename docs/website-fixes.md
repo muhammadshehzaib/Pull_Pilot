@@ -90,3 +90,26 @@ retry and do not prevent browsing the review list.
 Validation: 29 history/rules tests passed, including a later-page inactive repo,
 filtering without visiting its reviews, and filter-load failure/retry. Web typecheck
 passed.
+
+## 38 — Preserve health-panel navigation
+
+Plan: keep repository/review pagination and the selected metric across completion
+and manual refreshes. Reset them only on a reporting-scope change, and clamp a
+page only if it disappeared from the new snapshot.
+
+Implemented: refresh requests retain the user's navigation and load supporting
+records against the new snapshot time. Period/bucket/repository changes explicitly
+reset pages and metric; shrinking results land on the last valid page.
+Validation: 12 health/dashboard tests passed, including both pages plus a metric
+across a completion refresh, new-snapshot timestamps, filter reset, and shrinking
+results. Web typecheck passed.
+
+## Final validation
+
+- Full web suite: 247 tests passed across 31 files.
+- Full backend suite: 2,014 tests passed; 79 environment-gated tests skipped.
+- Web production build passed, including TypeScript and static page generation.
+- Backend build and web typechecks passed; whitespace checks passed.
+- Targeted auth, repository-loader, vault, and rules lint checks passed. Two
+  pre-existing history-detail state-in-effect lint errors remain, as noted in 35.
+- No database schema change or new migration is required by fixes 31–38.

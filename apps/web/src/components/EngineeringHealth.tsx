@@ -66,7 +66,6 @@ export function EngineeringHealth({ refreshKey = 0 }: { refreshKey?: number }) {
   useEffect(() => {
     const controller = new AbortController(); const sequence = ++snapshotSequence.current;
     setLoading(true); setError(''); setData(null); setReviews(null); setRepos(null); setDetailError('');
-    setReviewPage(1); setRepoPage(1); setMetric('all');
     const params = new URLSearchParams({ range, bucket }); if (repositoryId) params.set('repositoryId', repositoryId);
     api<EngineeringHealthReport>(`/api/dashboard/engineering-health?${params}`, { signal: controller.signal })
       .then(result => { if (!controller.signal.aborted && sequence === snapshotSequence.current) {
@@ -89,17 +88,26 @@ export function EngineeringHealth({ refreshKey = 0 }: { refreshKey?: number }) {
     params.set('page', String(repoPage));
     const repoRequest = repoPage === 1 ? Promise.resolve(data.repositories) :
       api<{ repositories: Page<HealthRepository> }>(`/api/dashboard/repositories?${params}`, { signal: controller.signal }).then(r => r.repositories);
-    Promise.all([reviewRequest, repoRequest]).then(([r, p]) => { if (!controller.signal.aborted) { setReviews(r); setRepos(p); } })
+    Promise.all([reviewRequest, repoRequest]).then(([r, p]) => { if (!controller.signal.aborted) {
+      setReviews(r); setRepos(p);
+      // Retention or filter changes can remove the last page of a new snapshot.
+      if (reviewPage > r.pagination.totalPages) setReviewPage(Math.max(1, r.pagination.totalPages));
+      if (repoPage > p.pagination.totalPages) setRepoPage(Math.max(1, p.pagination.totalPages));
+    } })
       .catch(() => { if (!controller.signal.aborted) setDetailError('Records could not be loaded. Refresh to retry or renew an expired snapshot.'); });
     return () => controller.abort();
   }, [data, metric, reviewPage, repoPage]);
+  function changeScope(update: () => void) {
+    setReviewPage(1); setRepoPage(1); setMetric('all');
+    update();
+  }
   return <section className="glass-card engineering-health" aria-label="Engineering health" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
-      <label>Period <select aria-label="Reporting period" value={range} onChange={e => setRange(e.target.value)}>
+      <label>Period <select aria-label="Reporting period" value={range} onChange={e => changeScope(() => setRange(e.target.value))}>
         <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option></select></label>
-      <label>Buckets <select aria-label="Trend buckets" value={bucket} onChange={e => setBucket(e.target.value)}>
+      <label>Buckets <select aria-label="Trend buckets" value={bucket} onChange={e => changeScope(() => setBucket(e.target.value))}>
         <option value="day">Daily</option><option value="week">Weekly (Monday UTC)</option></select></label>
-      <label>Repository <select aria-label="Repository filter" value={repositoryId} onChange={e => setRepository(e.target.value)}>
+      <label>Repository <select aria-label="Repository filter" value={repositoryId} onChange={e => changeScope(() => setRepository(e.target.value))}>
         <option value="">All connected repositories</option>{repositoryOptions.map(r => <option key={r.id} value={r.id}>{r.fullName}</option>)}</select></label>
       <button onClick={() => setRefresh(n => n + 1)}>Refresh health</button>
     </div>
@@ -127,7 +135,7 @@ export function EngineeringHealth({ refreshKey = 0 }: { refreshKey?: number }) {
       <RiskChart points={data.trend} />
       <h2>Repository breakdown</h2>
       {repos && <><div style={{ overflowX: 'auto' }}><table><thead><tr><th>Repository</th><th>Captured PRs</th><th>Critical findings</th><th>Security findings</th><th>Average risk</th></tr></thead>
-        <tbody>{repos.items.map(r => <tr key={r.id}><td><button onClick={() => setRepository(r.id)}>{r.fullName}</button></td><td>{display(r.reviewedPRs)}</td>
+        <tbody>{repos.items.map(r => <tr key={r.id}><td><button onClick={() => changeScope(() => setRepository(r.id))}>{r.fullName}</button></td><td>{display(r.reviewedPRs)}</td>
           <td>{display(r.criticalFindings)}</td><td>{display(r.securityFindings)}</td><td>{display(r.averageRisk, true)} ({r.scoredPRs} scored)</td></tr>)}</tbody></table></div>
         <Paging page={repos.pagination} onPage={setRepoPage} /></>}
       <h2>Supporting reviews · {metric}</h2>
