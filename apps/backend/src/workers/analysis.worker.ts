@@ -38,6 +38,7 @@ import { ANALYSIS_QUEUE_NAME, REVIEW_TIMEOUT_MS, CLAUDE_MODEL, GROK_MODEL } from
 import { IN_PROGRESS_REVIEW_STATUSES } from './job-state';
 import { settleFailedQueueJob } from './review-recovery';
 import { bindFindingAnchors } from '../services/ai/review-anchors';
+import { AiRequestError, assertReviewSize, MAX_AI_FINDINGS } from '../services/ai/ai-request-policy';
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
@@ -249,6 +250,10 @@ export const analysisWorker = new Worker(
       // 6. FETCH & FILTER RAW DIFF STREAM
       SocketService.emitStatus(userId, jobId, `📡 Fetching & Filtering Diff Stream`, 'FETCHING');
       const rawDiff = await guard(ghService.fetchDiff(owner, repo, baseSha, headSha));
+
+      // Reject the complete change before scanner truncation or paid AI calls.
+      // Filtering/ignoring files cannot bypass this cost/admission boundary.
+      assertReviewSize(rawDiff);
 
       await assertNotSuperseded();
 
@@ -548,6 +553,7 @@ export const analysisWorker = new Worker(
             '## 🤖 AI PR Review Summary',
             '',
             '- **Status**: Audit completed',
+            `- **AI Review Scope**: up to ${MAX_AI_FINDINGS} prioritized model findings; automated review is not exhaustive. Deterministic checks are reported separately.`,
             `- **Findings**: ${suggestions.length} actionable items flagged (min severity: \`${repoConfig.min_severity}\`)`,
             suggestions.length > 0
               ? `- **Breakdown**: ${severityTally(suggestions)}`
@@ -608,6 +614,18 @@ export const analysisWorker = new Worker(
           `🚫 Job ${jobId} abandoned mid-flight (${superseded ? 'cancelled or timed out' : 'unrecoverable'}). Status left as-is: ${message}`,
         );
         throw err;
+      }
+
+      if (err instanceof AiRequestError && !err.retryable) {
+        const needsAction = ['ai-invalid-key', 'ai-access-denied', 'ai-billing-required', 'ai-review-too-large', 'ai-prompt-too-large'].includes(err.reason);
+        try {
+          await markReviewTerminal(jobId, userId, needsAction ? 'SKIPPED' : 'FAILED', message, { reason: err.reason, error: message });
+        } catch {
+          // Settlement/recovery can retry the database write, never the paid
+          // request. A failed terminal write must not make this retryable.
+          console.warn('AI review failure settlement pending; recovery will recheck', { reason: err.reason });
+        }
+        throw new UnrecoverableError(message);
       }
 
       const permanent = isPermanentJobError(err);

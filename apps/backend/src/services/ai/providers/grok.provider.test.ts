@@ -51,6 +51,7 @@ describe('GrokProvider', () => {
       new GrokProvider('xai-abc');
       const opts = OpenAICtor.mock.calls.at(-1)?.[0] as any;
       expect(opts.apiKey).toBe('xai-abc');
+      expect(opts.maxRetries).toBe(0);
       expect(opts.baseURL).toBe('https://api.x.ai/v1');
     });
 
@@ -74,9 +75,9 @@ describe('GrokProvider', () => {
       await expect(provider.analyzeCode('diff')).resolves.toEqual([sample]);
     });
 
-    it('returns [] when wrapper value is not an array', async () => {
+    it('rejects a malformed wrapper instead of reporting a clean review', async () => {
       mockCreate.mockResolvedValueOnce(chatResponse(JSON.stringify({ msg: 'ok' })));
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
 
     it('requests json_object response format', async () => {
@@ -122,9 +123,9 @@ describe('GrokProvider', () => {
   });
 
   describe('analyzeCode() — additional edge cases', () => {
-    it('returns [] when content is null (falls back to "{}")', async () => {
+    it('rejects empty content instead of reporting a clean review', async () => {
       mockCreate.mockResolvedValueOnce({ choices: [{ message: { content: null } }] });
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
 
     it('does NOT use the default OpenAI base URL (must point to xAI)', () => {

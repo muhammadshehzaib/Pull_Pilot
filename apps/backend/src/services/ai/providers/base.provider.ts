@@ -17,6 +17,7 @@ import {
 } from '../../test-gap/test-draft-types';
 import { buildTestDraftPrompt, TEST_DRAFT_SYSTEM_PROMPT } from '../../test-gap/test-draft-prompt';
 import { labelledReviewDiff, normalizeAnchoredSuggestions } from '../review-anchors';
+import { assertReviewSize, MAX_AI_FINDINGS, AiRequestError } from '../ai-request-policy';
 
 export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
@@ -52,11 +53,12 @@ export interface JsonCompletionRequest {
 export const MAX_CONTEXT_CHARS = 60_000;
 
 export abstract class BaseAiProvider {
-  protected renderReviewDiff(diff: string) { return labelledReviewDiff(diff); }
+  protected renderReviewDiff(diff: string) { assertReviewSize(diff); return labelledReviewDiff(diff); }
   protected normalizeReviewFindings(raw: unknown, diff: string) { return normalizeAnchoredSuggestions(raw, diff); }
-  protected parseReviewResponse(text: string): any {
-    try { return JSON.parse(text); }
-    catch { throw new Error('AI review returned invalid JSON'); }
+  protected reviewResponse(raw: unknown, diff: string): AiSuggestion[] {
+    const findings = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw)[0] : undefined;
+    if (!Array.isArray(findings) || findings.length > MAX_AI_FINDINGS) throw new AiRequestError('ai-invalid-response');
+    return this.normalizeReviewFindings(findings, diff);
   }
   protected apiKey: string;
 
@@ -147,6 +149,7 @@ export abstract class BaseAiProvider {
       OUTPUT FORMAT RULES:
       You MUST output STRICT, RAW JSON only. Do not output markdown formatting (like \`\`\`json).
       The response must be an array of objects.
+      Return at most ${MAX_AI_FINDINGS} highest-priority findings. Keep issue under 300 characters and suggestion under 600 characters; finish the complete JSON within the output budget.
       Format per object:
       {
         "filePath": "string",

@@ -37,7 +37,7 @@ describe('OpenAiProvider', () => {
   describe('constructor', () => {
     it('initializes OpenAI client with the given API key', () => {
       new OpenAiProvider('sk-xyz');
-      expect(OpenAICtor).toHaveBeenLastCalledWith({ apiKey: 'sk-xyz' });
+      expect(OpenAICtor).toHaveBeenLastCalledWith({ apiKey: 'sk-xyz', maxRetries: 0 });
     });
 
     it('does NOT pass a baseURL (that is grok provider behavior)', () => {
@@ -72,14 +72,14 @@ describe('OpenAiProvider', () => {
       await expect(provider.analyzeCode('diff')).resolves.toEqual([sample]);
     });
 
-    it('returns [] when the wrapper value is not an array', async () => {
+    it('rejects a malformed wrapper instead of reporting a clean review', async () => {
       mockCreate.mockResolvedValueOnce(chatResponse(JSON.stringify({ note: 'clean' })));
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
 
-    it('returns [] when content is empty (fallback "{}")', async () => {
+    it('rejects empty content instead of reporting a clean review', async () => {
       mockCreate.mockResolvedValueOnce({ choices: [{ message: { content: null } }] });
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
 
     it('uses model gpt-4o and forces json_object response_format', async () => {
@@ -121,9 +121,9 @@ describe('OpenAiProvider', () => {
   });
 
   describe('analyzeCode() — additional edge cases', () => {
-    it('returns [] when content is the literal string "{}"', async () => {
+    it('rejects an empty object instead of reporting a clean review', async () => {
       mockCreate.mockResolvedValueOnce(chatResponse('{}'));
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
 
     it('takes only the first choice when multiple are returned', async () => {

@@ -5,7 +5,7 @@ import { ANALYSIS_QUEUE_NAME, FAILED_JOB_RETENTION_SECONDS } from '../utils/cons
 export const analysisQueue = new Queue(ANALYSIS_QUEUE_NAME, {
   connection: redisConnection,
   defaultJobOptions: {
-    attempts: 3, // Retry up to 3 times if failing
+    attempts: 3, // Three total attempts; permanent AI errors stop after the first.
     backoff: {
       type: 'review',
       delay: 1000, // Wait 1s, then 2s, then 4s

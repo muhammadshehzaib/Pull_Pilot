@@ -45,7 +45,7 @@ describe('ClaudeProvider', () => {
     });
     it('initializes the Anthropic client with the given API key', () => {
       new ClaudeProvider('sk-ant-abc');
-      expect(AnthropicCtor).toHaveBeenCalledWith({ apiKey: 'sk-ant-abc' });
+      expect(AnthropicCtor).toHaveBeenCalledWith({ apiKey: 'sk-ant-abc', maxRetries: 0 });
     });
   });
 
@@ -107,11 +107,11 @@ describe('ClaudeProvider', () => {
       expect(out).toEqual([sampleSuggestion]);
     });
 
-    it('returns [] when the wrapper value is not an array', async () => {
+    it('rejects a malformed wrapper instead of reporting a clean review', async () => {
       mockCreate.mockResolvedValueOnce(
         makeResponse(JSON.stringify({ note: 'no issues found' })),
       );
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
   });
 
@@ -192,11 +192,11 @@ describe('ClaudeProvider', () => {
       spy.mockRestore();
     });
 
-    it('passes max_tokens=4096 to bound runaway responses', async () => {
+    it('passes max_tokens=8192 to bound responses with room for complete findings', async () => {
       mockCreate.mockResolvedValueOnce(makeResponse('[]'));
       await provider.analyzeCode('diff');
       const call = mockCreate.mock.calls[0][0];
-      expect(call.max_tokens).toBe(4096);
+      expect(call.max_tokens).toBe(8192);
     });
   });
 });

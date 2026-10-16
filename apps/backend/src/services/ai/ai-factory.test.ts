@@ -55,6 +55,9 @@ describe('AiProviderFactory', () => {
   });
 
   describe('getProvider() — breaking path', () => {
+    it('rejects an empty vault key as a nonretryable authentication failure', () => {
+      expect(() => AiProviderFactory.getProvider('CLAUDE', '  ')).toThrow(expect.objectContaining({ reason: 'ai-invalid-key', retryable: false }));
+    });
     it('throws on an unknown provider type', () => {
       expect(() => AiProviderFactory.getProvider('PALANTIR' as any, 'x')).toThrow(
         /Unknown or unsupported AI Provider/,

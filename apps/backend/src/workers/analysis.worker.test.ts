@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { markdownNodes } from '../test-utils/markdown';
+const { mockClaudeSdkRequest } = vi.hoisted(() => ({ mockClaudeSdkRequest: vi.fn() }));
+vi.mock('@anthropic-ai/sdk', () => ({ default: class { messages = { create: mockClaudeSdkRequest }; } }));
 
 // Pipeline tests exercise detector results without OS scheduling/fake-timer
 // interference. Dedicated isolated-probe and scan-limits tests run real threads.
@@ -144,6 +146,8 @@ vi.mock('../config/socket', () => ({
 import './analysis.worker';
 import { REVIEW_TIMEOUT_MS } from '../utils/constants';
 import { RepositoryAccessError } from '../errors/repository-access.error';
+import { AiRequestError, MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_FILES } from '../services/ai/ai-request-policy';
+import { ClaudeProvider } from '../services/ai/providers/claude.provider';
 import { loadReviewDelivery, prepareReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
 const defaultPrepare = vi.mocked(prepareReviewDelivery).getMockImplementation()!;
 const defaultDeliver = vi.mocked(deliverReviewPlan).getMockImplementation()!;
@@ -611,6 +615,67 @@ describe('analysis worker — failure paths', () => {
 
     // The handler MUST throw — otherwise BullMQ won't retry the job.
     await expect(capturedHandler.fn!(makeJobPayload())).rejects.toThrow(/DB connection lost/);
+  });
+});
+
+describe('analysis worker — AI cost protection', () => {
+  it.each([
+    ['truncated', 'ai-response-truncated', 'FAILED'],
+    ['invalid JSON', 'ai-invalid-response', 'FAILED'],
+    ['invalid key', 'ai-invalid-key', 'SKIPPED'],
+  ])('stops a real Claude %s failure after one SDK call despite three allowed queue attempts', async (failure, reason, status) => {
+    mockRepoFindUnique.mockResolvedValue(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValue('diff --git a/a.ts b/a.ts\n+x');
+    mockGetProvider.mockReturnValue(new ClaudeProvider('test-key'));
+    if (failure === 'invalid key') mockClaudeSdkRequest.mockRejectedValue(Object.assign(new Error('private-key'), { status: 401 }));
+    else mockClaudeSdkRequest.mockResolvedValue({ stop_reason: failure === 'truncated' ? 'max_tokens' : 'end_turn',
+      content: [{ type: 'text', text: failure === 'truncated' ? '[]' : 'private-source broken JSON' }] });
+    const job = { ...makeJobPayload(), opts: { attempts: 3 }, attemptsMade: 0 };
+    let thrown: Error | undefined;
+    for (job.attemptsMade = 0; job.attemptsMade < 3; job.attemptsMade++) {
+      try { await capturedHandler.fn!(job); }
+      catch (error) { thrown = error as Error; if (thrown.name === 'UnrecoverableError') break; }
+    }
+    expect(thrown?.name).toBe('UnrecoverableError');
+    expect(mockClaudeSdkRequest).toHaveBeenCalledOnce();
+    expect(mockJobUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status, results: expect.objectContaining({ reason }) }) }));
+    expect(mockCreateReviewComment).not.toHaveBeenCalled(); expect(prepareReviewDelivery).not.toHaveBeenCalled();
+    expect(JSON.stringify(mockEmitStatus.mock.calls)).not.toContain('private-source');
+    expect(JSON.stringify(mockJobUpdate.mock.calls)).not.toContain('private-key');
+  });
+
+  it.each(['bytes', 'files'])('rejects an oversized raw PR by %s before AI dispatch', async limit => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce(limit === 'bytes' ? 'x'.repeat(MAX_REVIEW_DIFF_BYTES + 1)
+      : Array.from({ length: MAX_REVIEW_FILES + 1 }, (_, n) => `diff --git a/${n} b/${n}\n`).join(''));
+    await expect(capturedHandler.fn!({ ...makeJobPayload(), opts: { attempts: 3 }, attemptsMade: 0 }))
+      .rejects.toMatchObject({ name: 'UnrecoverableError' });
+    expect(mockGetProvider).not.toHaveBeenCalled(); expect(mockAnalyzeCode).not.toHaveBeenCalled();
+    expect(mockJobUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'SKIPPED',
+      results: expect.objectContaining({ reason: 'ai-review-too-large' }) }) }));
+  });
+
+  it.each(['ai-rate-limited', 'ai-provider-unavailable'] as const)('keeps %s retryable for the queue', async reason => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff --git a/a.ts b/a.ts\n+x');
+    mockAnalyzeCode.mockRejectedValueOnce(new AiRequestError(reason, 'Claude', reason === 'ai-rate-limited' ? 429 : 503));
+    await expect(capturedHandler.fn!({ ...makeJobPayload(), opts: { attempts: 3 }, attemptsMade: 0 }))
+      .rejects.toMatchObject({ retryable: true });
+    expect(mockAnalyzeCode).toHaveBeenCalledOnce();
+    expect(mockJobUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'RETRYING' }) }));
+  });
+
+  it('still stops automatic AI replay if persisting the terminal failure hits a database outage', async () => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff --git a/a.ts b/a.ts\n+x');
+    mockAnalyzeCode.mockRejectedValueOnce(new AiRequestError('ai-response-truncated', 'Claude'));
+    mockJobUpdate.mockImplementation(async ({ data }: any) => {
+      if (data.status === 'FAILED') throw new Error('database unavailable');
+      return { count: 1 };
+    });
+    await expect(capturedHandler.fn!({ ...makeJobPayload(), opts: { attempts: 3 }, attemptsMade: 0 }))
+      .rejects.toMatchObject({ name: 'UnrecoverableError' });
+    expect(mockAnalyzeCode).toHaveBeenCalledOnce();
   });
 });
 

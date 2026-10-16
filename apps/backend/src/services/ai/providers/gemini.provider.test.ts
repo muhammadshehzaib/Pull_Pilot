@@ -62,7 +62,7 @@ describe('GeminiProvider', () => {
 
       expect(mockGetGenerativeModel).toHaveBeenCalledWith({
         model: 'gemini-2.5-flash',
-        generationConfig: { responseMimeType: 'application/json' },
+        generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 8192 },
       });
     });
 
@@ -107,11 +107,11 @@ describe('GeminiProvider', () => {
       await expect(provider.analyzeCode('diff')).resolves.toEqual([sample]);
     });
 
-    it('returns [] when the wrapper value is not an array', async () => {
+    it('rejects a malformed wrapper instead of reporting a clean review', async () => {
       mockGenerateContent.mockResolvedValueOnce(
         geminiResponse(JSON.stringify({ note: 'no issues' })),
       );
-      await expect(provider.analyzeCode('diff')).resolves.toEqual([]);
+      await expect(provider.analyzeCode('diff')).rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
     });
   });
 
@@ -141,13 +141,10 @@ describe('GeminiProvider', () => {
       expect(promptArg).toMatch(/RULE_ONE[\s\S]*RULE_TWO[\s\S]*RULE_THREE/);
     });
 
-    it('handles a very large diff without truncation in the prompt', async () => {
-      mockGenerateContent.mockResolvedValueOnce(geminiResponse('[]'));
+    it('rejects a very large diff before any paid request', async () => {
       const bigDiff = 'X'.repeat(200_000);
-      await provider.analyzeCode(bigDiff);
-
-      const promptArg = mockGenerateContent.mock.calls[0][0] as string;
-      expect(promptArg).toContain(bigDiff);
+      await expect(provider.analyzeCode(bigDiff)).rejects.toMatchObject({ reason: 'ai-review-too-large', retryable: false });
+      expect(mockGenerateContent).not.toHaveBeenCalled();
     });
 
     it('returns [] when model returns an empty single-key object wrapper with []', async () => {
@@ -166,13 +163,15 @@ describe('GeminiProvider', () => {
         },
       });
       await expect(provider.analyzeCode('diff')).rejects.toThrow(
-        /Gemini API request failed.*safety/i,
+        /Gemini API request failed.*Automatic retries stopped/i,
       );
     });
 
-    it('surfaces the underlying error message in the thrown error', async () => {
+    it('does not expose an unclassified upstream message', async () => {
       mockGenerateContent.mockRejectedValueOnce(new Error('PERMISSION_DENIED'));
-      await expect(provider.analyzeCode('diff')).rejects.toThrow(/PERMISSION_DENIED/);
+      const error = await provider.analyzeCode('diff').catch(error => error);
+      expect(error).toMatchObject({ reason: 'ai-request-unconfirmed', retryable: false });
+      expect(error.message).not.toContain('PERMISSION_DENIED');
     });
 
     it('logs the error to console.error before re-throwing', async () => {
