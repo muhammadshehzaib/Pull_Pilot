@@ -237,7 +237,7 @@ describe('BillingController', () => {
 
     it('syncs entitlement on subscription.created', async () => {
       const data = { id: 'sub_1', customer: { external_id: 'user-123' } };
-      mocked.validateWebhookEvent.mockResolvedValueOnce({ type: 'subscription.created', data });
+      mocked.validateWebhookEvent.mockResolvedValueOnce({ type: 'subscription.created', timestamp: '2026-10-17T10:00:00Z', data });
       mocked.syncSubscription.mockResolvedValueOnce({ userId: 'user-123', tier: 'INDIE' });
 
       const req = mockReq({ rawBody: Buffer.from('{}'), headers: {} });
@@ -245,15 +245,16 @@ describe('BillingController', () => {
 
       await BillingController.handleWebhook(req, res);
 
-      expect(mocked.syncSubscription).toHaveBeenCalledWith(data);
+      expect(mocked.syncSubscription).toHaveBeenCalledWith(data, '2026-10-17T10:00:00Z');
       expect(res.status).toHaveBeenCalledWith(202);
     });
 
-    it.each(['subscription.canceled', 'subscription.revoked'])(
+    it.each(['subscription.revoked'])(
       'revokes access on %s when the user has no other subscription',
       async (type) => {
       mocked.validateWebhookEvent.mockResolvedValueOnce({
         type,
+        timestamp: '2026-10-17T10:00:00Z',
         data: { id: 'sub_1' },
       });
       mocked.syncCancellation.mockResolvedValueOnce({ userId: 'user-123' });
@@ -263,7 +264,18 @@ describe('BillingController', () => {
 
       await BillingController.handleWebhook(req, res);
 
-      expect(mocked.syncCancellation).toHaveBeenCalledWith({ id: 'sub_1' });
+      expect(mocked.syncCancellation).toHaveBeenCalledWith({ id: 'sub_1' }, '2026-10-17T10:00:00Z');
+      expect(res.status).toHaveBeenCalledWith(202);
+    });
+
+    it('syncs a scheduled cancellation without forcing immediate revocation', async () => {
+      const data = { id: 'sub_1', status: 'active', cancel_at_period_end: true };
+      mocked.validateWebhookEvent.mockResolvedValueOnce({ type: 'subscription.canceled', timestamp: '2026-10-17T10:00:00Z', data });
+      mocked.syncSubscription.mockResolvedValueOnce({ userId: 'user-123', tier: 'TEAM' });
+      const res = mockRes();
+      await BillingController.handleWebhook(mockReq({ rawBody: Buffer.from('{}'), headers: {} }), res);
+      expect(mocked.syncSubscription).toHaveBeenCalledWith(data, '2026-10-17T10:00:00Z');
+      expect(mocked.syncCancellation).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(202);
     });
 

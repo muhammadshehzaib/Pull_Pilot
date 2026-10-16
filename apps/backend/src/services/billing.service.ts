@@ -17,7 +17,7 @@ export interface PolarSubscriptionLike {
   id: string;
   status?: string | null;
   product_id?: string | null;
-  current_period_end?: string | null;
+  current_period_end?: string | Date | null;
   cancel_at_period_end?: boolean | null;
   customer?: { id?: string | null; external_id?: string | null } | null;
   prices?: { recurring_interval?: string | null }[] | null;
@@ -243,11 +243,14 @@ export class BillingService {
    * Applies a Polar subscription event to local state and re-derives the user's
    * entitlement.
    */
-  static async syncSubscription(subscription: PolarSubscriptionLike): Promise<{
+  static async syncSubscription(subscription: PolarSubscriptionLike, eventTimestamp: string | Date): Promise<{
     userId: string | null;
     tier: PlanTier;
   }> {
-    const userId = subscription.customer?.external_id ?? null;
+    const eventAt = new Date(eventTimestamp);
+    if (!Number.isFinite(eventAt.getTime())) throw new Error('Invalid billing event timestamp');
+    const known = await prisma.subscription.findUnique({ where: { polarSubscriptionId: subscription.id } });
+    const userId = known?.userId ?? subscription.customer?.external_id ?? null;
     if (!userId) {
       // Subscriptions created outside our checkout (manual Polar dashboard
       // edits) have no external id. There is nothing to grant against.
@@ -263,65 +266,58 @@ export class BillingService {
       ? new Date(subscription.current_period_end)
       : null;
 
-    await prisma.subscription.upsert({
-      where: { polarSubscriptionId: subscription.id },
-      update: {
-        userId,
-        status,
-        plan: tier,
-        billingCycle: this.cycleForSubscription(subscription),
-        currentPeriodEnd: periodEnd,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-        polarCustomerId: subscription.customer?.id ?? undefined,
-        polarProductId: subscription.product_id ?? undefined,
-      },
-      create: {
-        userId,
-        provider: 'polar',
-        polarSubscriptionId: subscription.id,
-        polarCustomerId: subscription.customer?.id ?? null,
-        polarProductId: subscription.product_id ?? null,
-        plan: tier,
-        status,
-        billingCycle: this.cycleForSubscription(subscription),
-        currentPeriodEnd: periodEnd,
-        cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
-      },
-    });
+    return prisma.$transaction(async tx => {
+      // All subscription changes for an account share this lock, including
+      // entitlement writes to its installations.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+      const existing = await tx.subscription.findUnique({ where: { polarSubscriptionId: subscription.id } });
+      const sameTimeRevocation = existing?.lastEventAt?.getTime() === eventAt.getTime() &&
+        status === 'canceled' && this.isEntitlingStatus(existing.status);
+      if (existing?.lastEventAt && existing.lastEventAt >= eventAt && !sameTimeRevocation) {
+        return { userId, tier: existing.plan };
+      }
+      await tx.subscription.upsert({
+        where: { polarSubscriptionId: subscription.id },
+        update: {
+          userId,
+          status,
+          lastEventAt: eventAt,
+          plan: tier,
+          billingCycle: this.cycleForSubscription(subscription),
+          currentPeriodEnd: periodEnd,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+          polarCustomerId: subscription.customer?.id ?? undefined,
+          polarProductId: subscription.product_id ?? undefined,
+        },
+        create: {
+          userId,
+          provider: 'polar',
+          polarSubscriptionId: subscription.id,
+          polarCustomerId: subscription.customer?.id ?? null,
+          polarProductId: subscription.product_id ?? null,
+          plan: tier,
+          status,
+          lastEventAt: eventAt,
+          billingCycle: this.cycleForSubscription(subscription),
+          currentPeriodEnd: periodEnd,
+          cancelAtPeriodEnd: subscription.cancel_at_period_end ?? false,
+        },
+      });
 
-    await this.syncEntitlements(userId);
-    return { userId, tier };
+      await this.syncEntitlements(userId, tx);
+      return { userId, tier };
+    });
   }
 
   /**
    * Ends a subscription's entitlement. If the user holds another still-active
    * subscription their access is left alone.
    */
-  static async syncCancellation(subscription: { id: string }): Promise<{ userId: string | null }> {
-    const existing = await prisma.subscription.findUnique({
-      where: { polarSubscriptionId: subscription.id },
-    });
-
-    if (!existing) return { userId: null };
-
-    const stillCovered = await prisma.subscription.findFirst({
-      where: {
-        userId: existing.userId,
-        id: { not: existing.id },
-        status: { in: [...ENTITLING_STATUSES] },
-      },
-    });
-
-    await prisma.subscription.update({
-      where: { id: existing.id },
-      data: { status: 'canceled', plan: 'FREE', cancelAtPeriodEnd: false },
-    });
-
-    if (!stillCovered) {
-      await this.syncEntitlements(existing.userId);
-    }
-
-    return { userId: existing.userId };
+  static async syncCancellation(subscription: PolarSubscriptionLike, eventTimestamp: string | Date): Promise<{ userId: string | null }> {
+    // Revocations must be persisted even when delivered before the creation
+    // event; otherwise a delayed activation can bring revoked access back.
+    const { userId } = await this.syncSubscription({ ...subscription, status: 'canceled', cancel_at_period_end: false }, eventTimestamp);
+    return { userId };
   }
 
   /**

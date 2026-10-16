@@ -132,10 +132,12 @@ export const SYNC_EVENTS = new Set([
   'subscription.migrated',
   'subscription.past_due',
   'subscription.paused',
+  // A scheduled cancellation keeps access until Polar revokes it.
+  'subscription.canceled',
 ]);
 
 /** Events that end entitlement for the referenced subscription. */
-export const CANCEL_EVENTS = new Set(['subscription.canceled', 'subscription.revoked']);
+export const CANCEL_EVENTS = new Set(['subscription.revoked']);
 
 /* -------------------------------------------------------------------------- */
 /* AI providers                                                               */

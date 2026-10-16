@@ -16,9 +16,25 @@ Implemented: the authenticated installation claim now calls the entitlement
 service with its transaction. Regression coverage checks Team, Indie, and Free
 customers. Validation: 50 billing/auth tests passed; backend TypeScript build passed.
 
+## 26 — Ordered billing events
+
+Plan: retain Polar's signed event timestamp per subscription, serialize account
+updates with a user row lock, and commit subscription state and entitlement
+together. Persist revocations even if the creation delivery has not arrived.
+
+Implemented: older and duplicate events are ignored; revocation wins timestamp
+ties. Installation linking takes the same account lock. Scheduled cancellation
+uses the supplied subscription status rather than forcing early revocation,
+per https://polar.sh/docs/api-reference/webhooks/subscription.canceled.
+Immediate revocation also recalculates remaining entitlement atomically.
+
+Validation: 72 billing/controller/auth tests passed, including both out-of-order
+directions, duplicate events, equal timestamps, and revocation before creation.
+Backend build passed. The `20261023000000_billing_event_order` migration must be
+applied before deploying the code. No live database was modified.
+
 ## Remaining confirmed issues
 
-- 26: billing event handlers overwrite subscription state without ordering checks.
 - 27: entitlement and overview select the most recently updated subscription;
   cancellation skips recalculation if another subscription exists.
 - 28: reservations use separate installation/user ledgers and do not restrict

@@ -82,6 +82,7 @@ export class AuthController {
       const details = await GitHubAppService.getInstallationDetails(installationId);
       const repositories = await GitHubAppService.getInstallationRepositories(installationId);
       await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM users WHERE id = ${claim.userId} FOR UPDATE`;
         const consumed = await tx.installationClaim.deleteMany({ where: { id: claim.id, stateHash } });
         if (consumed.count !== 1) throw new Error('Installation state has already been used');
         const installation = await tx.installation.update({

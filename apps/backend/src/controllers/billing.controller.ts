@@ -101,7 +101,7 @@ export class BillingController {
     try {
       if (CANCEL_EVENTS.has(type)) {
         const { userId } = await BillingService.syncCancellation(
-          event.data as { id: string },
+          event.data as PolarSubscriptionLike, event.timestamp,
         );
         console.log(`💳 Polar ${type}: revoked access for user ${userId ?? '(unknown)'}`);
         return res.status(202).json({ received: true });
@@ -109,7 +109,7 @@ export class BillingController {
 
       if (SYNC_EVENTS.has(type)) {
         const { userId, tier } = await BillingService.syncSubscription(
-          event.data as PolarSubscriptionLike,
+          event.data as PolarSubscriptionLike, event.timestamp,
         );
         console.log(`💳 Polar ${type}: user ${userId ?? '(unknown)'} -> ${tier}`);
         return res.status(202).json({ received: true });

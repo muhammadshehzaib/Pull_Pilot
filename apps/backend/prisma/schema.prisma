@@ -94,6 +94,8 @@ model Subscription {
   billingCycle         String    @default("monthly")
   currentPeriodEnd     DateTime?
   cancelAtPeriodEnd    Boolean   @default(false)
+  /// Provider event time, never the time a delayed delivery reached our server.
+  lastEventAt          DateTime?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

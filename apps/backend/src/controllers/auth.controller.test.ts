@@ -266,6 +266,7 @@ describe('AuthController.completeGitHubAppInstall — safe failure logging', () 
     vi.spyOn(GitHubAppService, 'getInstallationDetails').mockResolvedValueOnce({ account: { login: 'org' } });
     vi.spyOn(GitHubAppService, 'getInstallationRepositories').mockResolvedValueOnce([]);
     const tx = {
+      $queryRaw: vi.fn(),
       installationClaim: { deleteMany: vi.fn(async () => ({ count: 1 })) },
       installation: { update: vi.fn(async () => ({ id: 'new-org' })), updateMany: vi.fn() },
       subscription: { findFirst: vi.fn(async () => plan === 'FREE' ? null : ({ plan, status: 'active' })) },

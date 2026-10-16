@@ -5,6 +5,8 @@ import { BillingService, BillingConfigurationError, AVAILABLE_PLANS } from './bi
 
 vi.mock('../config/prisma', () => ({
   default: {
+    $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
     user: { findUnique: vi.fn() },
     installation: { findMany: vi.fn(), updateMany: vi.fn() },
     subscription: {
@@ -46,6 +48,10 @@ const quota = QuotaService as unknown as {
   getOrCreateLedger: ReturnType<typeof vi.fn>;
 };
 
+const EVENT_AT = '2026-10-17T10:00:00Z';
+const syncSubscription = (s: Parameters<typeof BillingService.syncSubscription>[0]) => BillingService.syncSubscription(s, EVENT_AT);
+const syncCancellation = (s: Parameters<typeof BillingService.syncCancellation>[0]) => BillingService.syncCancellation(s, EVENT_AT);
+
 const ENV_KEYS = [
   'POLAR_ACCESS_TOKEN',
   'POLAR_WEBHOOK_SECRET',
@@ -61,6 +67,8 @@ const savedEnv: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) => callback(prisma));
+  db.subscription.findUnique.mockResolvedValue(null);
   for (const key of ENV_KEYS) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
@@ -195,7 +203,7 @@ describe('BillingService.syncSubscription', () => {
   });
 
   it('does nothing when the customer has no external id', async () => {
-    const result = await BillingService.syncSubscription({ id: 'sub_1', status: 'active' });
+    const result = await syncSubscription({ id: 'sub_1', status: 'active' });
     expect(result).toEqual({ userId: null, tier: 'FREE' });
     expect(db.subscription.upsert).not.toHaveBeenCalled();
   });
@@ -205,7 +213,7 @@ describe('BillingService.syncSubscription', () => {
     db.subscription.findFirst.mockResolvedValueOnce({ plan: 'INDIE', status: 'active' });
     db.installation.updateMany.mockResolvedValueOnce({ count: 2 });
 
-    const result = await BillingService.syncSubscription({
+    const result = await syncSubscription({
       id: 'sub_1',
       status: 'active',
       product_id: 'prod_indie_m',
@@ -238,7 +246,7 @@ describe('BillingService.syncSubscription', () => {
     db.subscription.findFirst.mockResolvedValueOnce(null);
     db.installation.updateMany.mockResolvedValueOnce({ count: 1 });
 
-    const result = await BillingService.syncSubscription({
+    const result = await syncSubscription({
       id: 'sub_1',
       status: 'canceled',
       product_id: 'prod_indie_m',
@@ -260,7 +268,7 @@ describe('BillingService.syncSubscription', () => {
     db.subscription.findFirst.mockResolvedValueOnce(null);
     db.installation.updateMany.mockResolvedValueOnce({ count: 0 });
 
-    const result = await BillingService.syncSubscription({
+    const result = await syncSubscription({
       id: 'sub_1',
       status: 'active',
       product_id: 'prod_something_else',
@@ -271,43 +279,42 @@ describe('BillingService.syncSubscription', () => {
   });
 });
 
-describe('BillingService.syncCancellation', () => {
-  it('returns null for an unknown subscription', async () => {
-    db.subscription.findUnique.mockResolvedValueOnce(null);
-    const result = await BillingService.syncCancellation({ id: 'sub_missing' });
-    expect(result).toEqual({ userId: null });
-    expect(db.subscription.update).not.toHaveBeenCalled();
-  });
-
-  it('downgrades installations when no other subscription is active', async () => {
-    db.subscription.findUnique.mockResolvedValueOnce({ id: 'sub_1', userId: 'user-123' });
-    db.subscription.findFirst.mockResolvedValueOnce(null); // no other active sub
-    db.subscription.update.mockResolvedValueOnce({});
-    db.subscription.findFirst.mockResolvedValueOnce(null); // syncEntitlements lookup
-    db.installation.updateMany.mockResolvedValueOnce({ count: 1 });
-
-    const result = await BillingService.syncCancellation({ id: 'sub_1' });
-
-    expect(result).toEqual({ userId: 'user-123' });
-    expect(db.subscription.update).toHaveBeenCalledWith({
-      where: { id: 'sub_1' },
-      data: { status: 'canceled', plan: 'FREE', cancelAtPeriodEnd: false },
-    });
-    expect(db.installation.updateMany).toHaveBeenCalledWith({
-      where: { userId: 'user-123' },
-      data: { plan: 'FREE' },
-    });
-  });
-
-  it('keeps existing access when the user has another active subscription', async () => {
-    db.subscription.findUnique.mockResolvedValueOnce({ id: 'sub_1', userId: 'user-123' });
-    db.subscription.findFirst.mockResolvedValueOnce({ id: 'sub_2', status: 'active' });
-    db.subscription.update.mockResolvedValueOnce({});
-
-    const result = await BillingService.syncCancellation({ id: 'sub_1' });
-
-    expect(result).toEqual({ userId: 'user-123' });
+describe('BillingService event ordering', () => {
+  const newerAt = new Date('2026-10-17T12:00:00Z');
+  it.each(['active', 'canceled'])('ignores an older %s delivery', async status => {
+    db.subscription.findUnique.mockResolvedValue({ userId: 'user-123', plan: 'FREE', lastEventAt: newerAt });
+    const result = await syncSubscription({ id: 'sub_1', status, customer: { external_id: 'user-123' } });
+    expect(result.tier).toBe('FREE');
+    expect(db.subscription.upsert).not.toHaveBeenCalled();
     expect(db.installation.updateMany).not.toHaveBeenCalled();
+  });
+  it('ignores an older revocation after newer activation', async () => {
+    db.subscription.findUnique.mockResolvedValue({ userId: 'user-123', plan: 'TEAM', lastEventAt: newerAt });
+    await syncCancellation({ id: 'sub_1' });
+    expect(db.subscription.upsert).not.toHaveBeenCalled();
+  });
+  it('ignores duplicate events', async () => {
+    db.subscription.findUnique.mockResolvedValue({ userId: 'user-123', plan: 'TEAM', lastEventAt: new Date(EVENT_AT) });
+    await syncSubscription({ id: 'sub_1', status: 'active' });
+    expect(db.subscription.upsert).not.toHaveBeenCalled();
+  });
+  it('gives revocation precedence when event times are equal', async () => {
+    db.subscription.findUnique.mockResolvedValue({ userId: 'user-123', plan: 'TEAM', status: 'active', lastEventAt: new Date(EVENT_AT) });
+    db.subscription.findFirst.mockResolvedValueOnce(null);
+    await syncCancellation({ id: 'sub_1' });
+    expect(db.subscription.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ status: 'canceled' }) }));
+  });
+  it('records revocation delivered before subscription creation', async () => {
+    db.subscription.findFirst.mockResolvedValueOnce(null);
+    await syncCancellation({ id: 'sub_new', customer: { external_id: 'user-123' } });
+    expect(db.subscription.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ status: 'canceled', plan: 'FREE', lastEventAt: new Date(EVENT_AT) }),
+    }));
+    expect(db.installation.updateMany).toHaveBeenCalledWith({ where: { userId: 'user-123' }, data: { plan: 'FREE' } });
+  });
+  it('rejects invalid timestamps without changing state', async () => {
+    await expect(BillingService.syncSubscription({ id: 's' }, 'bad')).rejects.toThrow('timestamp');
+    expect(db.subscription.upsert).not.toHaveBeenCalled();
   });
 });
 
