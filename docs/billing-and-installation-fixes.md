@@ -33,10 +33,6 @@ directions, duplicate events, equal timestamps, and revocation before creation.
 Backend build passed. The `20261023000000_billing_event_order` migration must be
 applied before deploying the code. No live database was modified.
 
-## Remaining confirmed issues
-
-- 30: repository removal filters only by GitHub repository ID, across installations.
-
 ## 27 — Highest active paid plan
 
 Plan: centralize selection of recognized, entitling subscriptions and rank Team
@@ -97,3 +93,25 @@ integration tests cover real account locks and concurrent checkout reuse when
 
 Deployment: apply `20261025000000_checkout_guard` before starting the new code.
 The Polar access token needs subscription read access as well as checkout access.
+
+## 30 — Installation-scoped repository removal
+
+Plan: scope both deactivation and the list used for cancellation/cache cleanup to
+the installation identified by the signed GitHub event.
+
+Implemented: removal now matches both GitHub repository ID and installation ID.
+Other installation connections and direct connections stay active; their reviews
+and cached code are not touched. Validation: 82 webhook/recovery/body integration
+tests passed, including a shared-repository scenario across three accounts, and
+the backend build passed.
+
+## Final validation
+
+- Full backend suite: 2,014 tests passed; 79 environment-gated tests skipped.
+- Full web suite: 215 tests passed.
+- Backend TypeScript build, web typecheck, changed frontend component lint, and
+  whitespace checks passed.
+- All three new SQL migrations passed the disposable PostgreSQL-engine checks
+  described above. Live multi-connection PostgreSQL tests remain environment-gated.
+- Deployment still requires the three migrations and the producer-stop sequence
+  documented under issue 28. Pushing source code did not migrate a live database.

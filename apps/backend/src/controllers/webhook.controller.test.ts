@@ -70,6 +70,7 @@ vi.mock('../services/quota.service', () => ({
 
 import { WebhookController } from './webhook.controller';
 import { mockReq, mockRes } from '../test-utils/express-mocks';
+import { cancelDisconnectedReviews } from '../workers/review-recovery';
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -200,9 +201,33 @@ describe('WebhookController.handleGitHubEvent — installation_repositories', ()
 
     expect(mockCachedFileDeleteMany).toHaveBeenCalledWith({ where: { repositoryId: 'r1' } });
     expect(mockRepoUpdateMany).toHaveBeenCalledWith({
-      where: { githubRepoId: BigInt(123) },
+      where: { githubRepoId: BigInt(123), installationId: 'inst-1' },
       data: { isActive: false },
     });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('removes only the event installation connection when accounts share a GitHub repository', async () => {
+    const rows = [
+      { id: 'removed', githubRepoId: 123n, installationId: 'inst-1', userId: 'u-1', isActive: true },
+      { id: 'other-account', githubRepoId: 123n, installationId: 'inst-2', userId: 'u-2', isActive: true },
+      { id: 'direct', githubRepoId: 123n, installationId: null, userId: 'u-3', isActive: true },
+      { id: 'another-repo', githubRepoId: 456n, installationId: 'inst-1', userId: 'u-1', isActive: true },
+    ];
+    const matches = (row: typeof rows[number], where: any) => row.githubRepoId === where.githubRepoId &&
+      (where.installationId === undefined || row.installationId === where.installationId);
+    mockInstallationFindUnique.mockResolvedValueOnce({ id: 'inst-1', userId: 'u-1' });
+    mockRepoFindMany.mockImplementationOnce(async ({ where }: any) => rows.filter(row => matches(row, where)));
+    mockRepoUpdateMany.mockImplementationOnce(async ({ where }: any) => {
+      const selected = rows.filter(row => matches(row, where));
+      selected.forEach(row => { row.isActive = false; }); return { count: selected.length };
+    });
+    const res = mockRes();
+    await WebhookController.handleGitHubEvent(mockReq({ headers: { 'x-github-event': 'installation_repositories' },
+      body: installationReposBody('removed', [{ id: 123, full_name: 'o/r' }]) }), res);
+    expect(rows.map(row => row.isActive)).toEqual([false, true, true, true]);
+    expect(cancelDisconnectedReviews).toHaveBeenCalledExactlyOnceWith('removed');
+    expect(mockCachedFileDeleteMany).toHaveBeenCalledExactlyOnceWith({ where: { repositoryId: 'removed' } });
     expect(res.status).toHaveBeenCalledWith(200);
   });
 

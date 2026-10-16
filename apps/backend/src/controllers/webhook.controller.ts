@@ -396,11 +396,11 @@ export class WebhookController {
           // Removing a repository deletes the code we copied from it. Retention
           // is indefinite, so deactivation alone would keep those rows forever.
           const affected = await prisma.repository.findMany({
-            where: { githubRepoId: BigInt(repo.id) },
+            where: { githubRepoId: BigInt(repo.id), installationId: dbInstallation.id },
             select: { id: true },
           });
           await prisma.repository.updateMany({
-            where: { githubRepoId: BigInt(repo.id) },
+            where: { githubRepoId: BigInt(repo.id), installationId: dbInstallation.id },
             data: { isActive: false },
           });
           const { cancelDisconnectedReviews } = await import('../workers/review-recovery');
