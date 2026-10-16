@@ -1,0 +1,31 @@
+name: Review quality benchmark (offline)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:generate
+      - run: npm run build --workspace=apps/backend
+      - run: npm run benchmark:test
+      - name: Run offline scanner baseline (no AI keys)
+        run: npm run benchmark -- --mode scanners --out .benchmark-runs/ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: offline-review-benchmark
+          path: .benchmark-runs/ci/
+          if-no-files-found: ignore

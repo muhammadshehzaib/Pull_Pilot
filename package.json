@@ -8,6 +8,10 @@
     "packages/*"
   ],
   "scripts": {
+    "benchmark:corpus": "node benchmarks/build-corpus.cjs",
+    "benchmark:fetch-prs": "node benchmarks/fetch-real-prs.cjs",
+    "benchmark": "node benchmarks/run.cjs",
+    "benchmark:test": "node --test benchmarks/*.test.cjs",
     "dev:backend": "npm run dev --workspace=apps/backend",
     "dev:worker": "npm run dev:worker --workspace=apps/backend",
     "dev:web": "npm run dev --workspace=apps/web",

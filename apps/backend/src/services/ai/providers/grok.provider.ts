@@ -3,6 +3,7 @@ import { BaseAiProvider, AiSuggestion, type AnalyzeOptions, type JsonCompletionR
 import { type ReviewContext } from '../context-prompt';
 import { GROK_BASE_URL, GROK_MODEL } from '../../../utils/constants';
 import { AiRequestError, assertAiPromptBudget, assertAiCompletion, MAX_AI_OUTPUT_TOKENS, parseAiJson, throwAiError } from '../ai-request-policy';
+import { observeUsage, tokenCount } from '../usage';
 
 export class GrokProvider extends BaseAiProvider {
   private aiClient: OpenAI;
@@ -18,6 +19,7 @@ export class GrokProvider extends BaseAiProvider {
       systemPrompt: this.getSystemPrompt(customRules),
       userPrompt: `${this.renderContext(context, options)}Here is the code diff:\n\n${this.renderReviewDiff(diff)}`,
       signal: options?.signal,
+      onUsage: options?.onUsage,
     });
     return this.reviewResponse(parsed, diff);
   }
@@ -31,6 +33,9 @@ export class GrokProvider extends BaseAiProvider {
         messages: [{ role: 'system', content: request.systemPrompt }, { role: 'user', content: request.userPrompt }],
         response_format: { type: 'json_object' },
       }, { signal: request.signal });
+      observeUsage(request.onUsage, { provider: 'GROK', model: response.model,
+        inputTokens: tokenCount(response.usage?.prompt_tokens), outputTokens: tokenCount(response.usage?.completion_tokens),
+        cachedInputTokens: tokenCount(response.usage?.prompt_tokens_details?.cached_tokens), cacheWriteTokens: 0 });
       const choice = response.choices[0];
       assertAiCompletion('Grok', choice?.finish_reason);
       if (choice?.message.refusal) throw new AiRequestError('ai-response-blocked', 'Grok');

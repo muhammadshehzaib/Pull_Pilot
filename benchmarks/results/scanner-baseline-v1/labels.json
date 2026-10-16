@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "runId": "29214140-e12c-4824-b0ae-8096388a865a",
+  "corpusSha256": "4ffd79f8ea9f2024e40e69e1768f2aeb483db4ef6573706b953d6302d3dfed23",
+  "reviewer": "Codex-assisted inspection of source, concrete trigger and executable reproduction; not independent human adjudication",
+  "method": "manual; keyword candidates are hints only",
+  "labels": [
+    {
+      "findingId": "1f6553fceb47bb6f2d146c0a",
+      "caseId": "seed-tls-verification-bug",
+      "verdict": "tp",
+      "bugId": "tls-verification",
+      "rationale": "The changed HTTPS options explicitly disable certificate validation; the contract requires validation and the authored stub reproduction confirms the option regression.",
+      "candidates": [
+        "tls-verification"
+      ]
+    },
+    {
+      "findingId": "278791e75293ac6001eed7ea",
+      "caseId": "seed-html-injection-bug",
+      "verdict": "tp",
+      "bugId": "html-injection",
+      "rationale": "Untrusted profile.bio is assigned to innerHTML without sanitization; the same input stays text in the fixed control.",
+      "candidates": [
+        "html-injection"
+      ]
+    },
+    {
+      "findingId": "cbdcff4057ff086a93b1b5c9",
+      "caseId": "seed-sql-interpolation-bug",
+      "verdict": "tp",
+      "bugId": "sql-interpolation",
+      "rationale": "The untrusted query ID is interpolated directly into SQL instead of bound as a parameter; id=0 OR 1=1 alters the predicate.",
+      "candidates": [
+        "sql-interpolation"
+      ]
+    },
+    {
+      "findingId": "e0f4c44c2c99c235cf89a86f",
+      "caseId": "seed-shell-interpolation-bug",
+      "verdict": "tp",
+      "bugId": "shell-interpolation",
+      "rationale": "The untrusted directory is interpolated into an exec shell string; metacharacters become command syntax instead of a separate execFile argument.",
+      "candidates": [
+        "shell-interpolation"
+      ]
+    },
+    {
+      "findingId": "0a915cbbe81b80cdbb950fda",
+      "caseId": "seed-jwt-verification-bug",
+      "verdict": "tp",
+      "bugId": "jwt-verification",
+      "rationale": "The authentication function returns jwt.decode output with no signature verification; the fixed function uses jwt.verify.",
+      "candidates": [
+        "jwt-verification"
+      ]
+    },
+    {
+      "findingId": "cc8016824aca035382ccc664",
+      "caseId": "seed-tls-verification-bug",
+      "verdict": "tp",
+      "bugId": "tls-verification",
+      "rationale": "The changed HTTPS options explicitly disable certificate validation; the contract requires validation and the authored stub reproduction confirms the option regression.",
+      "candidates": [
+        "tls-verification"
+      ]
+    },
+    {
+      "findingId": "f6403af635230eb2085f1eaa",
+      "caseId": "seed-html-injection-bug",
+      "verdict": "tp",
+      "bugId": "html-injection",
+      "rationale": "Untrusted profile.bio is assigned to innerHTML without sanitization; the same input stays text in the fixed control.",
+      "candidates": [
+        "html-injection"
+      ]
+    },
+    {
+      "findingId": "1f7260a5b7a96e7980bb86f4",
+      "caseId": "seed-sql-interpolation-bug",
+      "verdict": "tp",
+      "bugId": "sql-interpolation",
+      "rationale": "The untrusted query ID is interpolated directly into SQL instead of bound as a parameter; id=0 OR 1=1 alters the predicate.",
+      "candidates": [
+        "sql-interpolation"
+      ]
+    },
+    {
+      "findingId": "ba5a2edda5cb939a9aea882c",
+      "caseId": "seed-shell-interpolation-bug",
+      "verdict": "tp",
+      "bugId": "shell-interpolation",
+      "rationale": "The untrusted directory is interpolated into an exec shell string; metacharacters become command syntax instead of a separate execFile argument.",
+      "candidates": [
+        "shell-interpolation"
+      ]
+    },
+    {
+      "findingId": "e0084c8930813edf71834c4b",
+      "caseId": "seed-jwt-verification-bug",
+      "verdict": "tp",
+      "bugId": "jwt-verification",
+      "rationale": "The authentication function returns jwt.decode output with no signature verification; the fixed function uses jwt.verify.",
+      "candidates": [
+        "jwt-verification"
+      ]
+    },
+    {
+      "findingId": "87e36c5545d141d5bed64833",
+      "caseId": "seed-tls-verification-bug",
+      "verdict": "tp",
+      "bugId": "tls-verification",
+      "rationale": "The changed HTTPS options explicitly disable certificate validation; the contract requires validation and the authored stub reproduction confirms the option regression.",
+      "candidates": [
+        "tls-verification"
+      ]
+    },
+    {
+      "findingId": "c7e83428914af6487d67af7c",
+      "caseId": "seed-html-injection-bug",
+      "verdict": "tp",
+      "bugId": "html-injection",
+      "rationale": "Untrusted profile.bio is assigned to innerHTML without sanitization; the same input stays text in the fixed control.",
+      "candidates": [
+        "html-injection"
+      ]
+    },
+    {
+      "findingId": "e4ac1b900ee4558f1eb76475",
+      "caseId": "seed-sql-interpolation-bug",
+      "verdict": "tp",
+      "bugId": "sql-interpolation",
+      "rationale": "The untrusted query ID is interpolated directly into SQL instead of bound as a parameter; id=0 OR 1=1 alters the predicate.",
+      "candidates": [
+        "sql-interpolation"
+      ]
+    },
+    {
+      "findingId": "bd975e04b1d9db35f0cd2fec",
+      "caseId": "seed-shell-interpolation-bug",
+      "verdict": "tp",
+      "bugId": "shell-interpolation",
+      "rationale": "The untrusted directory is interpolated into an exec shell string; metacharacters become command syntax instead of a separate execFile argument.",
+      "candidates": [
+        "shell-interpolation"
+      ]
+    },
+    {
+      "findingId": "db0ba241a4bc55e7db727299",
+      "caseId": "seed-jwt-verification-bug",
+      "verdict": "tp",
+      "bugId": "jwt-verification",
+      "rationale": "The authentication function returns jwt.decode output with no signature verification; the fixed function uses jwt.verify.",
+      "candidates": [
+        "jwt-verification"
+      ]
+    }
+  ]
+}

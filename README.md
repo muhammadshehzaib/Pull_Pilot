@@ -4,6 +4,12 @@ An AI-powered GitHub Pull Request reviewer. Connect a repo, drop in an AI API ke
 
 Supports **OpenAI**, **Google Gemini**, **Anthropic Claude**, and **xAI Grok** out of the box.
 
+The [review-quality benchmark](benchmarks/README.md) contains 92 paired buggy/fixed
+changes, including reconstructions from six pinned public bug-fix PRs. It supports
+offline scanners, live AI runs, usage/cost accounting, explicit finding adjudication,
+and matched-input competitor imports. The checked-in scanner baseline is not a
+measurement of full AI review accuracy.
+
 AI-generated tests are available as editable, downloadable drafts. Automatic test
 PR creation is disabled because customer CI isolation has not been established.
 See the [customer safety and capacity verification](docs/customer-safety-capacity-verification.md)

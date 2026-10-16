@@ -51,5 +51,9 @@ Desktop.ini
 # Coverage directory used by Jest
 coverage/
 
+# Local benchmark keys, raw paid runs and private comparison mappings
+.env.benchmark
+.benchmark-runs/
+
 # System specific
 npm-debug.log*

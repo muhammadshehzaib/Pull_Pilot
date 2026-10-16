@@ -19,6 +19,7 @@ import { buildTestDraftPrompt, TEST_DRAFT_SYSTEM_PROMPT } from '../../test-gap/t
 import { labelledReviewDiff, normalizeAnchoredSuggestions } from '../review-anchors';
 import { assertReviewSize, MAX_AI_FINDINGS, AiRequestError } from '../ai-request-policy';
 import { extractReviewFindings } from '../review-response';
+import type { UsageObserver } from '../usage';
 
 export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
@@ -31,6 +32,8 @@ export { normalizeSuggestions } from '../finding-taxonomy';
  * its worker slot occupied until the SDK's own socket timeout.
  */
 export interface AnalyzeOptions {
+  /** Optional accounting observer. No credentials, prompts, or source are supplied. */
+  onUsage?: UsageObserver;
   signal?: AbortSignal;
   /** Bounded untrusted historical data; never added to binding system rules. */
   historicalContext?: string;
@@ -39,6 +42,7 @@ export interface AnalyzeOptions {
 
 /** A prompt pair handed to a provider for a JSON-shaped completion. */
 export interface JsonCompletionRequest {
+  onUsage?: UsageObserver;
   systemPrompt: string;
   userPrompt: string;
   signal?: AbortSignal;
@@ -107,6 +111,7 @@ export abstract class BaseAiProvider {
       systemPrompt: TEST_GAP_SYSTEM_PROMPT,
       userPrompt: buildTestGapPrompt(input),
       signal: options?.signal,
+      onUsage: options?.onUsage,
     });
     return normalizeTestGapScenarios(raw);
   }
@@ -124,6 +129,7 @@ export abstract class BaseAiProvider {
       systemPrompt: TEST_DRAFT_SYSTEM_PROMPT,
       userPrompt: buildTestDraftPrompt(input),
       signal: options?.signal,
+      onUsage: options?.onUsage,
     });
     return normalizeTestDraft(raw);
   }
