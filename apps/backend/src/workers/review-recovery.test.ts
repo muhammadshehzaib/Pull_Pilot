@@ -154,6 +154,48 @@ describe('abandoned review reconciliation', () => {
 });
 
 describe('durable quota reservation and terminal refunds', () => {
+  it('shares the last Free slot across legacy installations and direct connections', async () => {
+    const month = QuotaService.getCurrentBillingMonth();
+    state.installations.push({ id: 'other-install', userId: 'user', plan: 'FREE' });
+    state.ledgers.push({ id: 'old-install', installationId: 'install', billingMonth: month, privateReviewsCount: 20 },
+      { id: 'other-install-ledger', installationId: 'other-install', billingMonth: month, privateReviewsCount: 20 },
+      { id: 'direct-ledger', userId: 'user', billingMonth: month, privateReviewsCount: 9, publicReviewsCount: 0 });
+    state.repos.push({ ...state.repos[0], id: 'direct-repo', installationId: null });
+    review({ id: 'installed-job', status: 'QUEUED', quotaLedgerId: null });
+    review({ id: 'direct-job', repositoryId: 'direct-repo', status: 'QUEUED', quotaLedgerId: null });
+    const results = await Promise.all([
+      QuotaService.reserveReview('install', true, 'user', 'installed-job'),
+      QuotaService.reserveReview(null, true, 'user', 'direct-job'),
+    ]);
+    expect(results.filter(r => r.allowed)).toHaveLength(1);
+    expect((await QuotaService.getAccountUsage('user', month)).privateReviewsCount).toBe(50);
+    expect(state.jobs.filter((j: any) => j.quotaLedgerId)).toHaveLength(1);
+  });
+  it('blocks a second private repository without charging and lets it take over after disconnection', async () => {
+    state.repos.push({ ...state.repos[0], id: 'second', githubRepoId: 2n, installationId: null });
+    const row = review({ repositoryId: 'second', status: 'QUEUED', quotaLedgerId: null });
+    const denied = await QuotaService.reserveReview(null, true, 'user', 'job');
+    expect(denied.allowed).toBe(false); expect(denied.reason).toContain('one active private repository');
+    expect(row.quotaLedgerId).toBeNull();
+    state.repos[0].isActive = false;
+    expect((await QuotaService.reserveReview(null, true, 'user', 'job')).allowed).toBe(true);
+  });
+  it('leaves paid private repositories and public repositories unrestricted', async () => {
+    state.repos.push({ ...state.repos[0], id: 'second', githubRepoId: 2n, installationId: null });
+    review({ repositoryId: 'second', status: 'QUEUED', quotaLedgerId: null });
+    db.subscription.findFirst.mockResolvedValueOnce({ plan: 'INDIE', status: 'active' });
+    expect((await QuotaService.reserveReview(null, true, 'user', 'job')).allowed).toBe(true);
+    review({ id: 'public-job', repositoryId: 'second', status: 'QUEUED', quotaLedgerId: null });
+    expect((await QuotaService.reserveReview(null, false, 'user', 'public-job')).allowed).toBe(true);
+  });
+  it('retains account usage after an installation is removed', async () => {
+    const row = review({ status: 'QUEUED', quotaLedgerId: null });
+    await QuotaService.reserveReview('install', true, 'user', 'job');
+    state.installations = [];
+    expect((await QuotaService.getAccountUsage('user', QuotaService.getCurrentBillingMonth())).privateReviewsCount).toBe(1);
+    await markReviewTerminal(row.id, 'user', 'FAILED', 'failed');
+    expect((await QuotaService.getAccountUsage('user', QuotaService.getCurrentBillingMonth())).privateReviewsCount).toBe(0);
+  });
   it('charges one slot for concurrent reservations of the same owned review', async () => {
     const row = review({ status: 'QUEUED', quotaLedgerId: null, quotaIsPrivate: null });
     const results = await Promise.all([QuotaService.reserveReview('install', true, 'user', 'job'), QuotaService.reserveReview('install', true, 'user', 'job')]);

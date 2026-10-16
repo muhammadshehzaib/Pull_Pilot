@@ -91,4 +91,28 @@ describe.skipIf(!url)('review recovery and quota transactions on PostgreSQL', ()
     expect(saved.status).toBe('QUEUED'); expect(saved.quotaRefundedAt).toBeNull();
     expect((await ledgerFor(job.id)).privateReviewsCount).toBe(ledger.privateReviewsCount);
   });
+  it('allows only one concurrent reservation for the last account slot across connection types', async () => {
+    const source = await db.repository.findUniqueOrThrow({ where: { id: repositoryId } });
+    const direct = await db.repository.create({ data: {
+      userId, githubRepoId: source.githubRepoId, fullName: source.fullName, isPrivate: true,
+    } });
+    const billingMonth = quota.getCurrentBillingMonth();
+    await db.usageLedger.upsert({ where: { userId_billingMonth: { userId, billingMonth } },
+      create: { userId, billingMonth, privateReviewsCount: 49 }, update: { privateReviewsCount: 49 } });
+    const installedJob = await review();
+    const directJob = await db.analysisJob.create({ data: { repositoryId: direct.id, eventType: 'PUSH', referenceId: randomUUID() } });
+    const results = await Promise.all([
+      quota.reserveReview(installationId, true, userId, installedJob.id),
+      quota.reserveReview(null, true, userId, directJob.id),
+    ]);
+    expect(results.filter(result => result.allowed)).toHaveLength(1);
+    expect((await quota.getAccountUsage(userId, billingMonth)).privateReviewsCount).toBe(50);
+  });
+  it('denies Free reviews on a different private repository before spending quota', async () => {
+    const second = await db.repository.create({ data: { userId, githubRepoId: BigInt(Date.now()) + 1n, fullName: 'recovery/second', isPrivate: true } });
+    const job = await db.analysisJob.create({ data: { repositoryId: second.id, eventType: 'PUSH', referenceId: randomUUID() } });
+    const result = await quota.reserveReview(null, true, userId, job.id);
+    expect(result.allowed).toBe(false); expect(result.reason).toContain('one active private repository');
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: job.id } })).quotaLedgerId).toBeNull();
+  });
 });

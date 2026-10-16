@@ -55,6 +55,12 @@ export const lifecycleDb: any = {
     }),
   },
   usageLedger: {
+    aggregate: vi.fn(async ({ where }: any) => {
+      const rows = lifecycleState.ledgers.filter((row: any) => matches({ ...row,
+        installation: lifecycleState.installations.find((i: any) => i.id === row.installationId) }, where));
+      return { _sum: { publicReviewsCount: rows.reduce((n: number, r: any) => n + (r.publicReviewsCount ?? 0), 0),
+        privateReviewsCount: rows.reduce((n: number, r: any) => n + (r.privateReviewsCount ?? 0), 0) } };
+    }),
     upsert: vi.fn(async ({ where, create, update }: any) => {
       let row = lifecycleState.ledgers.find((row: any) => matches(row, where));
       if (!row) { row = { id: `ledger-${lifecycleState.ledgers.length}`, ...create }; lifecycleState.ledgers.push(row); }
@@ -74,10 +80,11 @@ export const lifecycleDb: any = {
     }),
   },
   installation: { findUnique: vi.fn(async ({ where }: any) => clone(lifecycleState.installations.find((row: any) => matches(row, where)) ?? null)) },
+  repository: { findFirst: vi.fn(async ({ where }: any) => clone(lifecycleState.repos.find((row: any) => matches(row, where)) ?? null)) },
   subscription: { findFirst: vi.fn(async () => null) },
 };
 
 export function resetLifecycleDb() {
-  lifecycleState.jobs = []; lifecycleState.ledgers = []; lifecycleState.installations = [];
-  lifecycleState.repos = [{ id: 'repo', userId: 'user', installationId: 'install', isActive: true }];
+  lifecycleState.jobs = []; lifecycleState.ledgers = []; lifecycleState.installations = [{ id: 'install', userId: 'user', plan: 'FREE' }];
+  lifecycleState.repos = [{ id: 'repo', userId: 'user', installationId: 'install', isActive: true, isPrivate: true, githubRepoId: 1n }];
 }

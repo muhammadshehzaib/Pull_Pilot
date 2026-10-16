@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import prisma from '../config/prisma';
-import { QuotaService } from './quota.service';
 import { BillingService, BillingConfigurationError, AVAILABLE_PLANS } from './billing.service';
 
 vi.mock('../config/prisma', () => ({
@@ -22,7 +21,6 @@ vi.mock('../config/prisma', () => ({
 vi.mock('./quota.service', () => ({
   QuotaService: {
     getCurrentBillingMonth: vi.fn(() => '2026-10'),
-    getOrCreateLedger: vi.fn(),
   },
 }));
 
@@ -41,11 +39,6 @@ const db = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
   };
   usageLedger: { aggregate: ReturnType<typeof vi.fn> };
-};
-
-const quota = QuotaService as unknown as {
-  getCurrentBillingMonth: ReturnType<typeof vi.fn>;
-  getOrCreateLedger: ReturnType<typeof vi.fn>;
 };
 
 const EVENT_AT = '2026-10-17T10:00:00Z';

@@ -9,13 +9,18 @@ vi.mock('../config/prisma', () => ({
     },
     usageLedger: {
       upsert: vi.fn(),
+      aggregate: vi.fn(),
     },
+    subscription: { findFirst: vi.fn() },
   },
 }));
 
 describe('QuotaService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(prisma.subscription.findFirst).mockResolvedValue(null);
+    vi.mocked(prisma.installation.findUnique).mockResolvedValue({ userId: 'user' } as any);
+    vi.mocked(prisma.usageLedger.aggregate).mockResolvedValue({ _sum: { publicReviewsCount: 0, privateReviewsCount: 0 } } as any);
   });
 
   describe('getCurrentBillingMonth', () => {
@@ -32,17 +37,17 @@ describe('QuotaService', () => {
   });
 
   describe('checkQuota', () => {
-    it('allows review by default when no installation is linked (legacy mode)', async () => {
+    it('refuses reviews when no usage owner is known', async () => {
       const result = await QuotaService.checkQuota(null, true);
-      expect(result.allowed).toBe(true);
-      expect(result.usage.limit).toBeNull();
+      expect(result.allowed).toBe(false);
+      expect(result.reason).toContain('owner');
     });
 
     it('allows unlimited reviews on public repositories regardless of count', async () => {
-      (prisma.usageLedger.upsert as any).mockResolvedValueOnce({
+      (prisma.usageLedger.aggregate as any).mockResolvedValueOnce({ _sum: {
         publicReviewsCount: 150,
         privateReviewsCount: 0,
-      });
+      } });
 
       const result = await QuotaService.checkQuota('inst-123', false);
       expect(result.allowed).toBe(true);
@@ -52,14 +57,14 @@ describe('QuotaService', () => {
 
     it('allows private reviews when within the 50 reviews/month free quota', async () => {
       (prisma.installation.findUnique as any).mockResolvedValueOnce({
-        id: 'inst-123',
+        id: 'inst-123', userId: 'user',
         plan: 'FREE',
       });
 
-      (prisma.usageLedger.upsert as any).mockResolvedValueOnce({
+      (prisma.usageLedger.aggregate as any).mockResolvedValueOnce({ _sum: {
         publicReviewsCount: 10,
         privateReviewsCount: 42,
-      });
+      } });
 
       const result = await QuotaService.checkQuota('inst-123', true);
       expect(result.allowed).toBe(true);
@@ -69,14 +74,14 @@ describe('QuotaService', () => {
 
     it('rejects private reviews when monthly free quota is reached (>= 50)', async () => {
       (prisma.installation.findUnique as any).mockResolvedValueOnce({
-        id: 'inst-123',
+        id: 'inst-123', userId: 'user',
         plan: 'FREE',
       });
 
-      (prisma.usageLedger.upsert as any).mockResolvedValueOnce({
+      (prisma.usageLedger.aggregate as any).mockResolvedValueOnce({ _sum: {
         publicReviewsCount: 5,
         privateReviewsCount: 50,
-      });
+      } });
 
       const result = await QuotaService.checkQuota('inst-123', true);
       expect(result.allowed).toBe(false);
@@ -86,54 +91,16 @@ describe('QuotaService', () => {
     });
 
     it('allows unlimited private reviews for INDIE and TEAM plans', async () => {
-      (prisma.installation.findUnique as any).mockResolvedValueOnce({
-        id: 'inst-paid',
-        plan: 'INDIE',
-      });
+      (prisma.subscription.findFirst as any).mockResolvedValueOnce({ plan: 'INDIE', status: 'active' });
 
-      (prisma.usageLedger.upsert as any).mockResolvedValueOnce({
+      (prisma.usageLedger.aggregate as any).mockResolvedValueOnce({ _sum: {
         publicReviewsCount: 20,
         privateReviewsCount: 250,
-      });
+      } });
 
       const result = await QuotaService.checkQuota('inst-paid', true);
       expect(result.allowed).toBe(true);
       expect(result.usage.limit).toBeNull();
-    });
-  });
-
-  describe('incrementUsage', () => {
-    it('increments privateReviewsCount for private repository review', async () => {
-      await QuotaService.incrementUsage('inst-123', true);
-
-      expect(prisma.usageLedger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            installationId_billingMonth: {
-              installationId: 'inst-123',
-              billingMonth: expect.any(String),
-            },
-          }),
-          update: { privateReviewsCount: { increment: 1 } },
-        })
-      );
-    });
-
-    it('increments publicReviewsCount for public repository review', async () => {
-      await QuotaService.incrementUsage('inst-123', false);
-
-      expect(prisma.usageLedger.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          update: { publicReviewsCount: { increment: 1 } },
-        })
-      );
-    });
-
-    it('gracefully does nothing if installationId is null or undefined', async () => {
-      await QuotaService.incrementUsage(null, true);
-      await QuotaService.incrementUsage(undefined, false);
-
-      expect(prisma.usageLedger.upsert).not.toHaveBeenCalled();
     });
   });
 

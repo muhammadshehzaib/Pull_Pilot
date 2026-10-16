@@ -35,8 +35,6 @@ applied before deploying the code. No live database was modified.
 
 ## Remaining confirmed issues
 
-- 28: reservations use separate installation/user ledgers and do not restrict
-  Free customers to one private repository.
 - 29: checkout creation has no repeated-request or existing-subscription guard.
 - 30: repository removal filters only by GitHub repository ID, across installations.
 
@@ -51,3 +49,30 @@ subscriptions. Revocation recalculates entitlement (introduced with the atomic
 event processing in 26), so Team correctly falls back to an active Indie plan.
 Validation: 102 billing/auth/quota/recovery tests passed, including Team-to-Indie
 fallback and an unknown product alongside a paid subscription; backend build passed.
+
+## 28 — Account quota and one private repository
+
+Plan: serialize reservations by account, sum all connection usage, charge an
+account/month ledger, and enforce one eligible private repository for Free.
+Preserve old usage and refund receipts when migrating installation ledgers.
+
+Implemented: all producers use account reservations. The earliest connected
+active private GitHub repository is eligible on Free; other private repositories
+require disconnecting the eligible repository or upgrading. Public and paid
+reviews remain unlimited. Old installation counters are merged into account
+ledgers and review receipts are retargeted in a locked migration transaction.
+New account usage survives installation removal. Unused per-installation charging
+helpers were removed.
+
+Validation: 141 relevant tests passed, including concurrent last-slot reservations
+across direct and installation connections, private repository eligibility,
+disconnection, paid/public access, and refunds. Both migration scripts were also
+executed against a disposable PGlite PostgreSQL engine; totals, account isolation,
+receipt remapping, original-month refunds, installation deletion, and enum plan
+ordering passed. Backend build passed. Full multi-connection PostgreSQL integration
+coverage is included but needs `RECOVERY_TEST_DATABASE_URL`; Docker is unavailable
+in this session.
+
+Deployment: apply `20261024000000_account_review_quota` with old API/worker producers
+stopped, before starting the new code, so old writers cannot recreate installation
+ledgers after consolidation. No live database was modified.

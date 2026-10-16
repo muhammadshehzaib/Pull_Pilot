@@ -156,7 +156,7 @@ export class WebhookController {
       }
 
       // 6. Enforce Free Tier Quota Limits
-      const quotaCheck = await QuotaService.checkQuota(dbRepo.installationId, isPrivate);
+      const quotaCheck = await QuotaService.checkQuota(dbRepo.installationId, isPrivate, dbRepo.userId);
       if (!quotaCheck.allowed) {
         const existingReview = await prisma.analysisJob.findFirst({
           where: { repositoryId: dbRepo.id, eventType: jobType, referenceId: refId, commitSha },
