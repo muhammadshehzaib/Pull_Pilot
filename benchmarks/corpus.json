@@ -2222,6 +2222,585 @@
       }
     },
     {
+      "id": "seed-orders-negative-quantity-bug",
+      "family": "domain",
+      "pairId": "orders-negative-quantity",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A line quantity must be a positive safe integer; invalid input must be rejected before calculating its total.",
+      "diff": "diff --git a/src/orders/lines.js b/src/orders/lines.js\nindex a30a9de..f1ff130 100644\n--- a/src/orders/lines.js\n+++ b/src/orders/lines.js\n@@ -1,4 +1,4 @@\n export function lineTotal(product, quantity) {\n-  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error(\"invalid quantity\");\n+  if (!Number.isSafeInteger(quantity)) throw new Error(\"invalid quantity\");\n   return product.priceCents * quantity;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/lines.js",
+          "before": "export function lineTotal(product, quantity) {\n  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error(\"invalid quantity\");\n  return product.priceCents * quantity;\n}\n",
+          "after": "export function lineTotal(product, quantity) {\n  if (!Number.isSafeInteger(quantity)) throw new Error(\"invalid quantity\");\n  return product.priceCents * quantity;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-negative-quantity",
+          "description": "A negative line quantity creates a negative order total.",
+          "filePath": "src/orders/lines.js",
+          "terms": [
+            "quantity",
+            "negative",
+            "positive"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-negative-quantity-clean",
+      "family": "domain",
+      "pairId": "orders-negative-quantity",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A line quantity must be a positive safe integer; invalid input must be rejected before calculating its total.",
+      "diff": "diff --git a/src/orders/lines.js b/src/orders/lines.js\nindex f1ff130..a30a9de 100644\n--- a/src/orders/lines.js\n+++ b/src/orders/lines.js\n@@ -1,4 +1,4 @@\n export function lineTotal(product, quantity) {\n-  if (!Number.isSafeInteger(quantity)) throw new Error(\"invalid quantity\");\n+  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error(\"invalid quantity\");\n   return product.priceCents * quantity;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/lines.js",
+          "before": "export function lineTotal(product, quantity) {\n  if (!Number.isSafeInteger(quantity)) throw new Error(\"invalid quantity\");\n  return product.priceCents * quantity;\n}\n",
+          "after": "export function lineTotal(product, quantity) {\n  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error(\"invalid quantity\");\n  return product.priceCents * quantity;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-cancel-owner-bug",
+      "family": "domain",
+      "pairId": "orders-cancel-owner",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "authorization",
+      "contract": "Only the authenticated customer who owns an order may cancel it. Both order and customer IDs are server-authenticated records.",
+      "diff": "diff --git a/src/orders/cancellation.js b/src/orders/cancellation.js\nindex ef95fc3..19f25f8 100644\n--- a/src/orders/cancellation.js\n+++ b/src/orders/cancellation.js\n@@ -1,4 +1,3 @@\n export function cancel(order, customer) {\n-  if (order.customerId !== customer.id) throw new Error(\"forbidden\");\n   order.status = \"cancelled\";\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/cancellation.js",
+          "before": "export function cancel(order, customer) {\n  if (order.customerId !== customer.id) throw new Error(\"forbidden\");\n  order.status = \"cancelled\";\n}\n",
+          "after": "export function cancel(order, customer) {\n  order.status = \"cancelled\";\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-cancel-owner",
+          "description": "Customer B cancels an order belonging to customer A.",
+          "filePath": "src/orders/cancellation.js",
+          "terms": [
+            "owner",
+            "customer",
+            "authoriz",
+            "cancel"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-cancel-owner-clean",
+      "family": "domain",
+      "pairId": "orders-cancel-owner",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "authorization",
+      "contract": "Only the authenticated customer who owns an order may cancel it. Both order and customer IDs are server-authenticated records.",
+      "diff": "diff --git a/src/orders/cancellation.js b/src/orders/cancellation.js\nindex 19f25f8..ef95fc3 100644\n--- a/src/orders/cancellation.js\n+++ b/src/orders/cancellation.js\n@@ -1,3 +1,4 @@\n export function cancel(order, customer) {\n+  if (order.customerId !== customer.id) throw new Error(\"forbidden\");\n   order.status = \"cancelled\";\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/cancellation.js",
+          "before": "export function cancel(order, customer) {\n  order.status = \"cancelled\";\n}\n",
+          "after": "export function cancel(order, customer) {\n  if (order.customerId !== customer.id) throw new Error(\"forbidden\");\n  order.status = \"cancelled\";\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-ship-cancelled-bug",
+      "family": "domain",
+      "pairId": "orders-ship-cancelled",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Only a paid order may transition to shipped. Cancelled orders must remain cancelled.",
+      "diff": "diff --git a/src/orders/shipping.js b/src/orders/shipping.js\nindex af14e10..77e348f 100644\n--- a/src/orders/shipping.js\n+++ b/src/orders/shipping.js\n@@ -1,4 +1,4 @@\n export function ship(order) {\n-  if (order.status !== \"paid\") throw new Error(\"order is not ready\");\n+  if (order.status === \"pending\") throw new Error(\"order is not ready\");\n   order.status = \"shipped\";\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/shipping.js",
+          "before": "export function ship(order) {\n  if (order.status !== \"paid\") throw new Error(\"order is not ready\");\n  order.status = \"shipped\";\n}\n",
+          "after": "export function ship(order) {\n  if (order.status === \"pending\") throw new Error(\"order is not ready\");\n  order.status = \"shipped\";\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-ship-cancelled",
+          "description": "An order already cancelled is accepted for shipment.",
+          "filePath": "src/orders/shipping.js",
+          "terms": [
+            "cancel",
+            "state",
+            "ship",
+            "paid"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-ship-cancelled-clean",
+      "family": "domain",
+      "pairId": "orders-ship-cancelled",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Only a paid order may transition to shipped. Cancelled orders must remain cancelled.",
+      "diff": "diff --git a/src/orders/shipping.js b/src/orders/shipping.js\nindex 77e348f..af14e10 100644\n--- a/src/orders/shipping.js\n+++ b/src/orders/shipping.js\n@@ -1,4 +1,4 @@\n export function ship(order) {\n-  if (order.status === \"pending\") throw new Error(\"order is not ready\");\n+  if (order.status !== \"paid\") throw new Error(\"order is not ready\");\n   order.status = \"shipped\";\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/shipping.js",
+          "before": "export function ship(order) {\n  if (order.status === \"pending\") throw new Error(\"order is not ready\");\n  order.status = \"shipped\";\n}\n",
+          "after": "export function ship(order) {\n  if (order.status !== \"paid\") throw new Error(\"order is not ready\");\n  order.status = \"shipped\";\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-double-restock-bug",
+      "family": "domain",
+      "pairId": "orders-double-restock",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Sequential cancellation retries must restore inventory once for a reserved order.",
+      "diff": "diff --git a/src/orders/restock.js b/src/orders/restock.js\nindex 686961d..d09abf8 100644\n--- a/src/orders/restock.js\n+++ b/src/orders/restock.js\n@@ -1,5 +1,4 @@\n export function cancel(order, inventory) {\n-  if (order.status === \"cancelled\") return;\n   inventory.stock += order.quantity;\n   order.status = \"cancelled\";\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/restock.js",
+          "before": "export function cancel(order, inventory) {\n  if (order.status === \"cancelled\") return;\n  inventory.stock += order.quantity;\n  order.status = \"cancelled\";\n}\n",
+          "after": "export function cancel(order, inventory) {\n  inventory.stock += order.quantity;\n  order.status = \"cancelled\";\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-double-restock",
+          "description": "Retrying cancellation twice restores twice the reserved quantity.",
+          "filePath": "src/orders/restock.js",
+          "terms": [
+            "restock",
+            "retry",
+            "inventory",
+            "twice"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-double-restock-clean",
+      "family": "domain",
+      "pairId": "orders-double-restock",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Sequential cancellation retries must restore inventory once for a reserved order.",
+      "diff": "diff --git a/src/orders/restock.js b/src/orders/restock.js\nindex d09abf8..686961d 100644\n--- a/src/orders/restock.js\n+++ b/src/orders/restock.js\n@@ -1,4 +1,5 @@\n export function cancel(order, inventory) {\n+  if (order.status === \"cancelled\") return;\n   inventory.stock += order.quantity;\n   order.status = \"cancelled\";\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/restock.js",
+          "before": "export function cancel(order, inventory) {\n  inventory.stock += order.quantity;\n  order.status = \"cancelled\";\n}\n",
+          "after": "export function cancel(order, inventory) {\n  if (order.status === \"cancelled\") return;\n  inventory.stock += order.quantity;\n  order.status = \"cancelled\";\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-price-snapshot-bug",
+      "family": "domain",
+      "pairId": "orders-price-snapshot",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A completed order receipt must use the unit price captured on each order line, even if the product catalog changes later.",
+      "diff": "diff --git a/src/orders/receipts.js b/src/orders/receipts.js\nindex ba76725..1894d02 100644\n--- a/src/orders/receipts.js\n+++ b/src/orders/receipts.js\n@@ -1,3 +1,3 @@\n export function receiptTotal(lines, catalog) {\n-  return lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);\n+  return lines.reduce((sum, line) => sum + catalog[line.productId].priceCents * line.quantity, 0);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/receipts.js",
+          "before": "export function receiptTotal(lines, catalog) {\n  return lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);\n}\n",
+          "after": "export function receiptTotal(lines, catalog) {\n  return lines.reduce((sum, line) => sum + catalog[line.productId].priceCents * line.quantity, 0);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-price-snapshot",
+          "description": "Changing a catalog price retroactively changes a completed order receipt.",
+          "filePath": "src/orders/receipts.js",
+          "terms": [
+            "snapshot",
+            "price",
+            "histor",
+            "receipt"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-price-snapshot-clean",
+      "family": "domain",
+      "pairId": "orders-price-snapshot",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A completed order receipt must use the unit price captured on each order line, even if the product catalog changes later.",
+      "diff": "diff --git a/src/orders/receipts.js b/src/orders/receipts.js\nindex 1894d02..ba76725 100644\n--- a/src/orders/receipts.js\n+++ b/src/orders/receipts.js\n@@ -1,3 +1,3 @@\n export function receiptTotal(lines, catalog) {\n-  return lines.reduce((sum, line) => sum + catalog[line.productId].priceCents * line.quantity, 0);\n+  return lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/receipts.js",
+          "before": "export function receiptTotal(lines, catalog) {\n  return lines.reduce((sum, line) => sum + catalog[line.productId].priceCents * line.quantity, 0);\n}\n",
+          "after": "export function receiptTotal(lines, catalog) {\n  return lines.reduce((sum, line) => sum + line.unitPriceCents * line.quantity, 0);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-discount-floor-bug",
+      "family": "domain",
+      "pairId": "orders-discount-floor",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A fixed-amount discount may reduce a subtotal to zero but must never create a negative payable amount.",
+      "diff": "diff --git a/src/orders/totals.js b/src/orders/totals.js\nindex 2eabaed..a94bcc5 100644\n--- a/src/orders/totals.js\n+++ b/src/orders/totals.js\n@@ -1,3 +1,3 @@\n export function payable(subtotalCents, discountCents) {\n-  return Math.max(0, subtotalCents - discountCents);\n+  return subtotalCents - discountCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/totals.js",
+          "before": "export function payable(subtotalCents, discountCents) {\n  return Math.max(0, subtotalCents - discountCents);\n}\n",
+          "after": "export function payable(subtotalCents, discountCents) {\n  return subtotalCents - discountCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-discount-floor",
+          "description": "A 1500-cent coupon applied to a 1000-cent subtotal creates a negative payable amount.",
+          "filePath": "src/orders/totals.js",
+          "terms": [
+            "discount",
+            "negative",
+            "zero",
+            "floor"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-discount-floor-clean",
+      "family": "domain",
+      "pairId": "orders-discount-floor",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A fixed-amount discount may reduce a subtotal to zero but must never create a negative payable amount.",
+      "diff": "diff --git a/src/orders/totals.js b/src/orders/totals.js\nindex a94bcc5..2eabaed 100644\n--- a/src/orders/totals.js\n+++ b/src/orders/totals.js\n@@ -1,3 +1,3 @@\n export function payable(subtotalCents, discountCents) {\n-  return subtotalCents - discountCents;\n+  return Math.max(0, subtotalCents - discountCents);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/totals.js",
+          "before": "export function payable(subtotalCents, discountCents) {\n  return subtotalCents - discountCents;\n}\n",
+          "after": "export function payable(subtotalCents, discountCents) {\n  return Math.max(0, subtotalCents - discountCents);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-digital-shipping-bug",
+      "family": "domain",
+      "pairId": "orders-digital-shipping",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Shipping is required if any line is a physical product. Only an entirely digital basket skips shipping.",
+      "diff": "diff --git a/src/orders/delivery.js b/src/orders/delivery.js\nindex 224beba..59a0912 100644\n--- a/src/orders/delivery.js\n+++ b/src/orders/delivery.js\n@@ -1,3 +1,3 @@\n export function needsShipping(lines) {\n-  return lines.some(line => !line.digital);\n+  return !lines.some(line => line.digital);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/delivery.js",
+          "before": "export function needsShipping(lines) {\n  return lines.some(line => !line.digital);\n}\n",
+          "after": "export function needsShipping(lines) {\n  return !lines.some(line => line.digital);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-digital-shipping",
+          "description": "A mixed digital/physical basket skips shipping even though a physical item needs delivery.",
+          "filePath": "src/orders/delivery.js",
+          "terms": [
+            "digital",
+            "physical",
+            "some",
+            "shipping"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-digital-shipping-clean",
+      "family": "domain",
+      "pairId": "orders-digital-shipping",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Shipping is required if any line is a physical product. Only an entirely digital basket skips shipping.",
+      "diff": "diff --git a/src/orders/delivery.js b/src/orders/delivery.js\nindex 59a0912..224beba 100644\n--- a/src/orders/delivery.js\n+++ b/src/orders/delivery.js\n@@ -1,3 +1,3 @@\n export function needsShipping(lines) {\n-  return !lines.some(line => line.digital);\n+  return lines.some(line => !line.digital);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/delivery.js",
+          "before": "export function needsShipping(lines) {\n  return !lines.some(line => line.digital);\n}\n",
+          "after": "export function needsShipping(lines) {\n  return lines.some(line => !line.digital);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-create-retry-bug",
+      "family": "domain",
+      "pairId": "orders-create-retry",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Sequential retries with the same client request key must return the original order rather than create another one.",
+      "diff": "diff --git a/src/orders/create.js b/src/orders/create.js\nindex 843af26..f3e909c 100644\n--- a/src/orders/create.js\n+++ b/src/orders/create.js\n@@ -1,6 +1,5 @@\n export async function create(requestKey, orders, insert) {\n-  if (orders.has(requestKey)) return orders.get(requestKey);\n   const order = await insert();\n   orders.set(requestKey, order);\n   return order;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/create.js",
+          "before": "export async function create(requestKey, orders, insert) {\n  if (orders.has(requestKey)) return orders.get(requestKey);\n  const order = await insert();\n  orders.set(requestKey, order);\n  return order;\n}\n",
+          "after": "export async function create(requestKey, orders, insert) {\n  const order = await insert();\n  orders.set(requestKey, order);\n  return order;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-create-retry",
+          "description": "Retrying the same order-creation request creates two orders.",
+          "filePath": "src/orders/create.js",
+          "terms": [
+            "retry",
+            "duplicate",
+            "request",
+            "idempot"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-create-retry-clean",
+      "family": "domain",
+      "pairId": "orders-create-retry",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "Sequential retries with the same client request key must return the original order rather than create another one.",
+      "diff": "diff --git a/src/orders/create.js b/src/orders/create.js\nindex f3e909c..843af26 100644\n--- a/src/orders/create.js\n+++ b/src/orders/create.js\n@@ -1,5 +1,6 @@\n export async function create(requestKey, orders, insert) {\n+  if (orders.has(requestKey)) return orders.get(requestKey);\n   const order = await insert();\n   orders.set(requestKey, order);\n   return order;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/create.js",
+          "before": "export async function create(requestKey, orders, insert) {\n  const order = await insert();\n  orders.set(requestKey, order);\n  return order;\n}\n",
+          "after": "export async function create(requestKey, orders, insert) {\n  if (orders.has(requestKey)) return orders.get(requestKey);\n  const order = await insert();\n  orders.set(requestKey, order);\n  return order;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-shipping-per-line-bug",
+      "family": "domain",
+      "pairId": "orders-shipping-per-line",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "shippingCents is charged once per order, independent of the number of lines. Each line already has totalCents.",
+      "diff": "diff --git a/src/orders/summary.js b/src/orders/summary.js\nindex 2d7f955..c4c8a97 100644\n--- a/src/orders/summary.js\n+++ b/src/orders/summary.js\n@@ -1,3 +1,3 @@\n export function total(lines, shippingCents) {\n-  return lines.reduce((sum, line) => sum + line.totalCents, 0) + shippingCents;\n+  return lines.reduce((sum, line) => sum + line.totalCents + shippingCents, 0);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/summary.js",
+          "before": "export function total(lines, shippingCents) {\n  return lines.reduce((sum, line) => sum + line.totalCents, 0) + shippingCents;\n}\n",
+          "after": "export function total(lines, shippingCents) {\n  return lines.reduce((sum, line) => sum + line.totalCents + shippingCents, 0);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-shipping-per-line",
+          "description": "An order containing two lines is charged the shipping fee twice.",
+          "filePath": "src/orders/summary.js",
+          "terms": [
+            "shipping",
+            "line",
+            "twice",
+            "total"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-shipping-per-line-clean",
+      "family": "domain",
+      "pairId": "orders-shipping-per-line",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "shippingCents is charged once per order, independent of the number of lines. Each line already has totalCents.",
+      "diff": "diff --git a/src/orders/summary.js b/src/orders/summary.js\nindex c4c8a97..2d7f955 100644\n--- a/src/orders/summary.js\n+++ b/src/orders/summary.js\n@@ -1,3 +1,3 @@\n export function total(lines, shippingCents) {\n-  return lines.reduce((sum, line) => sum + line.totalCents + shippingCents, 0);\n+  return lines.reduce((sum, line) => sum + line.totalCents, 0) + shippingCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/summary.js",
+          "before": "export function total(lines, shippingCents) {\n  return lines.reduce((sum, line) => sum + line.totalCents + shippingCents, 0);\n}\n",
+          "after": "export function total(lines, shippingCents) {\n  return lines.reduce((sum, line) => sum + line.totalCents, 0) + shippingCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-partial-fulfillment-bug",
+      "family": "domain",
+      "pairId": "orders-partial-fulfillment",
+      "variant": "bug",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A warehouse event identifies one order line; other order lines must retain their existing fulfillment status.",
+      "diff": "diff --git a/src/orders/fulfillment.js b/src/orders/fulfillment.js\nindex 9892496..af424d5 100644\n--- a/src/orders/fulfillment.js\n+++ b/src/orders/fulfillment.js\n@@ -1,5 +1,5 @@\n export function fulfill(order, lineId) {\n   for (const line of order.lines) {\n-    if (line.id === lineId) line.fulfilled = true;\n+    line.fulfilled = true;\n   }\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/fulfillment.js",
+          "before": "export function fulfill(order, lineId) {\n  for (const line of order.lines) {\n    if (line.id === lineId) line.fulfilled = true;\n  }\n}\n",
+          "after": "export function fulfill(order, lineId) {\n  for (const line of order.lines) {\n    line.fulfilled = true;\n  }\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "orders-partial-fulfillment",
+          "description": "Fulfilling one line marks an unrelated unshipped line fulfilled.",
+          "filePath": "src/orders/fulfillment.js",
+          "terms": [
+            "line",
+            "all",
+            "fulfill",
+            "partial"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-orders-partial-fulfillment-clean",
+      "family": "domain",
+      "pairId": "orders-partial-fulfillment",
+      "variant": "clean",
+      "domain": "orders",
+      "category": "orders",
+      "contract": "A warehouse event identifies one order line; other order lines must retain their existing fulfillment status.",
+      "diff": "diff --git a/src/orders/fulfillment.js b/src/orders/fulfillment.js\nindex af424d5..9892496 100644\n--- a/src/orders/fulfillment.js\n+++ b/src/orders/fulfillment.js\n@@ -1,5 +1,5 @@\n export function fulfill(order, lineId) {\n   for (const line of order.lines) {\n-    line.fulfilled = true;\n+    if (line.id === lineId) line.fulfilled = true;\n   }\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/orders/fulfillment.js",
+          "before": "export function fulfill(order, lineId) {\n  for (const line of order.lines) {\n    line.fulfilled = true;\n  }\n}\n",
+          "after": "export function fulfill(order, lineId) {\n  for (const line of order.lines) {\n    if (line.id === lineId) line.fulfilled = true;\n  }\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
       "id": "seed-payments-client-amount-bug",
       "family": "domain",
       "pairId": "payments-client-amount",
