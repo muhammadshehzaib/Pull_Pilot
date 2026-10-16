@@ -399,7 +399,9 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     expect(expired.deliveries[0].githubCommentId).toBeTruthy(); expect(expired.deliveries[0].state).toBe('DELIVERED');
   });
   it('keeps failed tracked reviews through cleanup so reopening the same PR head stays deduplicated', async () => {
-    const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
+    const data = await input();
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { commitSha: data.headSha } });
+    const plan = await service.prepareReviewDelivery(data), fake = github();
     await service.deliverReviewPlan(plan, fake.api);
     await db.analysisJob.update({ where: { id: data.jobId }, data: { status: 'FAILED', updatedAt: new Date(0) } });
     const { sweepFailedJobsOnce } = await import('../workers/job-retention');
