@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShieldCheck, Trash2, Save, Pencil, X } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
@@ -73,6 +73,10 @@ export default function EngineeringRulesPage() {
   const [editingRevision, setEditingRevision] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const rulesController = useRef<AbortController | null>(null);
+  const rulesSequence = useRef(0);
+  const selectedRepo = useRef('');
+  const selectionEpoch = useRef(0);
 
   // Derived instead of a set-in-effect flag: while the rules for the selected
   // repository have not arrived yet, `rulesRepoId` still names the previous
@@ -106,35 +110,32 @@ export default function EngineeringRulesPage() {
     return () => controller.abort();
   }, [user, repoLoadAttempt]);
 
-  const refreshRules = async (id = repoId) => {
-    if (!id) return;
+  const refreshRules = useCallback(async (id: string) => {
+    if (!id || selectedRepo.current !== id) return;
+    rulesController.current?.abort();
+    const controller = new AbortController();
+    rulesController.current = controller;
+    const sequence = ++rulesSequence.current;
+    const current = () => !controller.signal.aborted && sequence === rulesSequence.current && selectedRepo.current === id;
     try {
-      const res = await api<{ rules: RepositoryRule[] }>(`/api/repositories/${id}/rules`);
+      const res = await api<{ rules: RepositoryRule[] }>(`/api/repositories/${id}/rules`, { signal: controller.signal });
+      if (!current()) return;
       setRules(res.rules);
       setRulesRepoId(id);
       setRulesError(null);
     } catch {
+      if (!current()) return;
+      setRulesRepoId(id);
       setRulesError({ repoId: id, text: 'Rules could not be loaded. Please retry.' });
     }
-  };
+  }, []);
 
   useEffect(() => {
-    if (!repoId) return;
-    // State updates live in the promise callbacks — same shape as the vault
-    // page — so the effect body itself never writes state synchronously.
-    api<{ rules: RepositoryRule[] }>(`/api/repositories/${repoId}/rules`)
-      .then((res) => {
-        setRules(res.rules);
-        setRulesRepoId(repoId);
-        setRulesError(null);
-      })
-      .catch(() => {
-        // Mark the fetch as settled even on failure so the page shows the
-        // last-known list instead of spinning forever.
-        setRulesRepoId(repoId);
-        setRulesError({ repoId, text: 'Rules could not be loaded. Please retry.' });
-      });
-  }, [repoId, rulesLoadAttempt]);
+    selectedRepo.current = repoId;
+    let cancelled = false;
+    Promise.resolve().then(() => { if (!cancelled) void refreshRules(repoId); });
+    return () => { cancelled = true; rulesController.current?.abort(); };
+  }, [repoId, rulesLoadAttempt, refreshRules]);
 
   function resetForm() {
     setForm(EMPTY_FORM);
@@ -142,6 +143,9 @@ export default function EngineeringRulesPage() {
   }
 
   async function submit(e: React.FormEvent) {
+    const targetRepoId = repoId;
+    const epoch = selectionEpoch.current;
+    const current = () => selectedRepo.current === targetRepoId && selectionEpoch.current === epoch;
     e.preventDefault();
     if (!repoId) {
       setMessage({ kind: 'err', text: 'Connect a repository first — rules belong to one repository.' });
@@ -168,24 +172,29 @@ export default function EngineeringRulesPage() {
           method: 'PUT',
           body: JSON.stringify({ ...body, expectedRevision: editingRevision }),
         });
+        if (!current()) return;
         setMessage({ kind: 'ok', text: `Rule "${body.name}" updated.` });
       } else {
         await api(`/api/repositories/${repoId}/rules`, {
           method: 'POST',
           body: JSON.stringify(body),
         });
+        if (!current()) return;
         setMessage({ kind: 'ok', text: `Rule "${body.name}" added. It applies from the next review.` });
       }
       resetForm();
-      await refreshRules();
+      await refreshRules(targetRepoId);
     } catch (err) {
-      setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to save the rule.' });
+      if (current()) setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to save the rule.' });
     } finally {
       setBusy(false);
     }
   }
 
   async function toggle(rule: RepositoryRule) {
+    const targetRepoId = repoId;
+    const epoch = selectionEpoch.current;
+    const current = () => selectedRepo.current === targetRepoId && selectionEpoch.current === epoch;
     setBusy(true);
     setMessage(null);
     try {
@@ -193,13 +202,14 @@ export default function EngineeringRulesPage() {
         method: 'PUT',
         body: JSON.stringify({ enabled: !rule.enabled, expectedRevision: rule.revision }),
       });
+      if (!current()) return;
       setMessage({
         kind: 'ok',
         text: rule.enabled
           ? `"${rule.name}" disabled — it will be ignored by reviews.`
           : `"${rule.name}" enabled.`,
       });
-      await refreshRules();
+      await refreshRules(targetRepoId);
     } catch (err) {
       setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to update the rule.' });
     } finally {
@@ -208,14 +218,18 @@ export default function EngineeringRulesPage() {
   }
 
   async function remove(rule: RepositoryRule) {
+    const targetRepoId = repoId;
+    const epoch = selectionEpoch.current;
+    const current = () => selectedRepo.current === targetRepoId && selectionEpoch.current === epoch;
     if (!confirm(`Delete the rule "${rule.name}"? Past review results keep their recorded check.`)) return;
     setBusy(true);
     setMessage(null);
     try {
       await api(`/api/repositories/${repoId}/rules/${rule.id}`, { method: 'DELETE', body: JSON.stringify({ expectedRevision: rule.revision }) });
+      if (!current()) return;
       if (editingId === rule.id) resetForm();
       setMessage({ kind: 'ok', text: `Rule "${rule.name}" deleted.` });
-      await refreshRules();
+      await refreshRules(targetRepoId);
     } catch (err) {
       setMessage({ kind: 'err', text: (err as { error?: string }).error || 'Failed to delete the rule.' });
     } finally {
@@ -289,7 +303,12 @@ export default function EngineeringRulesPage() {
                 disabled={reposLoading || !!reposError}
                 value={repoId}
                 onChange={(e) => {
+                  rulesController.current?.abort();
+                  ++rulesSequence.current;
+                  ++selectionEpoch.current;
+                  selectedRepo.current = e.target.value;
                   setRepoId(e.target.value);
+                  setMessage(null);
                   setRepoSelectionError('');
                   resetForm();
                 }}

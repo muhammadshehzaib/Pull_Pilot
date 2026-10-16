@@ -65,3 +65,16 @@ and filter changes and late detail successes/errors. Web typecheck passed. Histo
 lint still reports two pre-existing state-in-effect errors in the unchanged
 finding-feedback/risk detail effects; the request-handling lint errors/warnings
 from the starting code were removed.
+
+## 36 — Rules request ordering
+
+Plan: scope rules reads, loading/error updates, and post-save refreshes to the
+current repository and request. Ignore obsolete requests even after A → B → A.
+
+Implemented: one guarded rules loader handles initial reads, retry, and mutation
+refreshes. Repository changes abort outstanding reads immediately. Old mutation
+results cannot refresh another repository, show the wrong success/error message,
+or clear the newly selected repository's draft.
+Validation: nine rules tests passed, including late successes/errors, switching
+away and back, retry, and an old save completing after a repo switch. Web typecheck
+and rules-page lint passed.

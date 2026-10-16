@@ -41,7 +41,7 @@ describe('rules repository selection', () => {
     expect(mockApi.mock.calls.some(([path]) => path.endsWith('/rules'))).toBe(false);
     await act(async () => finish(page([repo('target')], 2)));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue('target'));
-    expect(mockApi).toHaveBeenCalledWith('/api/repositories/target/rules');
+    expect(mockApi).toHaveBeenCalledWith('/api/repositories/target/rules', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   });
 
   it.each(['missing', 'inactive'])('does not silently substitute another repository for a %s deep link', async target => {
@@ -54,7 +54,7 @@ describe('rules repository selection', () => {
     expect(mockApi.mock.calls.some(([path]) => path.endsWith('/rules'))).toBe(false);
     expect(screen.getByRole('button', { name: /Add rule/ })).toBeDisabled();
     await user.selectOptions(screen.getByRole('combobox', { name: 'Repository' }), 'first');
-    await waitFor(() => expect(mockApi).toHaveBeenCalledWith('/api/repositories/first/rules'));
+    await waitFor(() => expect(mockApi).toHaveBeenCalledWith('/api/repositories/first/rules', expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
@@ -65,5 +65,66 @@ describe('rules repository selection', () => {
     expect(screen.queryByText(/No connected repositories/)).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Retry repositories' }));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Repository' })).toHaveValue('first'));
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void, reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+const rule = (name: string) => ({ id: name, name, enabled: true, revision: 0, enforcement: 'LLM', severity: 'HIGH', category: 'BUG', guideline: 'Check it' });
+describe('rules request ordering', () => {
+  it.each(['resolve', 'reject'] as const)('ignores a late request %s after another repository finishes loading', async finish => {
+    const first = deferred<any>();
+    mockApi.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/repositories?')) return page([repo('first'), repo('second')]);
+      if (path === '/api/repositories/first/rules') return first.promise;
+      return { rules: [rule('Second repository rule')] };
+    });
+    const user = userEvent.setup(); render(<RulesPage />);
+    await waitFor(() => expect(mockApi.mock.calls.some(([path]) => path === '/api/repositories/first/rules')).toBe(true));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Repository' }), 'second');
+    await screen.findByText('Second repository rule');
+    await act(async () => { if (finish === 'resolve') first.resolve({ rules: [rule('Stale rule')] }); else first.reject(new Error('old failure')); });
+    expect(screen.getByText('Second repository rule')).toBeInTheDocument();
+    expect(screen.queryByText('Stale rule')).toBeNull();
+    expect(screen.queryByText(/Loading rules/)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+  it('keeps the newest response when switching away and back to the same repository', async () => {
+    const old = deferred<any>(); let firstCalls = 0;
+    mockApi.mockImplementation(async path => {
+      if (path.startsWith('/api/repositories?')) return page([repo('first'), repo('second')]);
+      if (path === '/api/repositories/first/rules') return ++firstCalls === 1 ? old.promise : { rules: [rule('Latest first rule')] };
+      return { rules: [] };
+    });
+    const user = userEvent.setup(); render(<RulesPage />);
+    await waitFor(() => expect(firstCalls).toBe(1));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Repository' }), 'second');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Repository' }), 'first');
+    await screen.findByText('Latest first rule');
+    await act(async () => old.resolve({ rules: [rule('Old first rule')] }));
+    expect(screen.getByText('Latest first rule')).toBeInTheDocument();
+    expect(screen.queryByText('Old first rule')).toBeNull();
+  });
+  it('does not let an old save refresh another repository or clear its new draft', async () => {
+    const save = deferred<any>();
+    mockApi.mockImplementation(async (path, init?: RequestInit) => {
+      if (path.startsWith('/api/repositories?')) return page([repo('first'), repo('second')]);
+      if (init?.method === 'POST') return save.promise;
+      return { rules: [] };
+    });
+    const user = userEvent.setup(); render(<RulesPage />);
+    await screen.findByText(/No rules for this repository/);
+    await user.type(screen.getByLabelText('Rule name'), 'Rule for first');
+    await user.click(screen.getByRole('button', { name: 'Add rule' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Repository' }), 'second');
+    await screen.findByText(/No rules for this repository/);
+    await user.type(screen.getByLabelText('Rule name'), 'New second draft');
+    await act(async () => save.resolve({}));
+    expect(screen.getByLabelText('Rule name')).toHaveValue('New second draft');
+    expect(screen.queryByText(/Rule "Rule for first" added/)).toBeNull();
+    expect(mockApi.mock.calls.filter(([path, init]) => path === '/api/repositories/first/rules' && !init?.method)).toHaveLength(1);
   });
 });
