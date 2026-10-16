@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const { mockReplace, mockApi } = vi.hoisted(() => ({
   mockReplace: vi.fn(),
@@ -66,6 +66,29 @@ describe('useAuth()', () => {
   });
 
   describe('failure path', () => {
+    it.each([{ status: 503 }, { status: 500 }, new Error('network down')])('keeps the current route on a temporary failure: %j', async error => {
+      mockApi.mockRejectedValueOnce(error);
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(mockReplace).not.toHaveBeenCalled();
+      expect(result.current.error).toContain('retry');
+      mockApi.mockResolvedValueOnce({ user: sampleUser });
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.user).toEqual(sampleUser));
+      expect(result.current.error).toBeNull();
+      expect(mockApi).toHaveBeenCalledTimes(2);
+    });
+
+    it('retains a previously verified user when a retry fails temporarily', async () => {
+      mockApi.mockResolvedValueOnce({ user: sampleUser });
+      const { result } = renderHook(() => useAuth());
+      await waitFor(() => expect(result.current.user).toEqual(sampleUser));
+      mockApi.mockRejectedValueOnce({ status: 503 });
+      act(() => result.current.retry());
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current.user).toEqual(sampleUser);
+      expect(mockReplace).not.toHaveBeenCalled();
+    });
     it('redirects to "/" when /api/auth/me rejects (default redirectOnFail=true)', async () => {
       mockApi.mockImplementation(() => Promise.reject({ status: 401, error: 'Unauthorized' }));
 

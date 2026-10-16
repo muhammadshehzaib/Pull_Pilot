@@ -5,6 +5,7 @@ import { History, GitPullRequest, GitCommit, Brain, CheckCircle2, XCircle, Loade
 import { Sidebar } from '../../components/Sidebar';
 import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
+import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { api, type PaginationMeta } from '../../lib/api';
 import {
   AGENT_LABELS,
@@ -86,7 +87,7 @@ interface JobDetail extends JobSummary {
 }
 
 export default function HistoryPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [selected, setSelected] = useState<JobDetail | null>(null);
   const [loadingList, setLoadingList] = useState(true);
@@ -222,6 +223,8 @@ export default function HistoryPage() {
       setLoadingDetail(false);
     }
   }
+
+  if (authError && !user) return <AuthUnavailable error={authError} retry={retryAuth} />;
 
   if (authLoading || !user) {
     return (

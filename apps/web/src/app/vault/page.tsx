@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Key, ShieldCheck, Trash2, Save } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
+import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { api } from '../../lib/api';
 
 type Provider = 'GEMINI' | 'OPENAI' | 'CLAUDE' | 'GROK';
@@ -21,7 +22,7 @@ const PROVIDERS: { value: Provider; label: string; hint: string }[] = [
 ];
 
 export default function VaultPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [vault, setVault] = useState<VaultRecord | null>(null);
   const [provider, setProvider] = useState<Provider>('OPENAI');
   const [apiKey, setApiKey] = useState('');
@@ -75,6 +76,8 @@ export default function VaultPage() {
       setBusy(false);
     }
   }
+
+  if (authError && !user) return <AuthUnavailable error={authError} retry={retryAuth} />;
 
   if (authLoading || !user) {
     return <div style={{ padding: '3rem', color: 'var(--text-secondary)' }}>Loading…</div>;

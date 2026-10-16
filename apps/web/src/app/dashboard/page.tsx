@@ -8,6 +8,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { UsageMeter } from '../../components/UsageMeter';
 import { EngineeringHealth } from '../../components/EngineeringHealth';
 import { useAuth } from '../../lib/useAuth';
+import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { BACKEND_URL } from '../../utils/constants';
 import { isInProgress, isTerminalFailure, statusLabel } from '../../lib/review';
 
@@ -35,7 +36,7 @@ function feedAccent(status: string): { color: string; failed: boolean } {
 }
 
 export default function DashboardPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [healthRefresh, setHealthRefresh] = useState(0);
@@ -67,6 +68,8 @@ export default function DashboardPage() {
       clearTimeout(healthTimer);
     };
   }, [user]);
+
+  if (authError && !user) return <AuthUnavailable error={authError} retry={retryAuth} />;
 
   if (authLoading || !user) {
     return <div style={{ padding: '3rem', color: 'var(--text-secondary)' }}>Loading…</div>;

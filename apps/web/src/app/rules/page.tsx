@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ShieldCheck, Trash2, Save, Pencil, X } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
+import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { api } from '../../lib/api';
 import { AGENT_LABELS, PRIORITY_LABELS, type AgentType, type Priority } from '../../lib/review';
 import {
@@ -54,7 +55,7 @@ const ENFORCEMENTS: RuleEnforcement[] = ['LLM', 'DETERMINISTIC', 'BOTH'];
 type Message = { kind: 'ok' | 'err'; text: string };
 
 export default function EngineeringRulesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [repos, setRepos] = useState<RepoOption[]>([]);
   const [reposLoading, setReposLoading] = useState(true);
   const [repoId, setRepoId] = useState('');
@@ -221,6 +222,8 @@ export default function EngineeringRulesPage() {
     });
     setMessage(null);
   }
+
+  if (authError && !user) return <AuthUnavailable error={authError} retry={retryAuth} />;
 
   if (authLoading || !user) {
     return (

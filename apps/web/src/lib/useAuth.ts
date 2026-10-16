@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from './api';
+import { api, type ApiError } from './api';
 
 export interface AuthUser {
   id: string;
@@ -15,6 +15,8 @@ export interface AuthUser {
 interface AuthState {
   user: AuthUser | null;
   loading: boolean;
+  error: string | null;
+  retry: () => void;
 }
 
 /**
@@ -22,9 +24,16 @@ interface AuthState {
  * protected pages), bounces to the landing page when unauthenticated.
  */
 export function useAuth(redirectOnFail = true): AuthState {
-  const router = useRouter();
+  const { replace } = useRouter();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    setAttempt(n => n + 1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,11 +42,16 @@ export function useAuth(redirectOnFail = true): AuthState {
       .then((res) => {
         if (cancelled) return;
         setUser(res.user);
+        setError(null);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (cancelled) return;
-        setUser(null);
-        if (redirectOnFail) router.replace('/');
+        if ((err as ApiError | null)?.status === 401) {
+          setUser(null);
+          if (redirectOnFail) replace('/');
+        } else {
+          setError('Your session could not be checked. Please retry.');
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -46,7 +60,7 @@ export function useAuth(redirectOnFail = true): AuthState {
     return () => {
       cancelled = true;
     };
-  }, [router, redirectOnFail]);
+  }, [replace, redirectOnFail, attempt]);
 
-  return { user, loading };
+  return { user, loading, error, retry };
 }

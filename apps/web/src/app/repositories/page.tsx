@@ -6,6 +6,7 @@ import { GitBranch, Plus, Trash2, Play, ExternalLink, History, ShieldCheck } fro
 import { Sidebar } from '../../components/Sidebar';
 import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
+import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { api, type PaginationMeta } from '../../lib/api';
 
 export const ROUTES = {
@@ -25,7 +26,7 @@ interface Repository {
 }
 
 export default function RepositoriesPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [repos, setRepos] = useState<Repository[]>([]);
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [page, setPage] = useState(1);
@@ -157,6 +158,8 @@ export default function RepositoriesPage() {
       setBusy(false);
     }
   }
+
+  if (authError && !user) return <AuthUnavailable error={authError} retry={retryAuth} />;
 
   if (authLoading || !user) {
     return (
