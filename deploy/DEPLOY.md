@@ -123,9 +123,9 @@ certbot --nginx -d reviewer.shehzaib.com -d reviewerapi.shehzaib.com
 
 1. `https://reviewer.shehzaib.com` → log in with GitHub (prod OAuth app).
 2. Vault page → save the AI key (Groq key goes under provider **GROK**).
-3. Connect a repo you own → webhook installs for real here (public URL), so
-   pushes and PRs auto-review via webhook. Third-party repos still work via the
-   poller (PRs you author).
+3. Connect a repository through the GitHub App and verify its App webhook events
+   trigger push and PR reviews. Keep `REPO_POLL_ENABLED=false` in production;
+   polling is an explicit local fallback for non-App repositories without webhooks.
 4. Check `docker logs -f aipr-backend` while pushing a commit.
 
 ## Update to a new version

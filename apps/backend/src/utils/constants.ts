@@ -93,9 +93,11 @@ export const SWEEP_ENABLED = process.env.JOB_RETENTION_SWEEP !== 'false';
 /* Repository poller                                                          */
 /* -------------------------------------------------------------------------- */
 
-/** 60s. */
-export const POLL_INTERVAL_MS = parseInt(process.env.REPO_POLL_INTERVAL_MS || '60000', 10);
-export const POLL_ENABLED = process.env.REPO_POLL_ENABLED !== 'false';
+/** Development fallback only; invalid intervals cannot cause a hot timer loop. */
+const requestedPollInterval = Number(process.env.REPO_POLL_INTERVAL_MS ?? 60_000);
+export const POLL_INTERVAL_MS = Number.isSafeInteger(requestedPollInterval) && requestedPollInterval >= 60_000 && requestedPollInterval <= 2_147_483_647
+  ? requestedPollInterval : 60_000;
+export const POLL_ENABLED = process.env.REPO_POLL_ENABLED === 'true';
 
 /* -------------------------------------------------------------------------- */
 /* Analysis worker                                                            */

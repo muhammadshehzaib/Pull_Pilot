@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRepoFindMany, mockRepoUpdate, mockJobCreate, mockQueueAdd, mockRedisGet, mockRedisSet } =
+const { pollSettings, mockRepoFindMany, mockRepoUpdate, mockJobCreate, mockQueueAdd, mockRedisGet, mockRedisSet } =
   vi.hoisted(() => ({
+    pollSettings: { enabled: true },
     mockRepoFindMany: vi.fn(),
     mockRepoUpdate: vi.fn(),
     mockJobCreate: vi.fn(),
@@ -31,9 +32,10 @@ vi.mock('../services/quota.service', () => ({
   },
 }));
 
-vi.mock('../utils/constants', () => ({ POLL_ENABLED: true, POLL_INTERVAL_MS: 1000 }));
+vi.mock('../utils/constants', () => ({ get POLL_ENABLED() { return pollSettings.enabled; }, POLL_INTERVAL_MS: 1000 }));
 
 import { pollRepositoriesOnce, startRepoPoller } from './repo-poller';
+import { pollerHeadKey, POLLER_CACHE_TTL_SECONDS } from './poller-cache';
 
 // pollRepositoriesOnce accepts the GitHub service as a parameter, so the
 // GitHub API is faked by injection rather than by mocking octokit.
@@ -54,6 +56,7 @@ const repoRow = (overrides: Record<string, any> = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pollSettings.enabled = true;
   process.env.GITHUB_ACCESS_TOKEN = 'ghp-bot';
   mockJobCreate.mockResolvedValue({ id: 'job-1' });
   mockRedisGet.mockResolvedValue(null);
@@ -70,6 +73,9 @@ describe('repo poller — default branch', () => {
     mockRepoFindMany.mockResolvedValueOnce([repoRow()]);
 
     await pollRepositoriesOnce(fakeGitHub({ headSha: 'sha-A' }));
+    expect(mockRepoFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { isActive: true, webhookId: null, installationId: null },
+    }));
 
     expect(mockJobCreate).not.toHaveBeenCalled();
     expect(mockQueueAdd).not.toHaveBeenCalled();
@@ -142,16 +148,34 @@ describe('repo poller — pull requests', () => {
       }),
       { jobId: 'job-1' },
     );
-    expect(mockRedisSet).toHaveBeenCalledWith('pr-scanned:r-1:7:pr-head', '1');
+    expect(mockRedisSet).toHaveBeenCalledWith(pollerHeadKey('r-1', 7), 'pr-head', 'EX', POLLER_CACHE_TTL_SECONDS);
   });
 
   it('skips a PR head that was already reviewed', async () => {
     mockRepoFindMany.mockResolvedValueOnce([repoRow({ lastScannedSha: 'sha-A' })]);
-    mockRedisGet.mockResolvedValueOnce('1');
+    mockRedisGet.mockResolvedValueOnce('pr-head');
 
     await pollRepositoriesOnce(fakeGitHub({ headSha: 'sha-A', pulls: [pr] }));
 
     expect(mockQueueAdd).not.toHaveBeenCalled();
+  });
+  it('updates the same expiring cache slot when the PR gets another commit', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([repoRow({ lastScannedSha: 'sha-A' })]);
+    mockRedisGet.mockResolvedValueOnce('old-head');
+    await pollRepositoriesOnce(fakeGitHub({ headSha: 'sha-A', pulls: [pr] }));
+    expect(mockRedisGet).toHaveBeenCalledWith(pollerHeadKey('r-1', 7));
+    expect(mockRedisSet).toHaveBeenCalledWith(pollerHeadKey('r-1', 7), 'pr-head', 'EX', 604800);
+    expect(mockQueueAdd).toHaveBeenCalledOnce();
+  });
+  it('does not queue or charge a duplicate review after the Redis entry expires', async () => {
+    mockRepoFindMany.mockResolvedValueOnce([repoRow({ lastScannedSha: 'sha-A' })]);
+    mockRedisGet.mockResolvedValueOnce(null);
+    mockJobCreate.mockRejectedValueOnce({ code: 'P2002' });
+    await pollRepositoriesOnce(fakeGitHub({ headSha: 'sha-A', pulls: [pr] }));
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+    const { QuotaService } = await import('../services/quota.service');
+    expect(QuotaService.reserveReview).not.toHaveBeenCalled();
+    expect(mockRedisSet).toHaveBeenCalledWith(pollerHeadKey('r-1', 7), 'pr-head', 'EX', 604800);
   });
 
   it('ignores PRs authored by other users', async () => {
@@ -166,6 +190,13 @@ describe('repo poller — pull requests', () => {
 });
 
 describe('repo poller — resilience', () => {
+  it('does not start a timer or query repositories unless explicitly enabled', async () => {
+    vi.useFakeTimers(); pollSettings.enabled = false;
+    expect(startRepoPoller()).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mockRepoFindMany).not.toHaveBeenCalled(); expect(mockQueueAdd).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('handles the first database outage and recovers at the next scheduled tick', async () => {
     vi.useFakeTimers();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});

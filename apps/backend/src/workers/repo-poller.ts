@@ -6,6 +6,7 @@ import { GitHubAppService } from '../services/github-app.service';
 import { POLL_ENABLED, POLL_INTERVAL_MS } from '../utils/constants';
 import { QuotaService } from '../services/quota.service';
 import { safeErrorMetadata } from '../utils/safe-error';
+import { pollerHeadKey, POLLER_CACHE_TTL_SECONDS } from './poller-cache';
 
 type PolledRepo = {
   id: string;
@@ -29,11 +30,12 @@ type PolledRepo = {
  */
 export async function pollRepositoriesOnce(gh?: GitHubService) {
   const token = process.env.GITHUB_ACCESS_TOKEN;
-  const hasApp = Boolean(process.env.GITHUB_APP_ID && process.env.GITHUB_APP_PRIVATE_KEY);
-  if (!token && !gh && !hasApp) return;
+  if (!token && !gh) return;
 
   const repos: PolledRepo[] = await prisma.repository.findMany({
-    where: { isActive: true, webhookId: null },
+    // GitHub App installations receive App-level webhooks even when there is
+    // no per-repository webhookId. They must never use this fallback.
+    where: { isActive: true, webhookId: null, installationId: null },
     include: {
       user: { select: { id: true, username: true } },
       installation: { select: { githubInstallationId: true } },
@@ -72,13 +74,13 @@ export async function pollRepositoriesOnce(gh?: GitHubService) {
       const pulls = await github.listOpenPullRequests(owner, name);
       for (const pr of pulls) {
         if (pr.user?.login?.toLowerCase() !== repo.user.username.toLowerCase()) continue;
-        const seenKey = `pr-scanned:${repo.id}:${pr.number}:${pr.head.sha}`;
-        if (await redisConnection.get(seenKey)) continue;
+        const seenKey = pollerHeadKey(repo.id, pr.number);
+        if (await redisConnection.get(seenKey) === pr.head.sha) continue;
         await queueReview(repo, 'PULL_REQUEST', String(pr.number), {
           headSha: pr.head.sha,
           baseSha: pr.base.sha,
         });
-        await redisConnection.set(seenKey, '1');
+        await redisConnection.set(seenKey, pr.head.sha, 'EX', POLLER_CACHE_TTL_SECONDS);
       }
     } catch (err) {
       console.warn('Repository poll failed; continuing with other repositories', {

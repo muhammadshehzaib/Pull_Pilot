@@ -19,6 +19,8 @@ async function startWorker() {
   tasks[2].startContextRetentionSweep(); tasks[3].startBehavioralRetentionSweep();
   tasks[4].startHistoricalMaintenance(); tasks[5].startAnalyticsRetentionSweep();
   tasks[6].startReviewRecovery();
+  const { startLegacyPollerCacheExpiry } = await import('./workers/poller-cache');
+  startLegacyPollerCacheExpiry();
   console.log('Review worker started in a separate process');
 }
 void startWorker().catch(() => { console.error('Review worker failed to start'); process.exitCode = 1; });
