@@ -4537,6 +4537,586 @@
       }
     },
     {
+      "id": "seed-test-cases-unawaited-payment-bug",
+      "family": "domain",
+      "pairId": "test-cases-unawaited-payment",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "This async payment test must stay pending until its charge assertion runs. A resolved declined payment must fail the test.",
+      "diff": "diff --git a/test/payments/charge.test.js b/test/payments/charge.test.js\nindex 24043bc..4eb8840 100644\n--- a/test/payments/charge.test.js\n+++ b/test/payments/charge.test.js\n@@ -1,4 +1,3 @@\n export async function paymentTest(charge, assert) {\n-  const result = await charge();\n-  assert.equal(result.status, \"succeeded\");\n+  charge().then(result => assert.equal(result.status, \"succeeded\"));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/charge.test.js",
+          "before": "export async function paymentTest(charge, assert) {\n  const result = await charge();\n  assert.equal(result.status, \"succeeded\");\n}\n",
+          "after": "export async function paymentTest(charge, assert) {\n  charge().then(result => assert.equal(result.status, \"succeeded\"));\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-unawaited-payment",
+          "description": "The test finishes before the asynchronous payment assertion, so a declined payment can escape the test result.",
+          "filePath": "test/payments/charge.test.js",
+          "terms": [
+            "await",
+            "promise",
+            "assert",
+            "finish"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-unawaited-payment-clean",
+      "family": "domain",
+      "pairId": "test-cases-unawaited-payment",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "This async payment test must stay pending until its charge assertion runs. A resolved declined payment must fail the test.",
+      "diff": "diff --git a/test/payments/charge.test.js b/test/payments/charge.test.js\nindex 4eb8840..24043bc 100644\n--- a/test/payments/charge.test.js\n+++ b/test/payments/charge.test.js\n@@ -1,3 +1,4 @@\n export async function paymentTest(charge, assert) {\n-  charge().then(result => assert.equal(result.status, \"succeeded\"));\n+  const result = await charge();\n+  assert.equal(result.status, \"succeeded\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/charge.test.js",
+          "before": "export async function paymentTest(charge, assert) {\n  charge().then(result => assert.equal(result.status, \"succeeded\"));\n}\n",
+          "after": "export async function paymentTest(charge, assert) {\n  const result = await charge();\n  assert.equal(result.status, \"succeeded\");\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-unawaited-rejection-assertion-bug",
+      "family": "domain",
+      "pairId": "test-cases-unawaited-rejection-assertion",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The async assertion that a refund rejects must be awaited so its completion contributes to the test result.",
+      "diff": "diff --git a/test/payments/refund.test.js b/test/payments/refund.test.js\nindex 6ef273b..eeed92e 100644\n--- a/test/payments/refund.test.js\n+++ b/test/payments/refund.test.js\n@@ -1,3 +1,3 @@\n export async function refundTest(refund, assert) {\n-  await assert.rejects(() => refund(-1));\n+  assert.rejects(() => refund(-1));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/refund.test.js",
+          "before": "export async function refundTest(refund, assert) {\n  await assert.rejects(() => refund(-1));\n}\n",
+          "after": "export async function refundTest(refund, assert) {\n  assert.rejects(() => refund(-1));\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-unawaited-rejection-assertion",
+          "description": "The test returns before its rejects assertion completes and can falsely pass for a successful invalid refund.",
+          "filePath": "test/payments/refund.test.js",
+          "terms": [
+            "await",
+            "reject",
+            "assert",
+            "promise"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-unawaited-rejection-assertion-clean",
+      "family": "domain",
+      "pairId": "test-cases-unawaited-rejection-assertion",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The async assertion that a refund rejects must be awaited so its completion contributes to the test result.",
+      "diff": "diff --git a/test/payments/refund.test.js b/test/payments/refund.test.js\nindex eeed92e..6ef273b 100644\n--- a/test/payments/refund.test.js\n+++ b/test/payments/refund.test.js\n@@ -1,3 +1,3 @@\n export async function refundTest(refund, assert) {\n-  assert.rejects(() => refund(-1));\n+  await assert.rejects(() => refund(-1));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/refund.test.js",
+          "before": "export async function refundTest(refund, assert) {\n  assert.rejects(() => refund(-1));\n}\n",
+          "after": "export async function refundTest(refund, assert) {\n  await assert.rejects(() => refund(-1));\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-swallowed-assertion-bug",
+      "family": "domain",
+      "pairId": "test-cases-swallowed-assertion",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "An incorrect order total must make this test throw; assertion failures must not be swallowed.",
+      "diff": "diff --git a/test/orders/totals.test.js b/test/orders/totals.test.js\nindex 1c9f34a..385221f 100644\n--- a/test/orders/totals.test.js\n+++ b/test/orders/totals.test.js\n@@ -1,3 +1,3 @@\n export function totalTest(total, assert) {\n-  assert.equal(total(), 2500);\n+  try { assert.equal(total(), 2500); } catch {}\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/totals.test.js",
+          "before": "export function totalTest(total, assert) {\n  assert.equal(total(), 2500);\n}\n",
+          "after": "export function totalTest(total, assert) {\n  try { assert.equal(total(), 2500); } catch {}\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-swallowed-assertion",
+          "description": "The test catches its own assertion error and passes with an incorrect order total.",
+          "filePath": "test/orders/totals.test.js",
+          "terms": [
+            "catch",
+            "swallow",
+            "assert",
+            "pass"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-swallowed-assertion-clean",
+      "family": "domain",
+      "pairId": "test-cases-swallowed-assertion",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "An incorrect order total must make this test throw; assertion failures must not be swallowed.",
+      "diff": "diff --git a/test/orders/totals.test.js b/test/orders/totals.test.js\nindex 385221f..1c9f34a 100644\n--- a/test/orders/totals.test.js\n+++ b/test/orders/totals.test.js\n@@ -1,3 +1,3 @@\n export function totalTest(total, assert) {\n-  try { assert.equal(total(), 2500); } catch {}\n+  assert.equal(total(), 2500);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/totals.test.js",
+          "before": "export function totalTest(total, assert) {\n  try { assert.equal(total(), 2500); } catch {}\n}\n",
+          "after": "export function totalTest(total, assert) {\n  assert.equal(total(), 2500);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-truthiness-money-bug",
+      "family": "domain",
+      "pairId": "test-cases-truthiness-money",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The test must verify the charged amount is exactly 2500 cents, not merely a nonzero value.",
+      "diff": "diff --git a/test/payments/amount.test.js b/test/payments/amount.test.js\nindex 5d03caf..f3fdf85 100644\n--- a/test/payments/amount.test.js\n+++ b/test/payments/amount.test.js\n@@ -1,3 +1,3 @@\n export function amountTest(payment, assert) {\n-  assert.equal(payment.amountCents, 2500);\n+  assert.ok(payment.amountCents);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/amount.test.js",
+          "before": "export function amountTest(payment, assert) {\n  assert.equal(payment.amountCents, 2500);\n}\n",
+          "after": "export function amountTest(payment, assert) {\n  assert.ok(payment.amountCents);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-truthiness-money",
+          "description": "An undercharge of one cent passes a truthiness assertion.",
+          "filePath": "test/payments/amount.test.js",
+          "terms": [
+            "truth",
+            "amount",
+            "equal",
+            "assert"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-truthiness-money-clean",
+      "family": "domain",
+      "pairId": "test-cases-truthiness-money",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The test must verify the charged amount is exactly 2500 cents, not merely a nonzero value.",
+      "diff": "diff --git a/test/payments/amount.test.js b/test/payments/amount.test.js\nindex f3fdf85..5d03caf 100644\n--- a/test/payments/amount.test.js\n+++ b/test/payments/amount.test.js\n@@ -1,3 +1,3 @@\n export function amountTest(payment, assert) {\n-  assert.ok(payment.amountCents);\n+  assert.equal(payment.amountCents, 2500);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/amount.test.js",
+          "before": "export function amountTest(payment, assert) {\n  assert.ok(payment.amountCents);\n}\n",
+          "after": "export function amountTest(payment, assert) {\n  assert.equal(payment.amountCents, 2500);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-tautological-expectation-bug",
+      "family": "domain",
+      "pairId": "test-cases-tautological-expectation",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The known fixture product costs 2500 cents. Assert the result against that independent expected value.",
+      "diff": "diff --git a/test/products/pricing.test.js b/test/products/pricing.test.js\nindex 332a02d..5dc918f 100644\n--- a/test/products/pricing.test.js\n+++ b/test/products/pricing.test.js\n@@ -1,4 +1,4 @@\n export function priceTest(price, assert) {\n   const actual = price();\n-  assert.equal(actual, 2500);\n+  assert.equal(actual, actual);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/products/pricing.test.js",
+          "before": "export function priceTest(price, assert) {\n  const actual = price();\n  assert.equal(actual, 2500);\n}\n",
+          "after": "export function priceTest(price, assert) {\n  const actual = price();\n  assert.equal(actual, actual);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-tautological-expectation",
+          "description": "Comparing the computed price to itself passes for any incorrect value.",
+          "filePath": "test/products/pricing.test.js",
+          "terms": [
+            "itself",
+            "tautolog",
+            "expected",
+            "assert"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-tautological-expectation-clean",
+      "family": "domain",
+      "pairId": "test-cases-tautological-expectation",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The known fixture product costs 2500 cents. Assert the result against that independent expected value.",
+      "diff": "diff --git a/test/products/pricing.test.js b/test/products/pricing.test.js\nindex 5dc918f..332a02d 100644\n--- a/test/products/pricing.test.js\n+++ b/test/products/pricing.test.js\n@@ -1,4 +1,4 @@\n export function priceTest(price, assert) {\n   const actual = price();\n-  assert.equal(actual, actual);\n+  assert.equal(actual, 2500);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/products/pricing.test.js",
+          "before": "export function priceTest(price, assert) {\n  const actual = price();\n  assert.equal(actual, actual);\n}\n",
+          "after": "export function priceTest(price, assert) {\n  const actual = price();\n  assert.equal(actual, 2500);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-mock-system-under-test-bug",
+      "family": "domain",
+      "pairId": "test-cases-mock-system-under-test",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "Test the actual service.charge implementation; mocking the function under test must not replace the behavior being verified.",
+      "diff": "diff --git a/test/payments/service.test.js b/test/payments/service.test.js\nindex 202dd7e..252d931 100644\n--- a/test/payments/service.test.js\n+++ b/test/payments/service.test.js\n@@ -1,4 +1,5 @@\n export async function serviceTest(service, assert) {\n+  service.charge = async () => ({ status: \"succeeded\" });\n   const payment = await service.charge();\n   assert.equal(payment.status, \"succeeded\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/service.test.js",
+          "before": "export async function serviceTest(service, assert) {\n  const payment = await service.charge();\n  assert.equal(payment.status, \"succeeded\");\n}\n",
+          "after": "export async function serviceTest(service, assert) {\n  service.charge = async () => ({ status: \"succeeded\" });\n  const payment = await service.charge();\n  assert.equal(payment.status, \"succeeded\");\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-mock-system-under-test",
+          "description": "The test replaces a broken charge implementation with a successful mock and only tests the mock.",
+          "filePath": "test/payments/service.test.js",
+          "terms": [
+            "mock",
+            "implementation",
+            "service",
+            "test"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-mock-system-under-test-clean",
+      "family": "domain",
+      "pairId": "test-cases-mock-system-under-test",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "Test the actual service.charge implementation; mocking the function under test must not replace the behavior being verified.",
+      "diff": "diff --git a/test/payments/service.test.js b/test/payments/service.test.js\nindex 252d931..202dd7e 100644\n--- a/test/payments/service.test.js\n+++ b/test/payments/service.test.js\n@@ -1,5 +1,4 @@\n export async function serviceTest(service, assert) {\n-  service.charge = async () => ({ status: \"succeeded\" });\n   const payment = await service.charge();\n   assert.equal(payment.status, \"succeeded\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/payments/service.test.js",
+          "before": "export async function serviceTest(service, assert) {\n  service.charge = async () => ({ status: \"succeeded\" });\n  const payment = await service.charge();\n  assert.equal(payment.status, \"succeeded\");\n}\n",
+          "after": "export async function serviceTest(service, assert) {\n  const payment = await service.charge();\n  assert.equal(payment.status, \"succeeded\");\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-missing-assertion-bug",
+      "family": "domain",
+      "pairId": "test-cases-missing-assertion",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "An order creation test must verify status=\"pending\" rather than pass just because create resolves.",
+      "diff": "diff --git a/test/orders/create.test.js b/test/orders/create.test.js\nindex 5aa6451..6203ff5 100644\n--- a/test/orders/create.test.js\n+++ b/test/orders/create.test.js\n@@ -1,4 +1,3 @@\n export async function createTest(create, assert) {\n   const order = await create();\n-  assert.equal(order.status, \"pending\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/create.test.js",
+          "before": "export async function createTest(create, assert) {\n  const order = await create();\n  assert.equal(order.status, \"pending\");\n}\n",
+          "after": "export async function createTest(create, assert) {\n  const order = await create();\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-missing-assertion",
+          "description": "An incorrectly pre-shipped order passes because the test has no assertion.",
+          "filePath": "test/orders/create.test.js",
+          "terms": [
+            "assert",
+            "status",
+            "missing",
+            "test"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-missing-assertion-clean",
+      "family": "domain",
+      "pairId": "test-cases-missing-assertion",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "An order creation test must verify status=\"pending\" rather than pass just because create resolves.",
+      "diff": "diff --git a/test/orders/create.test.js b/test/orders/create.test.js\nindex 6203ff5..5aa6451 100644\n--- a/test/orders/create.test.js\n+++ b/test/orders/create.test.js\n@@ -1,3 +1,4 @@\n export async function createTest(create, assert) {\n   const order = await create();\n+  assert.equal(order.status, \"pending\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/create.test.js",
+          "before": "export async function createTest(create, assert) {\n  const order = await create();\n}\n",
+          "after": "export async function createTest(create, assert) {\n  const order = await create();\n  assert.equal(order.status, \"pending\");\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-boundary-coverage-removed-bug",
+      "family": "domain",
+      "pairId": "test-cases-boundary-coverage-removed",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "This regression test must verify that zero quantity is rejected. A successful positive-quantity example is insufficient.",
+      "diff": "diff --git a/test/orders/quantity.test.js b/test/orders/quantity.test.js\nindex 04f2935..e4f0188 100644\n--- a/test/orders/quantity.test.js\n+++ b/test/orders/quantity.test.js\n@@ -1,3 +1,3 @@\n export function quantityTest(create, assert) {\n-  assert.throws(() => create(0));\n+  assert.equal(create(2).quantity, 2);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/quantity.test.js",
+          "before": "export function quantityTest(create, assert) {\n  assert.throws(() => create(0));\n}\n",
+          "after": "export function quantityTest(create, assert) {\n  assert.equal(create(2).quantity, 2);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-boundary-coverage-removed",
+          "description": "Replacing the zero-quantity regression with a happy-path example lets a missing quantity guard pass.",
+          "filePath": "test/orders/quantity.test.js",
+          "terms": [
+            "zero",
+            "boundary",
+            "coverage",
+            "regression"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-boundary-coverage-removed-clean",
+      "family": "domain",
+      "pairId": "test-cases-boundary-coverage-removed",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "This regression test must verify that zero quantity is rejected. A successful positive-quantity example is insufficient.",
+      "diff": "diff --git a/test/orders/quantity.test.js b/test/orders/quantity.test.js\nindex e4f0188..04f2935 100644\n--- a/test/orders/quantity.test.js\n+++ b/test/orders/quantity.test.js\n@@ -1,3 +1,3 @@\n export function quantityTest(create, assert) {\n-  assert.equal(create(2).quantity, 2);\n+  assert.throws(() => create(0));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/quantity.test.js",
+          "before": "export function quantityTest(create, assert) {\n  assert.equal(create(2).quantity, 2);\n}\n",
+          "after": "export function quantityTest(create, assert) {\n  assert.throws(() => create(0));\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-skipped-regression-bug",
+      "family": "domain",
+      "pairId": "test-cases-skipped-regression",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The receipt regression must execute during the normal test run and fail when its total is wrong.",
+      "diff": "diff --git a/test/orders/receipt.test.js b/test/orders/receipt.test.js\nindex 4f7d369..a99a292 100644\n--- a/test/orders/receipt.test.js\n+++ b/test/orders/receipt.test.js\n@@ -1,3 +1,3 @@\n export function register(test, total, assert) {\n-  test(\"receipt total\", () => assert.equal(total(), 2500));\n+  test.skip(\"receipt total\", () => assert.equal(total(), 2500));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/receipt.test.js",
+          "before": "export function register(test, total, assert) {\n  test(\"receipt total\", () => assert.equal(total(), 2500));\n}\n",
+          "after": "export function register(test, total, assert) {\n  test.skip(\"receipt total\", () => assert.equal(total(), 2500));\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-skipped-regression",
+          "description": "Skipping the only receipt regression lets an incorrect total produce a green suite.",
+          "filePath": "test/orders/receipt.test.js",
+          "terms": [
+            "skip",
+            "regression",
+            "test",
+            "run"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-skipped-regression-clean",
+      "family": "domain",
+      "pairId": "test-cases-skipped-regression",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "The receipt regression must execute during the normal test run and fail when its total is wrong.",
+      "diff": "diff --git a/test/orders/receipt.test.js b/test/orders/receipt.test.js\nindex a99a292..4f7d369 100644\n--- a/test/orders/receipt.test.js\n+++ b/test/orders/receipt.test.js\n@@ -1,3 +1,3 @@\n export function register(test, total, assert) {\n-  test.skip(\"receipt total\", () => assert.equal(total(), 2500));\n+  test(\"receipt total\", () => assert.equal(total(), 2500));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/orders/receipt.test.js",
+          "before": "export function register(test, total, assert) {\n  test.skip(\"receipt total\", () => assert.equal(total(), 2500));\n}\n",
+          "after": "export function register(test, total, assert) {\n  test(\"receipt total\", () => assert.equal(total(), 2500));\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-shared-state-bug",
+      "family": "domain",
+      "pairId": "test-cases-shared-state",
+      "variant": "bug",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "Each registered product test must receive a fresh catalog fixture. The first test removes one product; the second expects the original two products.",
+      "diff": "diff --git a/test/products/catalog.test.js b/test/products/catalog.test.js\nindex b15c200..eae320d 100644\n--- a/test/products/catalog.test.js\n+++ b/test/products/catalog.test.js\n@@ -1,5 +1,5 @@\n export function register(test, assert) {\n-  const catalog = () => [\"apple\", \"pear\"];\n-  test(\"remove product\", () => { const products = catalog(); products.pop(); assert.equal(products.length, 1); });\n-  test(\"list products\", () => { const products = catalog(); assert.equal(products.length, 2); });\n+  const products = [\"apple\", \"pear\"];\n+  test(\"remove product\", () => { products.pop(); assert.equal(products.length, 1); });\n+  test(\"list products\", () => { assert.equal(products.length, 2); });\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/products/catalog.test.js",
+          "before": "export function register(test, assert) {\n  const catalog = () => [\"apple\", \"pear\"];\n  test(\"remove product\", () => { const products = catalog(); products.pop(); assert.equal(products.length, 1); });\n  test(\"list products\", () => { const products = catalog(); assert.equal(products.length, 2); });\n}\n",
+          "after": "export function register(test, assert) {\n  const products = [\"apple\", \"pear\"];\n  test(\"remove product\", () => { products.pop(); assert.equal(products.length, 1); });\n  test(\"list products\", () => { assert.equal(products.length, 2); });\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "test-cases-shared-state",
+          "description": "Two tests share a mutable array, so running the removal test first breaks the list test.",
+          "filePath": "test/products/catalog.test.js",
+          "terms": [
+            "shared",
+            "state",
+            "order",
+            "fixture"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-test-cases-shared-state-clean",
+      "family": "domain",
+      "pairId": "test-cases-shared-state",
+      "variant": "clean",
+      "domain": "test-cases",
+      "category": "testing",
+      "contract": "Each registered product test must receive a fresh catalog fixture. The first test removes one product; the second expects the original two products.",
+      "diff": "diff --git a/test/products/catalog.test.js b/test/products/catalog.test.js\nindex eae320d..b15c200 100644\n--- a/test/products/catalog.test.js\n+++ b/test/products/catalog.test.js\n@@ -1,5 +1,5 @@\n export function register(test, assert) {\n-  const products = [\"apple\", \"pear\"];\n-  test(\"remove product\", () => { products.pop(); assert.equal(products.length, 1); });\n-  test(\"list products\", () => { assert.equal(products.length, 2); });\n+  const catalog = () => [\"apple\", \"pear\"];\n+  test(\"remove product\", () => { const products = catalog(); products.pop(); assert.equal(products.length, 1); });\n+  test(\"list products\", () => { const products = catalog(); assert.equal(products.length, 2); });\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "test/products/catalog.test.js",
+          "before": "export function register(test, assert) {\n  const products = [\"apple\", \"pear\"];\n  test(\"remove product\", () => { products.pop(); assert.equal(products.length, 1); });\n  test(\"list products\", () => { assert.equal(products.length, 2); });\n}\n",
+          "after": "export function register(test, assert) {\n  const catalog = () => [\"apple\", \"pear\"];\n  test(\"remove product\", () => { const products = catalog(); products.pop(); assert.equal(products.length, 1); });\n  test(\"list products\", () => { const products = catalog(); assert.equal(products.length, 2); });\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
       "id": "real-axios-axios-7369-bug",
       "family": "historical-pr",
       "pairId": "axios-axios-7369",

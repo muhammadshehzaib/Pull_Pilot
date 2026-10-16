@@ -16,7 +16,7 @@ function loadDomains() {
 
 async function reproduce(item, variant) {
   const databases = [];
-  const context = { Buffer, URL, structuredClone,
+  const context = { Buffer, URL, structuredClone, assert: require('node:assert/strict'),
     makeDb() {
       // Only authored database proofs can call this. No customer connection is used.
       const { DatabaseSync } = require('node:sqlite');
