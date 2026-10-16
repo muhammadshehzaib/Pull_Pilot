@@ -2222,6 +2222,586 @@
       }
     },
     {
+      "id": "seed-database-tenant-update-bug",
+      "family": "domain",
+      "pairId": "database-tenant-update",
+      "variant": "bug",
+      "domain": "database",
+      "category": "authorization",
+      "contract": "Invoice IDs are tenant-local. Update exactly the invoice owned by the authenticated tenant.",
+      "diff": "diff --git a/src/database/invoices.js b/src/database/invoices.js\nindex 0fafae5..39b8b89 100644\n--- a/src/database/invoices.js\n+++ b/src/database/invoices.js\n@@ -1,3 +1,3 @@\n export function markPaid(db, tenantId, id) {\n-  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE tenant_id = ? AND id = ?\").run(tenantId, id);\n+  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE id = ?\").run(id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/invoices.js",
+          "before": "export function markPaid(db, tenantId, id) {\n  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE tenant_id = ? AND id = ?\").run(tenantId, id);\n}\n",
+          "after": "export function markPaid(db, tenantId, id) {\n  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE id = ?\").run(id);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-tenant-update",
+          "description": "Updating tenant B's local invoice ID also changes tenant A's invoice with the same ID.",
+          "filePath": "src/database/invoices.js",
+          "terms": [
+            "tenant",
+            "UPDATE",
+            "scope",
+            "invoice"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-tenant-update-clean",
+      "family": "domain",
+      "pairId": "database-tenant-update",
+      "variant": "clean",
+      "domain": "database",
+      "category": "authorization",
+      "contract": "Invoice IDs are tenant-local. Update exactly the invoice owned by the authenticated tenant.",
+      "diff": "diff --git a/src/database/invoices.js b/src/database/invoices.js\nindex 39b8b89..0fafae5 100644\n--- a/src/database/invoices.js\n+++ b/src/database/invoices.js\n@@ -1,3 +1,3 @@\n export function markPaid(db, tenantId, id) {\n-  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE id = ?\").run(id);\n+  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE tenant_id = ? AND id = ?\").run(tenantId, id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/invoices.js",
+          "before": "export function markPaid(db, tenantId, id) {\n  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE id = ?\").run(id);\n}\n",
+          "after": "export function markPaid(db, tenantId, id) {\n  return db.prepare(\"UPDATE invoices SET paid = 1 WHERE tenant_id = ? AND id = ?\").run(tenantId, id);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-rollback-boundary-bug",
+      "family": "domain",
+      "pairId": "database-rollback-boundary",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "A transfer must update both account balances atomically. If the destination update fails, the debit must roll back.",
+      "diff": "diff --git a/src/database/transfers.js b/src/database/transfers.js\nindex 30fe437..e247845 100644\n--- a/src/database/transfers.js\n+++ b/src/database/transfers.js\n@@ -1,11 +1,4 @@\n export function transfer(db, fromId, toId, amount) {\n-  db.exec(\"BEGIN\");\n-  try {\n-    db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n-    db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n-    db.exec(\"COMMIT\");\n-  } catch (error) {\n-    db.exec(\"ROLLBACK\");\n-    throw error;\n-  }\n+  db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n+  db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/transfers.js",
+          "before": "export function transfer(db, fromId, toId, amount) {\n  db.exec(\"BEGIN\");\n  try {\n    db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n    db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n    db.exec(\"COMMIT\");\n  } catch (error) {\n    db.exec(\"ROLLBACK\");\n    throw error;\n  }\n}\n",
+          "after": "export function transfer(db, fromId, toId, amount) {\n  db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n  db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-rollback-boundary",
+          "description": "A destination balance constraint rejects credit after the source debit has already committed.",
+          "filePath": "src/database/transfers.js",
+          "terms": [
+            "transaction",
+            "rollback",
+            "atomic",
+            "debit"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-rollback-boundary-clean",
+      "family": "domain",
+      "pairId": "database-rollback-boundary",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "A transfer must update both account balances atomically. If the destination update fails, the debit must roll back.",
+      "diff": "diff --git a/src/database/transfers.js b/src/database/transfers.js\nindex e247845..30fe437 100644\n--- a/src/database/transfers.js\n+++ b/src/database/transfers.js\n@@ -1,4 +1,11 @@\n export function transfer(db, fromId, toId, amount) {\n-  db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n-  db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n+  db.exec(\"BEGIN\");\n+  try {\n+    db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n+    db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n+    db.exec(\"COMMIT\");\n+  } catch (error) {\n+    db.exec(\"ROLLBACK\");\n+    throw error;\n+  }\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/transfers.js",
+          "before": "export function transfer(db, fromId, toId, amount) {\n  db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n  db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n}\n",
+          "after": "export function transfer(db, fromId, toId, amount) {\n  db.exec(\"BEGIN\");\n  try {\n    db.prepare(\"UPDATE accounts SET balance = balance - ? WHERE id = ?\").run(amount, fromId);\n    db.prepare(\"UPDATE accounts SET balance = balance + ? WHERE id = ?\").run(amount, toId);\n    db.exec(\"COMMIT\");\n  } catch (error) {\n    db.exec(\"ROLLBACK\");\n    throw error;\n  }\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-foreign-key-enforcement-bug",
+      "family": "domain",
+      "pairId": "database-foreign-key-enforcement",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "Every new SQLite connection must enable foreign-key enforcement so order lines cannot reference nonexistent orders.",
+      "diff": "diff --git a/src/database/connection.js b/src/database/connection.js\nindex 09b2dea..39569bc 100644\n--- a/src/database/connection.js\n+++ b/src/database/connection.js\n@@ -1,3 +1,3 @@\n export function configure(db) {\n-  db.exec(\"PRAGMA foreign_keys = ON\");\n+  db.exec(\"PRAGMA foreign_keys = OFF\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/connection.js",
+          "before": "export function configure(db) {\n  db.exec(\"PRAGMA foreign_keys = ON\");\n}\n",
+          "after": "export function configure(db) {\n  db.exec(\"PRAGMA foreign_keys = OFF\");\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-foreign-key-enforcement",
+          "description": "An orphan order line is inserted because connection-level foreign-key enforcement is disabled.",
+          "filePath": "src/database/connection.js",
+          "terms": [
+            "foreign",
+            "constraint",
+            "PRAGMA",
+            "orphan"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-foreign-key-enforcement-clean",
+      "family": "domain",
+      "pairId": "database-foreign-key-enforcement",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "Every new SQLite connection must enable foreign-key enforcement so order lines cannot reference nonexistent orders.",
+      "diff": "diff --git a/src/database/connection.js b/src/database/connection.js\nindex 39569bc..09b2dea 100644\n--- a/src/database/connection.js\n+++ b/src/database/connection.js\n@@ -1,3 +1,3 @@\n export function configure(db) {\n-  db.exec(\"PRAGMA foreign_keys = OFF\");\n+  db.exec(\"PRAGMA foreign_keys = ON\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/connection.js",
+          "before": "export function configure(db) {\n  db.exec(\"PRAGMA foreign_keys = OFF\");\n}\n",
+          "after": "export function configure(db) {\n  db.exec(\"PRAGMA foreign_keys = ON\");\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-lost-update-bug",
+      "family": "domain",
+      "pairId": "database-lost-update",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "A stale wallet update must fail rather than overwrite a newer balance. A successful debit increments version and returns true.",
+      "diff": "diff --git a/src/database/wallet.js b/src/database/wallet.js\nindex 9fd3213..367052b 100644\n--- a/src/database/wallet.js\n+++ b/src/database/wallet.js\n@@ -1,5 +1,5 @@\n export function debit(db, snapshot, amount) {\n-  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ? AND version = ?\")\n-    .run(snapshot.balance - amount, snapshot.id, snapshot.version);\n+  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ?\")\n+    .run(snapshot.balance - amount, snapshot.id);\n   return result.changes === 1;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/wallet.js",
+          "before": "export function debit(db, snapshot, amount) {\n  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ? AND version = ?\")\n    .run(snapshot.balance - amount, snapshot.id, snapshot.version);\n  return result.changes === 1;\n}\n",
+          "after": "export function debit(db, snapshot, amount) {\n  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ?\")\n    .run(snapshot.balance - amount, snapshot.id);\n  return result.changes === 1;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-lost-update",
+          "description": "Two debits using the same snapshot both report success, but the second overwrites the first balance update.",
+          "filePath": "src/database/wallet.js",
+          "terms": [
+            "version",
+            "stale",
+            "lost",
+            "optimistic"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-lost-update-clean",
+      "family": "domain",
+      "pairId": "database-lost-update",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "A stale wallet update must fail rather than overwrite a newer balance. A successful debit increments version and returns true.",
+      "diff": "diff --git a/src/database/wallet.js b/src/database/wallet.js\nindex 367052b..9fd3213 100644\n--- a/src/database/wallet.js\n+++ b/src/database/wallet.js\n@@ -1,5 +1,5 @@\n export function debit(db, snapshot, amount) {\n-  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ?\")\n-    .run(snapshot.balance - amount, snapshot.id);\n+  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ? AND version = ?\")\n+    .run(snapshot.balance - amount, snapshot.id, snapshot.version);\n   return result.changes === 1;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/wallet.js",
+          "before": "export function debit(db, snapshot, amount) {\n  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ?\")\n    .run(snapshot.balance - amount, snapshot.id);\n  return result.changes === 1;\n}\n",
+          "after": "export function debit(db, snapshot, amount) {\n  const result = db.prepare(\"UPDATE wallets SET balance = ?, version = version + 1 WHERE id = ? AND version = ?\")\n    .run(snapshot.balance - amount, snapshot.id, snapshot.version);\n  return result.changes === 1;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-null-predicate-bug",
+      "family": "domain",
+      "pairId": "database-null-predicate",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "Return active products whose deleted_at column is SQL NULL.",
+      "diff": "diff --git a/src/database/active-products.js b/src/database/active-products.js\nindex 4c3f66c..02145c1 100644\n--- a/src/database/active-products.js\n+++ b/src/database/active-products.js\n@@ -1,3 +1,3 @@\n export function activeProducts(db) {\n-  return db.prepare(\"SELECT id FROM products WHERE deleted_at IS NULL\").all();\n+  return db.prepare(\"SELECT id FROM products WHERE deleted_at = NULL\").all();\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/active-products.js",
+          "before": "export function activeProducts(db) {\n  return db.prepare(\"SELECT id FROM products WHERE deleted_at IS NULL\").all();\n}\n",
+          "after": "export function activeProducts(db) {\n  return db.prepare(\"SELECT id FROM products WHERE deleted_at = NULL\").all();\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-null-predicate",
+          "description": "Comparing with = NULL hides every active product because SQL NULL is not equal to itself.",
+          "filePath": "src/database/active-products.js",
+          "terms": [
+            "NULL",
+            "IS",
+            "SQL",
+            "predicate"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-null-predicate-clean",
+      "family": "domain",
+      "pairId": "database-null-predicate",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "Return active products whose deleted_at column is SQL NULL.",
+      "diff": "diff --git a/src/database/active-products.js b/src/database/active-products.js\nindex 02145c1..4c3f66c 100644\n--- a/src/database/active-products.js\n+++ b/src/database/active-products.js\n@@ -1,3 +1,3 @@\n export function activeProducts(db) {\n-  return db.prepare(\"SELECT id FROM products WHERE deleted_at = NULL\").all();\n+  return db.prepare(\"SELECT id FROM products WHERE deleted_at IS NULL\").all();\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/active-products.js",
+          "before": "export function activeProducts(db) {\n  return db.prepare(\"SELECT id FROM products WHERE deleted_at = NULL\").all();\n}\n",
+          "after": "export function activeProducts(db) {\n  return db.prepare(\"SELECT id FROM products WHERE deleted_at IS NULL\").all();\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-unscoped-delete-bug",
+      "family": "domain",
+      "pairId": "database-unscoped-delete",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "Logging out one user must delete only that user's sessions.",
+      "diff": "diff --git a/src/database/sessions.js b/src/database/sessions.js\nindex a8afd4a..9457f6c 100644\n--- a/src/database/sessions.js\n+++ b/src/database/sessions.js\n@@ -1,3 +1,3 @@\n export function logout(db, userId) {\n-  return db.prepare(\"DELETE FROM sessions WHERE user_id = ?\").run(userId);\n+  return db.prepare(\"DELETE FROM sessions\").run();\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/sessions.js",
+          "before": "export function logout(db, userId) {\n  return db.prepare(\"DELETE FROM sessions WHERE user_id = ?\").run(userId);\n}\n",
+          "after": "export function logout(db, userId) {\n  return db.prepare(\"DELETE FROM sessions\").run();\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-unscoped-delete",
+          "description": "Logging out one user deletes every user's session.",
+          "filePath": "src/database/sessions.js",
+          "terms": [
+            "DELETE",
+            "WHERE",
+            "all",
+            "session"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-unscoped-delete-clean",
+      "family": "domain",
+      "pairId": "database-unscoped-delete",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "Logging out one user must delete only that user's sessions.",
+      "diff": "diff --git a/src/database/sessions.js b/src/database/sessions.js\nindex 9457f6c..a8afd4a 100644\n--- a/src/database/sessions.js\n+++ b/src/database/sessions.js\n@@ -1,3 +1,3 @@\n export function logout(db, userId) {\n-  return db.prepare(\"DELETE FROM sessions\").run();\n+  return db.prepare(\"DELETE FROM sessions WHERE user_id = ?\").run(userId);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/sessions.js",
+          "before": "export function logout(db, userId) {\n  return db.prepare(\"DELETE FROM sessions\").run();\n}\n",
+          "after": "export function logout(db, userId) {\n  return db.prepare(\"DELETE FROM sessions WHERE user_id = ?\").run(userId);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-cursor-tie-bug",
+      "family": "domain",
+      "pairId": "database-cursor-tie",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "Paginate orders by ascending (created_at,id). Cursor timestamps may tie; the next page must include later IDs at the same timestamp.",
+      "diff": "diff --git a/src/database/order-page.js b/src/database/order-page.js\nindex e573615..8ba8714 100644\n--- a/src/database/order-page.js\n+++ b/src/database/order-page.js\n@@ -1,3 +1,3 @@\n export function nextPage(db, createdAt, id) {\n-  return db.prepare(\"SELECT id FROM orders WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT 10\").all(createdAt, id);\n+  return db.prepare(\"SELECT id FROM orders WHERE created_at > ? ORDER BY created_at, id LIMIT 10\").all(createdAt);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/order-page.js",
+          "before": "export function nextPage(db, createdAt, id) {\n  return db.prepare(\"SELECT id FROM orders WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT 10\").all(createdAt, id);\n}\n",
+          "after": "export function nextPage(db, createdAt, id) {\n  return db.prepare(\"SELECT id FROM orders WHERE created_at > ? ORDER BY created_at, id LIMIT 10\").all(createdAt);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-cursor-tie",
+          "description": "An order sharing the cursor timestamp is skipped permanently because the tie-breaking ID is omitted.",
+          "filePath": "src/database/order-page.js",
+          "terms": [
+            "cursor",
+            "tie",
+            "timestamp",
+            "skip"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-cursor-tie-clean",
+      "family": "domain",
+      "pairId": "database-cursor-tie",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "Paginate orders by ascending (created_at,id). Cursor timestamps may tie; the next page must include later IDs at the same timestamp.",
+      "diff": "diff --git a/src/database/order-page.js b/src/database/order-page.js\nindex 8ba8714..e573615 100644\n--- a/src/database/order-page.js\n+++ b/src/database/order-page.js\n@@ -1,3 +1,3 @@\n export function nextPage(db, createdAt, id) {\n-  return db.prepare(\"SELECT id FROM orders WHERE created_at > ? ORDER BY created_at, id LIMIT 10\").all(createdAt);\n+  return db.prepare(\"SELECT id FROM orders WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT 10\").all(createdAt, id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/order-page.js",
+          "before": "export function nextPage(db, createdAt, id) {\n  return db.prepare(\"SELECT id FROM orders WHERE created_at > ? ORDER BY created_at, id LIMIT 10\").all(createdAt);\n}\n",
+          "after": "export function nextPage(db, createdAt, id) {\n  return db.prepare(\"SELECT id FROM orders WHERE (created_at, id) > (?, ?) ORDER BY created_at, id LIMIT 10\").all(createdAt, id);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-case-insensitive-uniqueness-bug",
+      "family": "domain",
+      "pairId": "database-case-insensitive-uniqueness",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "Email addresses are case-insensitive account identifiers and must be unique regardless of letter case.",
+      "diff": "diff --git a/src/database/users-schema.js b/src/database/users-schema.js\nindex 398091f..48e7d9e 100644\n--- a/src/database/users-schema.js\n+++ b/src/database/users-schema.js\n@@ -1,3 +1,3 @@\n export function createUsers(db) {\n-  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT COLLATE NOCASE UNIQUE NOT NULL)\");\n+  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL)\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/users-schema.js",
+          "before": "export function createUsers(db) {\n  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT COLLATE NOCASE UNIQUE NOT NULL)\");\n}\n",
+          "after": "export function createUsers(db) {\n  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL)\");\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-case-insensitive-uniqueness",
+          "description": "Alice@example.test and alice@example.test create two accounts for the same case-insensitive identity.",
+          "filePath": "src/database/users-schema.js",
+          "terms": [
+            "case",
+            "unique",
+            "email",
+            "collat"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-case-insensitive-uniqueness-clean",
+      "family": "domain",
+      "pairId": "database-case-insensitive-uniqueness",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "Email addresses are case-insensitive account identifiers and must be unique regardless of letter case.",
+      "diff": "diff --git a/src/database/users-schema.js b/src/database/users-schema.js\nindex 48e7d9e..398091f 100644\n--- a/src/database/users-schema.js\n+++ b/src/database/users-schema.js\n@@ -1,3 +1,3 @@\n export function createUsers(db) {\n-  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL)\");\n+  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT COLLATE NOCASE UNIQUE NOT NULL)\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/users-schema.js",
+          "before": "export function createUsers(db) {\n  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT UNIQUE NOT NULL)\");\n}\n",
+          "after": "export function createUsers(db) {\n  db.exec(\"CREATE TABLE users(id INTEGER PRIMARY KEY, email TEXT COLLATE NOCASE UNIQUE NOT NULL)\");\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-sql-parameter-binding-bug",
+      "family": "domain",
+      "pairId": "database-sql-parameter-binding",
+      "variant": "bug",
+      "domain": "database",
+      "category": "security",
+      "contract": "Search by an untrusted exact email address using bound SQL parameters.",
+      "diff": "diff --git a/src/database/customer-search.js b/src/database/customer-search.js\nindex 8a4864d..db362e4 100644\n--- a/src/database/customer-search.js\n+++ b/src/database/customer-search.js\n@@ -1,3 +1,3 @@\n export function search(db, email) {\n-  return db.prepare(\"SELECT id FROM customers WHERE email = ?\").all(email);\n+  return db.prepare(`SELECT id FROM customers WHERE email = '${email}'`).all();\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/customer-search.js",
+          "before": "export function search(db, email) {\n  return db.prepare(\"SELECT id FROM customers WHERE email = ?\").all(email);\n}\n",
+          "after": "export function search(db, email) {\n  return db.prepare(`SELECT id FROM customers WHERE email = '${email}'`).all();\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-sql-parameter-binding",
+          "description": "An email containing a quote and OR 1=1 changes the SQL predicate and returns other customers.",
+          "filePath": "src/database/customer-search.js",
+          "terms": [
+            "SQL",
+            "inject",
+            "parameter",
+            "email"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-sql-parameter-binding-clean",
+      "family": "domain",
+      "pairId": "database-sql-parameter-binding",
+      "variant": "clean",
+      "domain": "database",
+      "category": "security",
+      "contract": "Search by an untrusted exact email address using bound SQL parameters.",
+      "diff": "diff --git a/src/database/customer-search.js b/src/database/customer-search.js\nindex db362e4..8a4864d 100644\n--- a/src/database/customer-search.js\n+++ b/src/database/customer-search.js\n@@ -1,3 +1,3 @@\n export function search(db, email) {\n-  return db.prepare(`SELECT id FROM customers WHERE email = '${email}'`).all();\n+  return db.prepare(\"SELECT id FROM customers WHERE email = ?\").all(email);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/customer-search.js",
+          "before": "export function search(db, email) {\n  return db.prepare(`SELECT id FROM customers WHERE email = '${email}'`).all();\n}\n",
+          "after": "export function search(db, email) {\n  return db.prepare(\"SELECT id FROM customers WHERE email = ?\").all(email);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-cascade-delete-bug",
+      "family": "domain",
+      "pairId": "database-cascade-delete",
+      "variant": "bug",
+      "domain": "database",
+      "category": "database",
+      "contract": "Deleting an order must delete its dependent lines; foreign-key enforcement is already enabled.",
+      "diff": "diff --git a/src/database/order-schema.js b/src/database/order-schema.js\nindex f0df59d..cd72695 100644\n--- a/src/database/order-schema.js\n+++ b/src/database/order-schema.js\n@@ -1,3 +1,3 @@\n export function createLines(db) {\n-  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE)\");\n+  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL)\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/order-schema.js",
+          "before": "export function createLines(db) {\n  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE)\");\n}\n",
+          "after": "export function createLines(db) {\n  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL)\");\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "database-cascade-delete",
+          "description": "Deleting an order leaves detached order lines instead of deleting them.",
+          "filePath": "src/database/order-schema.js",
+          "terms": [
+            "CASCADE",
+            "delete",
+            "line",
+            "NULL"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-database-cascade-delete-clean",
+      "family": "domain",
+      "pairId": "database-cascade-delete",
+      "variant": "clean",
+      "domain": "database",
+      "category": "database",
+      "contract": "Deleting an order must delete its dependent lines; foreign-key enforcement is already enabled.",
+      "diff": "diff --git a/src/database/order-schema.js b/src/database/order-schema.js\nindex cd72695..f0df59d 100644\n--- a/src/database/order-schema.js\n+++ b/src/database/order-schema.js\n@@ -1,3 +1,3 @@\n export function createLines(db) {\n-  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL)\");\n+  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE)\");\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/database/order-schema.js",
+          "before": "export function createLines(db) {\n  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL)\");\n}\n",
+          "after": "export function createLines(db) {\n  db.exec(\"CREATE TABLE lines(id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE)\");\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
       "id": "seed-orders-negative-quantity-bug",
       "family": "domain",
       "pairId": "orders-negative-quantity",
