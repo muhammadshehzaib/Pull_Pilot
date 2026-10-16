@@ -50,3 +50,18 @@ errors are attributed to their requested repository.
 Validation: 22 page tests passed, including pending vault reads, failed reads,
 existing-key recovery, and genuinely empty responses. Web typecheck and lint of
 the vault/rules pages passed.
+
+## 35 — History request ordering
+
+Plan: cancel obsolete list/detail requests and guard every result, failure, and
+loading-state update with its request identity. Poll the current query and read
+the latest selected review rather than a captured old selection.
+
+Implemented: navigation invalidates an old list request immediately. List/detail
+requests have separate controllers and sequences, polling does not overlap, and
+late background refreshes cannot replace a newly selected review.
+Validation: 18 history tests passed, including delayed poll responses across page
+and filter changes and late detail successes/errors. Web typecheck passed. History
+lint still reports two pre-existing state-in-effect errors in the unchanged
+finding-feedback/risk detail effects; the request-handling lint errors/warnings
+from the starting code were removed.

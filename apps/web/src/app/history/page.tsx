@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { History, GitPullRequest, GitCommit, Brain, CheckCircle2, XCircle, Loader2, ChevronRight, Copy, Check, Sparkles } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { Pagination } from '../../components/Pagination';
@@ -108,12 +108,11 @@ export default function HistoryPage() {
   // no way to switch to a different one.
   const [knownRepos, setKnownRepos] = useState<{ id: string; fullName: string }[]>([]);
 
-  // Dashboard drilldowns open an exact owned review, independent of list pagination.
-  useEffect(() => {
-    if (!user) return;
-    const id = new URLSearchParams(window.location.search).get('job');
-    if (id && /^[a-zA-Z0-9-]{1,64}$/.test(id)) void openJob(id);
-  }, [user]);
+  const listSequence = useRef(0);
+  const listController = useRef<AbortController | null>(null);
+  const detailSequence = useRef(0);
+  const detailController = useRef<AbortController | null>(null);
+  const selection = useRef<{ id: string; status: JobStatus | null } | null>(null);
 
   // When scoping to the selected PR, the referenceId drives the request. PUSH
   // reviews key on a commit SHA, so scoping only makes sense for pull requests.
@@ -125,14 +124,20 @@ export default function HistoryPage() {
    * the fetch (the mount, a filter click, or a page change) so that setting it
    * here would not turn the background poll into a skeleton flash every 3 seconds.
    */
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
+    listController.current?.abort();
+    const controller = new AbortController();
+    listController.current = controller;
+    const sequence = ++listSequence.current;
+    const current = () => !controller.signal.aborted && sequence === listSequence.current;
     try {
       const params = new URLSearchParams({ limit: '50', page: `${page}` });
       if (repoFilter) params.set('repositoryId', repoFilter);
       if (scopedReferenceId) params.set('referenceId', scopedReferenceId);
       const res = await api<{ jobs: JobSummary[]; pagination: PaginationMeta }>(
-        `/api/jobs?${params.toString()}`,
+        `/api/jobs?${params.toString()}`, { signal: controller.signal },
       );
+      if (!current()) return null;
       setJobs(res.jobs);
       setListError('');
       setPagination(res.pagination);
@@ -151,12 +156,12 @@ export default function HistoryPage() {
       });
       return res.jobs;
     } catch {
-      setListError('Review history could not be loaded. Please retry.');
-      return [];
+      if (current()) setListError('Review history could not be loaded. Please retry.');
+      return null;
     } finally {
-      setLoadingList(false);
+      if (current()) setLoadingList(false);
     }
-  };
+  }, [page, repoFilter, scopedReferenceId]);
 
   /**
    * Every filter change goes through here so the skeleton and the query agree.
@@ -164,6 +169,8 @@ export default function HistoryPage() {
    * keep the user on page 4 of the unfiltered list.
    */
   function applyFilter(update: () => void) {
+    listController.current?.abort();
+    ++listSequence.current;
     setLoadingList(true);
     setPage(1);
     update();
@@ -171,61 +178,76 @@ export default function HistoryPage() {
 
   /** Page navigation: same skeleton ownership, but the filters stay put. */
   function goToPage(next: number) {
+    listController.current?.abort();
+    ++listSequence.current;
     setLoadingList(true);
     setPage(next);
   }
 
-  // Fetch on mount and whenever the page or a filter changes. `loadingList`
-  // already starts true, so mounting needs no explicit setState here.
-  useEffect(() => {
-    if (!user) return;
-    fetchJobs();
-  }, [user, page, repoFilter, scopedReferenceId]);
-
-  // Auto-poll while any review is in flight. This used to test for RUNNING and
-  // QUEUED only, so the moment the backend reported ANALYZING the page stopped
-  // refreshing and the user watched a stale review until they reloaded.
-  useEffect(() => {
-    const hasActiveJob = jobs.some((j) => isInProgress(j.status));
-    if (!hasActiveJob) return;
-
-    const interval = setInterval(async () => {
-      const updatedJobs = await fetchJobs();
-      if (selected) {
-        const stillSelected = updatedJobs.find((j) => j.id === selected.id);
-        if (stillSelected && stillSelected.status !== selected.status) {
-          openJob(selected.id);
-        }
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [jobs, selected]);
-
-  async function openJob(id: string) {
-    setLoadingDetail(true);
+  const openJob = useCallback(async (id: string, background = false) => {
+    if (background && selection.current?.id !== id) return;
+    detailController.current?.abort();
+    const controller = new AbortController();
+    detailController.current = controller;
+    const sequence = ++detailSequence.current;
+    const current = () => !controller.signal.aborted && sequence === detailSequence.current && selection.current?.id === id;
+    if (!background) {
+      selection.current = { id, status: null };
+      setLoadingDetail(true);
+    }
     setDetailError('');
     try {
-      const res = await api<{ job: JobDetail }>(`/api/jobs/${id}`);
+      const res = await api<{ job: JobDetail }>(`/api/jobs/${id}`, { signal: controller.signal });
+      if (!current()) return;
+      selection.current = { id, status: res.job.status };
       setSelected(res.job);
       const findingsCount = Array.isArray(res.job.results) ? res.job.results.length : 0;
-      setJobs((prev) =>
-        prev.map((j) =>
-          j.id === res.job.id
-            ? {
-                ...j,
-                status: res.job.status,
-                findingCount: findingsCount,
-              }
-            : j
-        )
-      );
+      setJobs(previous => previous.map(j => j.id === res.job.id ? { ...j, status: res.job.status, findingCount: findingsCount } : j));
     } catch {
-      setDetailError('This review could not be loaded. It may have been deleted or is unavailable.');
+      if (current()) setDetailError('This review could not be loaded. It may have been deleted or is unavailable.');
     } finally {
-      setLoadingDetail(false);
+      if (current()) setLoadingDetail(false);
     }
-  }
+  }, []);
+
+  // Exact dashboard drilldowns do not depend on the current list page.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const id = new URLSearchParams(window.location.search).get('job');
+    Promise.resolve().then(() => {
+      if (!cancelled && id && /^[a-zA-Z0-9-]{1,64}$/.test(id)) void openJob(id);
+    });
+    return () => { cancelled = true; detailController.current?.abort(); selection.current = null; };
+  }, [user, openJob]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    Promise.resolve().then(() => { if (!cancelled) void fetchJobs(); });
+    return () => { cancelled = true; listController.current?.abort(); };
+  }, [user, fetchJobs]);
+
+  const hasActiveJob = jobs.some(j => isInProgress(j.status));
+  useEffect(() => {
+    if (!user || !hasActiveJob) return;
+    let cancelled = false;
+    let running = false;
+    const interval = setInterval(async () => {
+      if (running) return;
+      running = true;
+      try {
+        const updatedJobs = await fetchJobs();
+        if (cancelled || !updatedJobs) return;
+        const selectedNow = selection.current;
+        if (selectedNow?.status) {
+          const updated = updatedJobs.find(j => j.id === selectedNow.id);
+          if (updated && updated.status !== selectedNow.status) await openJob(selectedNow.id, true);
+        }
+      } finally { running = false; }
+    }, 3000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [user, hasActiveJob, fetchJobs, openJob]);
 
   if (authError && !user) return <AuthUnavailable error={authError} retry={retryAuth} />;
 

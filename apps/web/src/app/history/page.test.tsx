@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 const { mockApi, authUser } = vi.hoisted(() => ({ mockApi: vi.fn(), authUser: { id: 'owner', username: 'owner' } }));
 vi.mock('../../lib/api', () => ({ api: mockApi }));
@@ -14,6 +14,7 @@ const summary = { id: 'job-1', eventType: 'PULL_REQUEST', referenceId: '42', sta
   repository: { id: 'repo-1', fullName: 'owner/repo' } };
 let job: any;
 let failFeedback: boolean;
+afterEach(() => vi.useRealTimers());
 beforeEach(() => {
   vi.clearAllMocks(); failFeedback = false;
   job = { ...summary, results: [f('low-occ', 'LOW'), f('high-occ', 'HIGH')], metadata: { historicalFeedbackEligible: true,
@@ -86,7 +87,7 @@ describe('Phase 8 history page integration', () => {
     try {
       render(<HistoryPage />);
       expect(await screen.findByText('Issue high-occ')).toBeInTheDocument();
-      expect(mockApi).toHaveBeenCalledWith('/api/jobs/job-1');
+    expect(mockApi).toHaveBeenCalledWith('/api/jobs/job-1', expect.objectContaining({ signal: expect.any(AbortSignal) }));
     } finally { window.history.replaceState(null, '', '/history'); }
   });
   it('shows all five actions, supports dismissal/restore, and keeps deprioritized findings expandable', async () => {
@@ -140,5 +141,85 @@ describe('Phase 8 history page integration', () => {
     await user.click(within(high).getByRole('button', { name: /Save note/ }));
     await waitFor(() => expect(within(high).getByText('Try again')).toBeTruthy());
     expect((within(high).getByRole('textbox') as HTMLTextAreaElement).value).toBe('Keep this note');
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+describe('history request ordering', () => {
+  it.each(['resolve', 'reject'] as const)('ignores a late detail %s after selecting another review', async finish => {
+    const old = deferred<{ job: typeof job }>();
+    const second = { ...summary, id: 'job-2', repository: { id: 'repo-2', fullName: 'owner/second' } };
+    const base = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/jobs?')) return Promise.resolve({ jobs: [summary, second], pagination: { page: 1, totalPages: 1, total: 2 } });
+      if (path === '/api/jobs/job-1') return old.promise;
+      if (path === '/api/jobs/job-2') return Promise.resolve({ job: { ...job, ...second, results: [f('second', 'HIGH')] } });
+      return base(path, init);
+    });
+    const user = userEvent.setup(); render(<HistoryPage />);
+    await user.click(await screen.findByRole('button', { name: /owner\/repo/i }));
+    await user.click(screen.getByRole('button', { name: /owner\/second/i }));
+    expect(await screen.findByText('Issue second')).toBeInTheDocument();
+    await act(async () => { if (finish === 'resolve') old.resolve({ job }); else old.reject(new Error('old failure')); });
+    expect(screen.getByText('Issue second')).toBeInTheDocument();
+    expect(screen.queryByText('Issue high-occ')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each(['page', 'filter'])('ignores an old poll and its loading state during a %s change', async navigation => {
+    vi.useFakeTimers();
+    const poll = deferred<any>(); const next = deferred<any>();
+    const active = { ...summary, status: 'ANALYZING' };
+    const other = { ...summary, id: 'job-2', repository: { id: 'repo-2', fullName: 'owner/second' } };
+    let calls = 0;
+    mockApi.mockImplementation((path: string) => {
+      if (!path.startsWith('/api/jobs?')) throw new Error(path);
+      if (++calls === 1) return Promise.resolve({ jobs: [active, other], pagination: { page: 1, totalPages: 2, total: 51 } });
+      if (calls === 2) return poll.promise;
+      return next.promise;
+    });
+    render(<HistoryPage />);
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    if (navigation === 'page') fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    else fireEvent.change(screen.getByLabelText('Repository'), { target: { value: 'repo-2' } });
+    await act(async () => poll.resolve({ jobs: [active], pagination: { page: 1, totalPages: 2, total: 51 } }));
+    expect(screen.queryByRole('button', { name: /owner\/repo/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+    await act(async () => next.resolve({ jobs: [other], pagination: { page: navigation === 'page' ? 2 : 1, totalPages: 2, total: 51 } }));
+    expect(screen.getByRole('button', { name: /owner\/second/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /owner\/repo/i })).toBeNull();
+    expect(mockApi.mock.calls[1][1].signal.aborted).toBe(true);
+  });
+
+  it('does not reopen the old selection when a background detail refresh finishes late', async () => {
+    vi.useFakeTimers();
+    const refresh = deferred<any>();
+    const second = { ...summary, id: 'job-2', repository: { id: 'repo-2', fullName: 'owner/second' } };
+    let lists = 0, details = 0;
+    const base = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/jobs?')) return Promise.resolve({ jobs: [{ ...summary, status: ++lists === 1 ? 'ANALYZING' : 'COMPLETED' }, second], pagination: { page: 1, totalPages: 1, total: 2 } });
+      if (path === '/api/jobs/job-1') return ++details === 1 ? Promise.resolve({ job: { ...job, status: 'ANALYZING' } }) : refresh.promise;
+      if (path === '/api/jobs/job-2') return Promise.resolve({ job: { ...job, ...second, results: [f('second', 'HIGH')] } });
+      return base(path, init);
+    });
+    render(<HistoryPage />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: /owner\/repo/i }));
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(details).toBe(2);
+    fireEvent.click(screen.getByRole('button', { name: /owner\/second/i }));
+    await act(async () => {});
+    await act(async () => refresh.resolve({ job }));
+    expect(screen.getByText('Issue second')).toBeInTheDocument();
+    expect(screen.queryByText('Issue high-occ')).toBeNull();
   });
 });
