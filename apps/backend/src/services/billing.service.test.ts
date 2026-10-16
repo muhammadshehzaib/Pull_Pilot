@@ -319,11 +319,15 @@ describe('BillingService event ordering', () => {
 });
 
 describe('BillingService.syncEntitlements', () => {
-  it('prefers TEAM over INDIE', async () => {
+  it('selects the highest active paid tier rather than the newest subscription', async () => {
     db.subscription.findFirst.mockResolvedValueOnce({ plan: 'TEAM', status: 'active' });
     db.installation.updateMany.mockResolvedValueOnce({ count: 1 });
 
     const tier = await BillingService.syncEntitlements('user-123');
+    expect(db.subscription.findFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-123', status: { in: ['active', 'past_due', 'trialing'] }, plan: { in: ['INDIE', 'TEAM'] } },
+      orderBy: [{ plan: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
+    });
     expect(tier).toBe('TEAM');
     expect(db.installation.updateMany).toHaveBeenCalledWith({
       where: { userId: 'user-123' },
@@ -337,6 +341,19 @@ describe('BillingService.syncEntitlements', () => {
 
     const tier = await BillingService.syncEntitlements('user-123');
     expect(tier).toBe('FREE');
+  });
+
+  it('falls back from revoked Team to remaining Indie access', async () => {
+    db.subscription.findUnique.mockResolvedValue({ userId: 'user-123', plan: 'TEAM', status: 'active' });
+    db.subscription.findFirst.mockResolvedValueOnce({ plan: 'INDIE', status: 'active' });
+    await syncCancellation({ id: 'team-sub' });
+    expect(db.installation.updateMany).toHaveBeenCalledWith({ where: { userId: 'user-123' }, data: { plan: 'INDIE' } });
+  });
+
+  it('does not let an unrelated product downgrade a valid paid subscription', async () => {
+    db.subscription.findFirst.mockResolvedValueOnce({ plan: 'TEAM', status: 'active' });
+    await syncSubscription({ id: 'unrelated', product_id: 'unknown', status: 'active', customer: { external_id: 'user-123' } });
+    expect(db.installation.updateMany).toHaveBeenCalledWith({ where: { userId: 'user-123' }, data: { plan: 'TEAM' } });
   });
 });
 
@@ -376,6 +393,7 @@ describe('BillingService.getUserBillingOverview', () => {
 
   it('treats a canceled subscription as FREE even if the row says INDIE', async () => {
     db.installation.findMany.mockResolvedValueOnce([{ id: 'inst_1' }]);
+    db.subscription.findFirst.mockResolvedValueOnce(null); // no entitling paid subscription
     db.subscription.findFirst.mockResolvedValueOnce({
       plan: 'INDIE',
       status: 'canceled',

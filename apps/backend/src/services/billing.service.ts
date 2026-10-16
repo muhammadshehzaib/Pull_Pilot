@@ -2,6 +2,7 @@ import prisma from '../config/prisma';
 import { PlanTier, Prisma } from '@prisma/client';
 import { createPolar, webhooks } from '@polar-sh/sdk/2026-10';
 import { QuotaService } from './quota.service';
+import { EntitlementService } from './entitlement.service';
 
 export type BillingCycle = 'monthly' | 'yearly';
 export type PaidTier = Exclude<PlanTier, 'FREE'>;
@@ -328,10 +329,7 @@ export class BillingService {
    * joins on the hot path.
    */
   static async syncEntitlements(userId: string, tx: Prisma.TransactionClient = prisma): Promise<PlanTier> {
-    const active = await tx.subscription.findFirst({
-      where: { userId, status: { in: [...ENTITLING_STATUSES] } },
-      orderBy: [{ updatedAt: 'desc' }],
-    });
+    const active = await EntitlementService.getSubscription(userId, tx);
 
     const tier: PlanTier =
       active?.plan === 'TEAM' ? 'TEAM' : active?.plan === 'INDIE' ? 'INDIE' : 'FREE';
@@ -355,13 +353,13 @@ export class BillingService {
       orderBy: { createdAt: 'asc' },
     });
 
-    const subscription = await prisma.subscription.findFirst({
+    const active = await EntitlementService.getSubscription(userId);
+    const subscription = active ?? await prisma.subscription.findFirst({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
     });
 
-    const isEntitled = !!subscription && ENTITLING_STATUSES.has(subscription.status.toLowerCase());
-    const plan: PlanTier = isEntitled ? subscription!.plan : 'FREE';
+    const plan: PlanTier = active?.plan ?? 'FREE';
 
     const currentMonth = QuotaService.getCurrentBillingMonth();
 

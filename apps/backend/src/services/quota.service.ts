@@ -1,5 +1,6 @@
 import prisma from '../config/prisma';
 import type { Prisma } from '@prisma/client';
+import { EntitlementService } from './entitlement.service';
 
 export const FREE_TIER_PRIVATE_LIMIT = 50;
 
@@ -153,7 +154,7 @@ export class QuotaService {
         if (job.quotaRefundedAt || job.quotaIsPrivate !== isPrivate) throw new Error('Review reservation is no longer available');
         const ledger = await tx.usageLedger.findUniqueOrThrow({ where: { id: job.quotaLedgerId } });
         const installation = installationId ? await tx.installation.findUnique({ where: { id: installationId } }) : null;
-        const subscription = !installationId ? await tx.subscription.findFirst({ where: { userId, status: { in: ['active', 'trialing', 'past_due'] } }, orderBy: { updatedAt: 'desc' } }) : null;
+        const subscription = !installationId ? await EntitlementService.getSubscription(userId, tx) : null;
         const tier = installation?.plan || subscription?.plan || 'FREE';
         return { allowed: true, usage: { current: isPrivate ? ledger.privateReviewsCount : ledger.publicReviewsCount,
           limit: isPrivate && tier === 'FREE' ? FREE_TIER_PRIVATE_LIMIT : null, tier, isPrivate, billingMonth: ledger.billingMonth } };
@@ -182,10 +183,7 @@ export class QuotaService {
       ? await tx.installation.findUnique({ where: { id: installationId } })
       : null;
     const activeSubscription = !installationId && userId
-      ? await tx.subscription.findFirst({
-          where: { userId, status: { in: ['active', 'trialing', 'past_due'] } },
-          orderBy: { updatedAt: 'desc' },
-        })
+      ? await EntitlementService.getSubscription(userId, tx)
       : null;
     const tier = installation?.plan || activeSubscription?.plan || 'FREE';
     const limit = isPrivate && tier === 'FREE' ? FREE_TIER_PRIVATE_LIMIT : null;

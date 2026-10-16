@@ -35,9 +35,19 @@ applied before deploying the code. No live database was modified.
 
 ## Remaining confirmed issues
 
-- 27: entitlement and overview select the most recently updated subscription;
-  cancellation skips recalculation if another subscription exists.
 - 28: reservations use separate installation/user ledgers and do not restrict
   Free customers to one private repository.
 - 29: checkout creation has no repeated-request or existing-subscription guard.
 - 30: repository removal filters only by GitHub repository ID, across installations.
+
+## 27 — Highest active paid plan
+
+Plan: centralize selection of recognized, entitling subscriptions and rank Team
+above Indie, independent of recency. Use it for installation entitlements,
+billing overview, and directly connected repository quota reservations.
+
+Implemented: the shared selector excludes unknown/Free products and inactive
+subscriptions. Revocation recalculates entitlement (introduced with the atomic
+event processing in 26), so Team correctly falls back to an active Indie plan.
+Validation: 102 billing/auth/quota/recovery tests passed, including Team-to-Indie
+fallback and an unknown product alongside a paid subscription; backend build passed.
