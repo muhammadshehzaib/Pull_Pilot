@@ -78,3 +78,15 @@ or clear the newly selected repository's draft.
 Validation: nine rules tests passed, including late successes/errors, switching
 away and back, retry, and an old save completing after a repo switch. Web typecheck
 and rules-page lint passed.
+
+## 37 — Complete history repository filter
+
+Plan: load repository options independently of review pagination, following every
+repository page and including inactive connections with retained history.
+
+Implemented: history uses the shared repository loader, sorts the full picker,
+and keeps its options when filtering reviews. Filter-load failures have a separate
+retry and do not prevent browsing the review list.
+Validation: 29 history/rules tests passed, including a later-page inactive repo,
+filtering without visiting its reviews, and filter-load failure/retry. Web typecheck
+passed.

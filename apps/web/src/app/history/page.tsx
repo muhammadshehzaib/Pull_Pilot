@@ -7,6 +7,7 @@ import { Pagination } from '../../components/Pagination';
 import { useAuth } from '../../lib/useAuth';
 import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { api, type PaginationMeta } from '../../lib/api';
+import { loadRepositoryOptions } from '../../lib/repository-options';
 import {
   AGENT_LABELS,
   PRIORITY_ICONS,
@@ -103,10 +104,24 @@ export default function HistoryPage() {
   // happening to still contain it.
   const [repoFilter, setRepoFilter] = useState('');
   const [scopeToSelected, setScopeToSelected] = useState(false);
-  // Accumulated across fetches on purpose. Deriving the dropdown from `jobs`
-  // would hide every other repository the moment a filter was applied, leaving
-  // no way to switch to a different one.
   const [knownRepos, setKnownRepos] = useState<{ id: string; fullName: string }[]>([]);
+  const [reposLoading, setReposLoading] = useState(true);
+  const [reposError, setReposError] = useState('');
+  const [repoOptionsAttempt, setRepoOptionsAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    loadRepositoryOptions(controller.signal).then(repositories => {
+      if (controller.signal.aborted) return;
+      // Inactive connections can still have retained review history.
+      setKnownRepos(repositories.sort((a, b) => a.fullName.localeCompare(b.fullName)));
+      setReposError('');
+    }).catch(() => {
+      if (!controller.signal.aborted) setReposError('Repository filters could not be loaded. Please retry.');
+    }).finally(() => { if (!controller.signal.aborted) setReposLoading(false); });
+    return () => controller.abort();
+  }, [user, repoOptionsAttempt]);
 
   const listSequence = useRef(0);
   const listController = useRef<AbortController | null>(null);
@@ -147,13 +162,6 @@ export default function HistoryPage() {
       if (res.jobs.length === 0 && res.pagination.page > res.pagination.totalPages) {
         setPage(res.pagination.totalPages);
       }
-      setKnownRepos((prev) => {
-        const merged = new Map(prev.map((r) => [r.id, r.fullName]));
-        for (const job of res.jobs) merged.set(job.repository.id, job.repository.fullName);
-        return Array.from(merged, ([id, fullName]) => ({ id, fullName })).sort((a, b) =>
-          a.fullName.localeCompare(b.fullName),
-        );
-      });
       return res.jobs;
     } catch {
       if (current()) setListError('Review history could not be loaded. Please retry.');
@@ -290,6 +298,9 @@ export default function HistoryPage() {
         </header>
 
         {detailError && <p role="alert">{detailError}</p>}
+        {reposError && <div role="alert">{reposError} <button type="button" onClick={() => {
+          setReposLoading(true); setReposError(''); setRepoOptionsAttempt(n => n + 1);
+        }}>Retry repository filters</button></div>}
         {listError && <div role="alert">{listError} <button type="button" onClick={() => {
           setLoadingList(true); void fetchJobs();
         }}>Retry reviews</button></div>}
@@ -303,6 +314,7 @@ export default function HistoryPage() {
           <select
             id="repo-filter"
             className="history-filter-select"
+            disabled={reposLoading || !!reposError}
             value={repoFilter}
             onChange={(e) => applyFilter(() => setRepoFilter(e.target.value))}
             style={{

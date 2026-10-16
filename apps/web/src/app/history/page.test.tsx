@@ -20,6 +20,7 @@ beforeEach(() => {
   job = { ...summary, results: [f('low-occ', 'LOW'), f('high-occ', 'HIGH')], metadata: { historicalFeedbackEligible: true,
     historicalMemory: { version: 1, algorithmVersion: 'fp_v2', suppliedPatternIds: ['pattern-1'], patternCount: 1, truncated: false } } };
   mockApi.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path.startsWith('/api/repositories?')) return { repositories: [{ ...summary.repository, isActive: true }], pagination: { totalPages: 1 } };
     if (path.startsWith('/api/jobs?')) return { jobs: [summary], pagination: { page: 1, totalPages: 1, total: 1, limit: 50 } };
     if (path.endsWith('/feedback')) {
       if (failFeedback) throw { status: 500, error: 'Try again' };
@@ -50,7 +51,11 @@ async function open() {
 }
 describe('Phase 8 history page integration', () => {
   it('does not claim history is empty when loading fails and supports retry', async () => {
-    mockApi.mockRejectedValueOnce(new Error('offline'));
+    const base = mockApi.getMockImplementation()!; let failed = false;
+    mockApi.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/jobs?') && !failed) { failed = true; return Promise.reject(new Error('offline')); }
+      return base(path, init);
+    });
     const user = userEvent.setup(); render(<HistoryPage />);
     expect(await screen.findByRole('alert')).toHaveTextContent('history could not be loaded');
     expect(screen.queryByText(/No reviews yet/)).toBeNull();
@@ -179,6 +184,7 @@ describe('history request ordering', () => {
     const other = { ...summary, id: 'job-2', repository: { id: 'repo-2', fullName: 'owner/second' } };
     let calls = 0;
     mockApi.mockImplementation((path: string) => {
+      if (path.startsWith('/api/repositories?')) return Promise.resolve({ repositories: [{ ...active.repository, isActive: true }, { ...other.repository, isActive: true }], pagination: { totalPages: 1 } });
       if (!path.startsWith('/api/jobs?')) throw new Error(path);
       if (++calls === 1) return Promise.resolve({ jobs: [active, other], pagination: { page: 1, totalPages: 2, total: 51 } });
       if (calls === 2) return poll.promise;
@@ -221,5 +227,34 @@ describe('history request ordering', () => {
     await act(async () => refresh.resolve({ job }));
     expect(screen.getByText('Issue second')).toBeInTheDocument();
     expect(screen.queryByText('Issue high-occ')).toBeNull();
+  });
+});
+
+describe('history repository filters', () => {
+  it('lists later-page and disconnected repositories before visiting their review history', async () => {
+    const base = mockApi.getMockImplementation()!;
+    mockApi.mockImplementation((path: string, init?: RequestInit) => {
+      if (path === '/api/repositories?limit=100&page=1') return Promise.resolve({ repositories: [{ ...summary.repository, isActive: true }], pagination: { totalPages: 2 } });
+      if (path === '/api/repositories?limit=100&page=2') return Promise.resolve({ repositories: [{ id: 'older', fullName: 'owner/older', isActive: false }], pagination: { totalPages: 2 } });
+      return base(path, init);
+    });
+    const user = userEvent.setup(); render(<HistoryPage />);
+    await screen.findByRole('option', { name: 'owner/older' });
+    await user.selectOptions(screen.getByLabelText('Repository'), 'older');
+    await waitFor(() => expect(mockApi.mock.calls.some(([path]) => path.startsWith('/api/jobs?') && path.includes('repositoryId=older'))).toBe(true));
+    expect(screen.getByRole('option', { name: 'owner/repo' })).toBeInTheDocument();
+  });
+  it('keeps history usable while filter loading fails and provides a separate retry', async () => {
+    const base = mockApi.getMockImplementation()!; let failed = false;
+    mockApi.mockImplementation((path: string, init?: RequestInit) => {
+      if (path.startsWith('/api/repositories?') && !failed) { failed = true; return Promise.reject(new Error('offline')); }
+      return base(path, init);
+    });
+    const user = userEvent.setup(); render(<HistoryPage />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Repository filters could not be loaded');
+    expect(await screen.findByRole('button', { name: /owner\/repo/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Retry repository filters' }));
+    await waitFor(() => expect(screen.getByLabelText('Repository')).toBeEnabled());
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
