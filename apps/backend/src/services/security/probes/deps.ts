@@ -66,6 +66,7 @@ interface ParsedLine {
 export interface DependencyScanOptions {
   /** When present, packages are looked up against the live OSV database. */
   osv?: OsvClient;
+  signal?: AbortSignal;
   /**
    * Optional unfiltered diff used only for lockfile parsing. Lockfiles are
    * excluded from AI review by default, but their exact resolved versions are
@@ -269,7 +270,7 @@ export async function scanDependencies(
   // `latest` spec offers nothing concrete to ask about; those fall back to the
   // bundled registry below.
   const osvByRef = new Map<string, OsvVulnerability[]>();
-  const queriedRefs = new Set<string>();
+  const completeRefs = new Set<string>();
   let osvDegraded = false;
 
   if (options.osv && allCandidates.length > 0) {
@@ -285,17 +286,28 @@ export async function scanDependencies(
     }
 
     if (refs.length > 0) {
-      const outcome = await options.osv.query(refs);
+      const outcome = await options.osv.query(refs, options.signal);
       // Keep whatever OSV did answer authoritatively, and remember whether the
       // lookup was incomplete so the check can report DEGRADED rather than PASS.
       osvDegraded = outcome.degraded;
       for (const r of outcome.results) {
         const key = refKey(r.ref);
-        queriedRefs.add(key);
+        if (r.complete) completeRefs.add(key);
         osvByRef.set(key, r.vulnerabilities);
       }
     }
   }
+
+  const vulnerabilitiesFor = (dep: ManifestDependency, key: string): OsvVulnerability[] => {
+    const live = osvByRef.get(key) ?? [];
+    const fallback: OsvVulnerability[] = completeRefs.has(key) ? [] : advisoriesFor(dep.name)
+      .filter(advisory => isVulnerable(dep.spec, advisory))
+      .map(advisory => ({ id: 'bundled-registry', summary: advisory.description,
+        severity: advisory.severity, severityKnown: true, aliases: [] }));
+    // Strong offline evidence must not be hidden by incomplete live results or
+    // lose its slot behind the per-rule findings cap.
+    return [...live, ...fallback].sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
+  };
 
   // ── Findings ──────────────────────────────────────────────────────────────
   // Dedupe across manifest and lockfile views of the same package: when both a
@@ -318,16 +330,12 @@ export async function scanDependencies(
       const version = osvVersionFor(dep.spec);
       const key = version ? `${ecosystem}\u0000${dep.name}\u0000${version}`.toLowerCase() : '';
 
-      // OSV is authoritative for every package it actually answered about; a
-      // package it could not be asked about (offline, or missing in a partial
-      // response) falls back to the bundled registry.
-      const osvAnswerable = version !== null && queriedRefs.has(key);
+      // Only a complete live lookup is authoritative. Partial live evidence
+      // stays visible alongside any applicable bundled fallback evidence.
       let vulnerable = false;
 
-      if (osvAnswerable) {
-        const vulns = [...(osvByRef.get(key) ?? [])].sort(
-          (a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0),
-        );
+      {
+        const vulns = vulnerabilitiesFor(dep, key);
         for (const vuln of vulns) {
           if (!recordCount('deps-vulnerable')) break;
           const dedupeKey = `deps-vulnerable\u0000${ecosystem}\u0000${dep.name}\u0000${version}\u0000${vuln.id}`.toLowerCase();
@@ -340,30 +348,13 @@ export async function scanDependencies(
             agentType: 'SECURITY',
             source: 'DEPENDENCIES',
             ruleKey: 'deps-vulnerable',
-            issue: `Introduced dependency "${dep.name}@${dep.spec}" has a known vulnerability (${vuln.id}: ${vuln.summary})`,
-            suggestion: `Upgrade "${dep.name}" to a release that fixes ${vuln.id}.`,
+            issue: vuln.id === 'bundled-registry'
+              ? `Introduced dependency "${dep.name}@${dep.spec}" has known vulnerabilities (${vuln.summary}).`
+              : `Introduced dependency "${dep.name}@${dep.spec}" has a known vulnerability (${vuln.id}: ${vuln.summary})${severityNotice(vuln)}`,
+            suggestion: vuln.id === 'bundled-registry' ? `Upgrade "${dep.name}" to a fixed release that satisfies the advisory.`
+              : `Upgrade "${dep.name}" to a release that fixes ${vuln.id}.`,
             priority: vuln.severity,
           });
-        }
-      } else {
-        const advisories = advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a));
-        if (advisories.length > 0) {
-          const first = advisories[0];
-          const dedupeKey = `deps-vulnerable\u0000${dep.name.toLowerCase()}\u0000${first.description}`.toLowerCase();
-          if (!seenFindings.has(dedupeKey) && recordCount('deps-vulnerable')) {
-            seenFindings.add(dedupeKey);
-            vulnerable = true;
-            findings.push({
-              filePath: filename,
-              lineNumber: anchor.lineNumber,
-              agentType: 'SECURITY',
-              source: 'DEPENDENCIES',
-              ruleKey: 'deps-vulnerable',
-              issue: `Introduced dependency "${dep.name}@${dep.spec}" has known vulnerabilities (${first.description}).`,
-              suggestion: `Upgrade "${dep.name}" to a fixed release that satisfies the advisory.`,
-              priority: first.severity,
-            });
-          }
         }
       }
 
@@ -415,17 +406,7 @@ export async function scanDependencies(
     const key = `${ecosystem}\u0000${dep.name}\u0000${version}`.toLowerCase();
     // OSV is authoritative for the packages it answered; anything it could not
     // be asked about falls back to the bundled registry.
-    const osvAnswerable = queriedRefs.has(key);
-    const vulns = osvAnswerable
-      ? [...(osvByRef.get(key) ?? [])].sort(
-          (a, b) => (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0),
-        )
-      : advisoriesFor(dep.name).filter((a) => isVulnerable(dep.spec, a)).map((a) => ({
-          id: 'bundled-registry',
-          summary: a.description,
-          severity: a.severity,
-          aliases: [],
-        }));
+    const vulns = vulnerabilitiesFor(dep, key);
 
     for (const vuln of vulns) {
       if (!recordCount('deps-vulnerable')) break;
@@ -438,7 +419,7 @@ export async function scanDependencies(
         agentType: 'SECURITY',
         source: 'DEPENDENCIES',
         ruleKey: 'deps-vulnerable',
-        issue: `Resolved dependency "${dep.name}@${dep.spec}" has a known vulnerability (${vuln.id}: ${vuln.summary})`,
+        issue: `Resolved dependency "${dep.name}@${dep.spec}" has a known vulnerability (${vuln.id}: ${vuln.summary})${severityNotice(vuln)}`,
         suggestion: `Update the dependency tree so "${dep.name}" resolves to a release that fixes ${vuln.id}.`,
         priority: vuln.severity,
       });
@@ -483,7 +464,7 @@ export async function scanDependencies(
           osvDegraded ? 'DEGRADED' : 'SKIPPED',
           vulnerableCount,
           osvDegraded
-            ? 'Some packages could not be checked against the live OSV database; the bundled offline registry filled the gaps. Findings above may be incomplete.'
+            ? 'Live OSV coverage is incomplete: some packages, advisory details or severities could not be confirmed. Bundled fallback evidence is included when available. Unconfirmed severities require manual review; findings may be incomplete.'
             : undefined,
         ),
       ],
@@ -510,6 +491,10 @@ export async function scanDependencies(
     findings,
     checks: [checkForProbe('DEPENDENCIES', 'dependencies', ruleName, 0)],
   };
+}
+
+function severityNotice(vulnerability: OsvVulnerability): string {
+  return vulnerability.severityKnown ? '' : ' Severity is unconfirmed; HIGH is a manual-review priority, not a confirmed database rating.';
 }
 
 // ── Lockfile parsing ──────────────────────────────────────────────────────

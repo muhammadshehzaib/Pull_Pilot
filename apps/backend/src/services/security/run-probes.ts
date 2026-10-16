@@ -15,6 +15,7 @@ export interface SecurityScanOutcome {
 }
 
 export interface SecurityProbeOptions {
+  signal?: AbortSignal;
   /** Trusted pipeline notice when earlier diff filtering omitted oversized input. */
   inputDetail?: string;
   /** Live advisory database used by the dependency probe; omit to stay offline. */
@@ -54,6 +55,7 @@ export async function runSecurityProbes(
   if (security.dependencies) {
     results.push(await scanDependencies(input.diff, {
       osv: options.osv,
+      signal: options.signal,
       lockfileDiff: dependencyInput.diff,
     }));
   }

@@ -326,6 +326,7 @@ export const analysisWorker = new Worker(
 
       const securityScan = await guard(
         runSecurityProbes(repoConfig.security, filteredDiff, {
+          signal: abort.signal,
           osv: repoConfig.security.osv ? new OsvClient() : undefined,
           dependencyDiff: reviewInput.diff,
           ...(reviewInput.incomplete ? { inputDetail: INCOMPLETE_SCAN } : {}),

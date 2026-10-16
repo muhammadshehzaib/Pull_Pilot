@@ -127,7 +127,7 @@ Webhook-triggered reviews are deduplicated by repository, event type, reference,
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20.19+ in the 20.x series, or 22.12+ (production Docker uses Node 22)
 - Docker (for Postgres + Redis)
 - A GitHub OAuth App ([create one](https://github.com/settings/developers))
 - A GitHub Personal Access Token with `repo` + `admin:repo_hook` scopes (the bot account used to register webhooks and post review comments)

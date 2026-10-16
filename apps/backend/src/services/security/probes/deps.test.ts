@@ -69,12 +69,16 @@ function osvClientReturning(
   vulnsByQuery: (query: { name: string; version: string; ecosystem: string }) => unknown[],
   seen: Array<{ name: string; version: string; ecosystem: string }> = [],
 ): OsvClient {
+  const records = new Map<string, unknown>();
   return new OsvClient({
+    detailTransport: async endpoint => records.get(endpoint.split('/').pop()!),
     transport: async (_endpoint, body) => {
       const results = body.queries.map((q) => {
         const ref = { name: q.package.name, version: q.version, ecosystem: q.package.ecosystem };
         seen.push(ref);
-        return { vulns: vulnsByQuery(ref) };
+        const vulns = vulnsByQuery(ref) as any[];
+        for (const vuln of vulns) records.set(vuln.id, vuln);
+        return { vulns: vulns.map(vuln => ({ id: vuln.id })) };
       });
       return { results };
     },
