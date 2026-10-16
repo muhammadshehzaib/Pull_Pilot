@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import type { GitHubService, DeliveredGitHubComment, CommentPostResult } from './github.service';
+import { scanSast } from './security/probes/sast';
+import { scanSecrets } from './security/probes/secrets';
 
 const url = process.env.DELIVERY_TEST_DATABASE_URL;
 describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
@@ -209,6 +211,45 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
     expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
     expect(await db.findingOccurrence.count({ where: { analysisJobId: data.jobId } })).toBe(1);
+  });
+  it.each(['SAST', 'SECRETS'])('completes a real %s finding, preserves history, and never reposts on finalization retry', async probe => {
+    const line = probe === 'SAST' ? 'eval(req.body.code);' : `const TOKEN = "ghp_${'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7cD0fG3hJ6'}";`;
+    const diff = `diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -0,0 +1 @@\n+${line}\n`;
+    const findings = (probe === 'SAST' ? scanSast(diff) : scanSecrets(diff)).findings;
+    expect(findings).toHaveLength(1);
+    const initial = await input(true);
+    const data = { ...initial, artifact: { ...initial.artifact, suggestions: findings } };
+    const plan = await service.prepareReviewDelivery(data), fake = github();
+    const { artifact } = await service.deliverReviewPlan(plan, fake.api);
+    await record(data.jobId, repositoryId, artifact.suggestions, artifact);
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
+    expect(await db.findingOccurrence.findFirst({ where: { analysisJobId: data.jobId } })).toMatchObject({ ruleKeys: [findings[0]!.ruleKey] });
+    const resumed = await service.deliverReviewPlan(await reload(data.jobId));
+    await record(data.jobId, repositoryId, resumed.artifact.suggestions, resumed.artifact);
+    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
+    expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
+    expect(await db.findingOccurrence.count({ where: { analysisJobId: data.jobId } })).toBe(1);
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { updatedAt: new Date(Date.now() - 8 * 86400000) } });
+    await (await import('../workers/job-retention')).sweepFailedJobsOnce(7);
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
+  });
+  it('finishes an old raw-hash security plan after delivery without rewriting its hash', async () => {
+    const diff = 'diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -0,0 +1 @@\n+eval(req.body.code);\n';
+    const findings = scanSast(diff).findings;
+    const initial = await input();
+    const data = { ...initial, artifact: { ...initial.artifact, suggestions: findings } };
+    const plan = await service.prepareReviewDelivery(data);
+    const { EncryptionService } = await import('./encryption.service');
+    const { snapshotIdentity, findingIdentity } = await import('./historical/occurrence.service');
+    const originalHash = snapshotIdentity(findings), originalKey = findingIdentity(findings[0]!);
+    await db.reviewDeliveryPlan.update({ where: { id: plan.id }, data: { artifactHash: originalHash,
+      ...await EncryptionService.encrypt(JSON.stringify({ ...data.artifact, summaryBase: data.summaryBase })) } });
+    await db.commentDelivery.update({ where: { id: plan.deliveries[0]!.id }, data: { findingKey: originalKey, deliveryKey: `inline:v1:${originalKey}` } });
+    const fake = github(), { artifact } = await service.deliverReviewPlan(await reload(data.jobId), fake.api);
+    await record(data.jobId, repositoryId, artifact.suggestions, artifact);
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
+    expect((await reload(data.jobId)).artifactHash).toBe(originalHash);
+    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
   });
   it('preserves findings on failure/cancellation and blocks completion races', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();

@@ -36,6 +36,13 @@ never posts, regenerates analysis, restarts a failed job, or infers permission
 to resend from a missing match. It remains available after attempts are exhausted.
 Legacy jobs show delivery as untracked.
 
+Findings are normalized before a new plan is frozen and hashed, including
+scanner `ruleKey` aliases. Completion uses the same normalized representation;
+a security FAIL/BLOCK verdict does not mean the review job failed. For eligible
+plans saved before this normalization fix, completion verifies the authenticated
+frozen findings against the original hash before accepting their normalized
+equivalent. Existing plan hashes, comment keys, and receipts are preserved.
+
 The endpoint is `POST /api/jobs/:id/comments/reconcile`, restricted to the owning
 user and an active repository, with the existing request rate limiter.
 
@@ -68,8 +75,8 @@ outside this feature. Existing historical comments are neither edited nor delete
 
 ## Deployment
 
-1. Stop/drain old workers before cutover; the production backend runs API and
-   workers in one process. Keep the PostgreSQL and Redis volumes.
+1. Stop/drain old workers before cutover and deploy the API and separate review
+   worker together. Keep the PostgreSQL and Redis volumes.
 2. Apply `20261021000000_comment_delivery` and generate Prisma before starting
    the updated backend. The production image build generates the client and
    startup runs `prisma migrate deploy`.

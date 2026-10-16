@@ -5,7 +5,7 @@ import { EncryptionService } from './encryption.service';
 import { findingIdentity, snapshotIdentity } from './historical/occurrence.service';
 import { lockHistoricalRepository, historyCutoff } from './historical/state';
 import { renderFindingListItem, renderInlineComment } from './ai/finding-format';
-import type { AiSuggestion } from './ai/finding-taxonomy';
+import { normalizeStoredSuggestions, type AiSuggestion } from './ai/finding-taxonomy';
 import type { GitHubService } from './github.service';
 import { commentDeliveryReport, DELIVERY_TERMINAL_STATES } from './comment-delivery-report';
 
@@ -55,7 +55,9 @@ export async function prepareReviewDelivery(input: {
   fullName: string; prNumber: number; expectedAuthorId: string; artifact: FrozenReview; summaryBase: string;
 }): Promise<Plan> {
   if (!/^\d+$/.test(input.expectedAuthorId) || !Number.isSafeInteger(input.prNumber) || input.prNumber <= 0) throw new Error('Invalid review delivery destination');
-  const suggestions = [...new Map(input.artifact.suggestions.map(f => [findingIdentity(f), f])).values()];
+  // Freeze the same trusted representation that completion publishes. Scanner
+  // ruleKey aliases and other cleanup must happen before any identity is saved.
+  const suggestions = [...new Map(normalizeStoredSuggestions(input.artifact.suggestions).map(f => [findingIdentity(f), f])).values()];
   const artifact: FrozenReview = { ...input.artifact, suggestions, summaryBase: input.summaryBase };
   const sealed = await EncryptionService.encrypt(JSON.stringify(artifact));
   const rows: Prisma.CommentDeliveryUncheckedCreateWithoutPlanInput[] = [];

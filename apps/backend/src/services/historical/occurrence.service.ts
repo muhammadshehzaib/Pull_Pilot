@@ -6,6 +6,7 @@ import { generateFingerprint, buildFindingSummary } from './fingerprint.service'
 import { dirtyHistory, historyCutoff, lockHistoricalRepository } from './state';
 import { publishReviewAnalytics } from '../analytics/facts';
 import { DELIVERY_TERMINAL_STATES } from '../comment-delivery-report';
+import { EncryptionService } from '../encryption.service';
 
 /** Exact artifact identity, not a fuzzy cross-review pattern or array position. */
 export function findingIdentity(f: AiSuggestion): string {
@@ -42,7 +43,18 @@ export async function recordJobFindings(
       if (['CANCELLED', 'TIMEOUT', 'FAILED', 'SKIPPED'].includes(job.status)) throw new Error('Review is terminal; completion refused');
       if (job.deliveryVersion === 1 && job.eventType === 'PULL_REQUEST') {
         const plan = await tx.reviewDeliveryPlan.findUnique({ where: { analysisJobId: jobId }, include: { deliveries: true } });
-        if ((!plan && normalized.length > 0) || (plan && (plan.artifactHash !== hash || plan.deliveries.some(r =>
+        let matchesPlan = plan?.artifactHash === hash;
+        if (plan && !matchesPlan && plan.encryptedData && plan.iv && plan.authTag && plan.salt) {
+          // Older plans hashed the pre-normalized scanner output. Authenticate
+          // the frozen artifact against that original hash before accepting its
+          // normalized identity. Do not rewrite plans, receipts, or delivery keys.
+          try {
+            const frozen = JSON.parse(await EncryptionService.decrypt(plan.encryptedData, plan.iv, plan.authTag, plan.salt));
+            matchesPlan = Array.isArray(frozen?.suggestions) && snapshotIdentity(frozen.suggestions) === plan.artifactHash &&
+              snapshotIdentity(normalizeStoredSuggestions(frozen.suggestions)) === hash;
+          } catch { matchesPlan = false; }
+        }
+        if ((!plan && normalized.length > 0) || (plan && (!matchesPlan || plan.deliveries.some(r =>
           !(DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state))))) throw new Error('Comment delivery is unfinished or review changed');
       }
     }

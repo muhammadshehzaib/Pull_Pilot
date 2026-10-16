@@ -188,8 +188,13 @@ export function normalizeStoredSuggestions(raw: unknown): AiSuggestion[] {
     if (allowed.includes(stored.source as FindingSource)) normalized.source = stored.source as FindingSource;
     if (Array.isArray(stored.sources)) normalized.sources = [...new Set(stored.sources.filter((s): s is FindingSource => allowed.includes(s as FindingSource)))];
     if (stored.corroborated === true) normalized.corroborated = true;
-    if (Array.isArray(stored.ruleKeys)) normalized.ruleKeys = stored.ruleKeys.filter((s): s is string => typeof s === 'string' && s.length <= 120).slice(0, 20);
-    if (typeof stored.ruleKey === 'string') normalized.ruleKeys = [...new Set([...(normalized.ruleKeys ?? []), stored.ruleKey.slice(0, 120)])];
+    if (Array.isArray(stored.ruleKeys) || typeof stored.ruleKey === 'string') {
+      const plural = Array.isArray(stored.ruleKeys)
+        ? stored.ruleKeys.filter((s): s is string => typeof s === 'string' && s.length <= 120) : [];
+      // Apply the cap after folding the alias so a second normalization cannot
+      // drop a 21st key that the first pass just appended.
+      normalized.ruleKeys = [...new Set([...plural, ...(typeof stored.ruleKey === 'string' ? [stored.ruleKey.slice(0, 120)] : [])])].slice(0, 20);
+    }
     return [normalized];
   });
 }
