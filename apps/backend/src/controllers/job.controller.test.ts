@@ -487,7 +487,7 @@ describe('JobController.get', () => {
     mockJobFindFirst.mockResolvedValueOnce({
       id: 'j2',
       status: 'SKIPPED',
-      results: { ignoredFiles: ['dist/**'], includedFiles: ['src/**'], error: 'No API key' },
+      results: { ignoredFiles: ['dist/**'], includedFiles: ['src/**'], error: 'No API key', reason: 'missing-api-key', details: 'Save a provider key in your vault.' },
     });
     const req = authedReq({ params: { id: 'j2' } });
     const res = mockRes();
@@ -499,6 +499,8 @@ describe('JobController.get', () => {
       ignoredFiles: ['dist/**'],
       includedFiles: ['src/**'],
       error: 'No API key',
+      reason: 'missing-api-key',
+      details: 'Save a provider key in your vault.',
       historicalFeedbackEligible: false,
     });
     expect(out.job.results).toEqual([]);

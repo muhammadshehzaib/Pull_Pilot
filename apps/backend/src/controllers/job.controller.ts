@@ -192,6 +192,8 @@ export class JobController {
           historicalMemory: normalizeHistoricalAttribution(rawObj.historicalMemory),
           historicalFeedbackEligible: job.status === 'COMPLETED' && job.createdAt >= historyCutoff(),
           error: typeof rawObj.error === 'string' ? rawObj.error : undefined,
+          reason: typeof rawObj.reason === 'string' ? rawObj.reason : undefined,
+          details: typeof rawObj.details === 'string' ? rawObj.details : undefined,
         },
       },
     });

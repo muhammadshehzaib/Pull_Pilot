@@ -48,6 +48,23 @@ async function open() {
   return user;
 }
 describe('Phase 8 history page integration', () => {
+  it.each([false, true])('shows the stored failure even when saved findings exist: %s', async withFindings => {
+    job = { ...job, status: 'FAILED', results: withFindings ? job.results : [], metadata: { error: 'Your AI provider quota is exhausted.' } };
+    const user = userEvent.setup(); render(<HistoryPage />);
+    await user.click(await screen.findByRole('button', { name: /owner\/repo/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Your AI provider quota is exhausted.');
+    if (withFindings) expect(screen.getByText('Issue high-occ')).toBeInTheDocument();
+  });
+  it.each([
+    { status: 'TIMEOUT', metadata: { reason: 'worker-heartbeat-expired' }, expected: 'worker heartbeat expired' },
+    { status: 'SKIPPED', metadata: { details: 'Monthly private review allowance reached.' }, expected: 'Monthly private review allowance reached.' },
+    { status: 'FAILED', metadata: {}, expected: 'No failure reason was recorded' },
+  ])('explains $status reviews and missing legacy reasons', async ({ status, metadata, expected }) => {
+    job = { ...job, status, results: [], metadata };
+    const user = userEvent.setup(); render(<HistoryPage />);
+    await user.click(await screen.findByRole('button', { name: /owner\/repo/i }));
+    expect(await screen.findByText(new RegExp(expected))).toBeInTheDocument();
+  });
   it('reports unavailable dashboard deep links without inventing review data', async () => {
     window.history.replaceState(null, '', '/history?job=deleted');
     try {

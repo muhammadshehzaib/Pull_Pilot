@@ -81,7 +81,7 @@ interface JobDetail extends JobSummary {
   /** Per-probe PASS/FAIL/SKIPPED records written by the security layer. */
   securityChecks?: SecurityCheck[];
   /** Risk engine output, rehydrated from the results blob by the controller. */
-  metadata?: { risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown; contextDiscovery?: unknown; commentDelivery?: unknown;
+  metadata?: { error?: string; reason?: string; details?: string; risk?: RiskReport; riskV2?: unknown; testGaps?: TestGapReport | null; behavioral?: unknown; contextDiscovery?: unknown; commentDelivery?: unknown;
     historicalFeedbackEligible?: boolean;
     historicalMemory?: { version?: number; algorithmVersion?: string; suppliedPatternIds: string[]; patternCount: number; truncated: boolean } };
 }
@@ -440,6 +440,9 @@ function JobDetailView({ job }: { job: JobDetail }) {
   const blockingCount = sortedSuggestions.filter((s) => isBlocking(s.priority)).length;
   const visibleSuggestions = sortedSuggestions.filter(s =>
     (showDismissed || s.workflow?.status !== 'DISMISSED') && (showDeprioritized || !s.adaptation));
+  const stopped = isTerminalFailure(job.status) || job.status === 'SKIPPED';
+  const failureReason = job.metadata?.error?.trim() || job.metadata?.details?.trim() ||
+    job.metadata?.reason?.replace(/[-_]/g, ' ') || 'No failure reason was recorded for this review.';
   async function reloadFeedback() {
     try {
       const result = await api<{ job: JobDetail }>(`/api/jobs/${job.id}`);
@@ -525,6 +528,11 @@ function JobDetailView({ job }: { job: JobDetail }) {
           )}
         </div>
       </div>
+
+      {stopped && <div className="glass-card" role={job.status === 'SKIPPED' ? 'status' : 'alert'}>
+        <strong>Review {statusLabel(job.status).toLowerCase()}</strong>
+        <p style={{ whiteSpace: 'pre-wrap' }}>{failureReason}</p>
+      </div>}
 
       {job.commentFailures && job.commentFailures.length > 0 && (
         <div
@@ -670,13 +678,12 @@ function JobDetailView({ job }: { job: JobDetail }) {
               Nothing in this diff met the reporting bar. That is a real result, not
               a failed review.
             </>
-          ) : isTerminalFailure(job.status) ? (
+          ) : stopped ? (
             <>
               <div style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--danger)', marginBottom: '0.4rem' }}>
                 ⚠️ Review {statusLabel(job.status).toLowerCase()}
               </div>
-              This review ended without findings. Check the repository configuration
-              and webhook delivery, then re-run it.
+              No findings were saved for this review.
             </>
           ) : (
             <>
