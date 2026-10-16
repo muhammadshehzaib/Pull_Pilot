@@ -5,7 +5,7 @@ import { normalizeStoredSuggestions, type AiSuggestion } from '../ai/finding-tax
 import { generateFingerprint, buildFindingSummary } from './fingerprint.service';
 import { dirtyHistory, historyCutoff, lockHistoricalRepository } from './state';
 import { publishReviewAnalytics } from '../analytics/facts';
-import { DELIVERY_TERMINAL_STATES } from '../comment-delivery-report';
+import { REVIEW_DELIVERY_SETTLED_STATES } from '../comment-delivery-report';
 import { EncryptionService } from '../encryption.service';
 
 /** Exact artifact identity, not a fuzzy cross-review pattern or array position. */
@@ -55,7 +55,7 @@ export async function recordJobFindings(
           } catch { matchesPlan = false; }
         }
         if ((!plan && normalized.length > 0) || (plan && (!matchesPlan || plan.deliveries.some(r =>
-          !(DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state))))) throw new Error('Comment delivery is unfinished or review changed');
+          !(REVIEW_DELIVERY_SETTLED_STATES as readonly string[]).includes(r.state))))) throw new Error('Comment delivery is unfinished or review changed');
       }
     }
     if (completedResults === undefined &&

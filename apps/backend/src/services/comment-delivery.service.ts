@@ -7,7 +7,7 @@ import { lockHistoricalRepository, historyCutoff } from './historical/state';
 import { renderFindingListItem, renderInlineComment } from './ai/finding-format';
 import { normalizeStoredSuggestions, type AiSuggestion } from './ai/finding-taxonomy';
 import type { GitHubService } from './github.service';
-import { commentDeliveryReport, DELIVERY_TERMINAL_STATES, needsLocationSummary } from './comment-delivery-report';
+import { commentDeliveryReport, DELIVERY_TERMINAL_STATES, REVIEW_DELIVERY_SETTLED_STATES, needsLocationSummary } from './comment-delivery-report';
 import { bindFindingAnchors } from './ai/review-anchors';
 
 // The artifact contains existing versioned review metadata in addition to findings.
@@ -19,14 +19,18 @@ const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 export const deliveryMarker = (id: string) => `<!-- aipr-delivery:v1:${id} -->`;
 const LEASE_MS = 30_000;
 const COMMENT_RENDERING_VERSION = 2;
+export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_RATE_LIMIT_ATTEMPTS = 3;
+const settled = (state: string) => (REVIEW_DELIVERY_SETTLED_STATES as readonly string[]).includes(state);
 
 export class DeliveryPendingError extends Error {
   constructor(message = 'Comment delivery is unconfirmed or pending', public readonly retryAt?: number) { super(message); }
 }
 
 function pendingError(rows: CommentDelivery[]) {
-  const leases = rows.filter(r => r.state === 'SENDING' && r.claimExpiresAt).map(r => r.claimExpiresAt!.getTime());
-  return new DeliveryPendingError(undefined, leases.length ? Math.min(...leases) : undefined);
+  const waits = rows.flatMap(r => r.state === 'SENDING' && r.claimExpiresAt ? [r.claimExpiresAt.getTime()]
+    : r.state === 'READY' && r.nextAttemptAt ? [r.nextAttemptAt.getTime()] : []);
+  return new DeliveryPendingError(undefined, waits.length ? Math.min(...waits) : undefined);
 }
 
 async function open(row: { encryptedData: string | null; iv: string | null; authTag: string | null; salt: string | null }) {
@@ -46,6 +50,7 @@ function summaryBody(artifact: FrozenReview, rows: CommentDelivery[]): string {
   const report = commentDeliveryReport(rows);
   return [artifact.summaryBase, `- **Comments Posted Inline**: ${report.delivered}/${report.expected}`,
     report.omitted ? `- **Comments omitted inline**: ${report.omitted}` : '',
+    report.unconfirmed ? `- **Comment delivery unconfirmed**: ${report.unconfirmed}. Review completed; all findings remain available in the app. Unconfirmed comments were not resent.` : '',
     fallback.length ? '\n## Findings that could not be attached inline\n\n' + fallback.map(renderFindingListItem).join('\n') : '',
     uncertain.length ? '\n## Findings without a verified code location\n\nThe reported file and line below could not be confirmed. These findings were not attached inline.\n\n' + uncertain.map(renderFindingListItem).join('\n') : '',
   ].filter(Boolean).join('\n');
@@ -136,11 +141,12 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
   const finish = (rows: CommentDelivery[]) => {
     const { summaryBase: _summary, ...completion } = artifact;
     return { artifact: { ...completion, commentDelivery: commentDeliveryReport(rows),
-      commentFailures: rows.filter(r => r.state === 'REJECTED' || r.state === 'OMITTED').map(r => `${r.path ?? 'summary'}: ${r.reason}`),
+      commentFailures: rows.filter(r => r.state === 'REJECTED' || r.state === 'OMITTED' || r.state === 'UNKNOWN').map(r => `${r.path ?? 'summary'}: ${r.reason}`),
       summaryPosted: !rows.some(r => r.kind === 'SUMMARY') || rows.some(r => r.kind === 'SUMMARY' && r.state === 'DELIVERED') } as FrozenReview };
   };
   const savedRows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
   if (savedRows.every(r => terminal(r.state)) && !needsLocationSummary(savedRows)) return finish(savedRows);
+  if (!gh && savedRows.every(r => settled(r.state)) && !needsLocationSummary(savedRows)) return finish(savedRows);
   if (!gh) throw new Error('GitHub connector required for pending delivery');
   const job = await prisma.analysisJob.findUniqueOrThrow({ where: { id: plan.analysisJobId } });
   const repositoryId = job.repositoryId;
@@ -153,10 +159,19 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
     await prisma.commentDelivery.updateMany({ where: { planId: plan.id, state: { in: ['READY', 'WAITING'] } },
       data: { state: 'OMITTED', reason: 'pr-head-changed' } });
   }
+  if (Date.now() >= plan.createdAt.getTime() + DELIVERY_WINDOW_MS) {
+    await prisma.commentDelivery.updateMany({ where: { planId: plan.id, state: { in: ['READY', 'WAITING'] } },
+      data: { state: 'OMITTED', reason: 'delivery-window-expired' } });
+  }
 
   const send = async (row: CommentDelivery) => {
     if (signal?.aborted) throw new Error('Review delivery aborted');
     if (row.state !== 'READY') return;
+    if (Date.now() >= plan.createdAt.getTime() + DELIVERY_WINDOW_MS) {
+      await prisma.commentDelivery.updateMany({ where: { id: row.id, state: 'READY' },
+        data: { state: 'OMITTED', reason: 'delivery-window-expired' } });
+      return;
+    }
     if (row.kind === 'INLINE') {
       const finding = artifact.suggestions.find(f => findingIdentity(f) === row.findingKey);
       if (artifact.commentLocationVersion !== 1 || !finding?.verifiedAnchor ||
@@ -217,8 +232,14 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
     } else if (result?.failure === 'REJECTED') {
       await prisma.commentDelivery.updateMany({ where, data: { state: 'REJECTED', reason: result.error ?? 'github-rejected' } });
     } else if (result?.failure === 'RETRYABLE') {
-      await prisma.commentDelivery.updateMany({ where, data: { state: 'READY', reason: 'github-rate-limited', nextAttemptAt: new Date(result.retryAt ?? Date.now() + 60_000), claimToken: null, claimExpiresAt: null } });
-      throw new DeliveryPendingError('GitHub requested delivery backoff', result.retryAt);
+      if (allowed.attempts >= MAX_RATE_LIMIT_ATTEMPTS) {
+        await prisma.commentDelivery.updateMany({ where, data: { state: 'OMITTED', reason: 'github-rate-limit-attempts-exhausted' } });
+      } else {
+        const requested = typeof result.retryAt === 'number' && Number.isFinite(result.retryAt) ? result.retryAt : 0;
+        const retryAt = Math.min(plan.createdAt.getTime() + DELIVERY_WINDOW_MS, Math.max(Date.now() + 60_000, requested));
+        await prisma.commentDelivery.updateMany({ where, data: { state: 'READY', reason: 'github-rate-limited', nextAttemptAt: new Date(retryAt), claimToken: null, claimExpiresAt: null } });
+        throw new DeliveryPendingError('GitHub requested delivery backoff', retryAt);
+      }
     } else {
       await prisma.commentDelivery.updateMany({ where, data: { state: 'UNKNOWN', reason: 'delivery-unconfirmed' } });
     }
@@ -228,7 +249,7 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
   const order = new Map(artifact.suggestions.map((f, i) => [findingIdentity(f), i]));
   for (const row of rows.filter(r => r.kind === 'INLINE').sort((a, b) => (order.get(a.findingKey!) ?? 0) - (order.get(b.findingKey!) ?? 0))) await send(row);
   rows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
-  if (rows.some(r => r.kind === 'INLINE' && !terminal(r.state))) {
+  if (rows.some(r => r.kind === 'INLINE' && !settled(r.state))) {
     throw pendingError(rows);
   }
   if (needsLocationSummary(rows)) {
@@ -253,7 +274,7 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
   }
   if (summary) await send(await prisma.commentDelivery.findUniqueOrThrow({ where: { id: summary.id } }));
   rows = await prisma.commentDelivery.findMany({ where: { planId: plan.id } });
-  if (rows.some(r => !terminal(r.state))) throw pendingError(rows);
+  if (rows.some(r => !settled(r.state))) throw pendingError(rows);
   return finish(rows);
 }
 

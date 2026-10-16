@@ -16,8 +16,9 @@ retry resumes that saved review without another AI call or quota reservation.
 - Definite rate-limit rejections can be retried after backoff. Permanent
   rejections remain visible, and rejected inline findings can appear in the one
   tracked fallback summary when `summarize` is enabled.
-- Unconfirmed inline sends never become fallback findings; the summary waits
-  for known inline outcomes to avoid publishing the same finding again.
+- Unconfirmed inline sends never become fallback findings. The summary reports
+  their count and points to the saved findings in the app; uncertainty does not
+  fail completed analysis. An unconfirmed summary is also reported separately.
 - If final database publication fails after delivery, retries skip GitHub I/O
   and retry publication using the saved artifact.
 
@@ -78,8 +79,10 @@ reviews and new commits are separate reviews and can produce new comments.
 
 ## Limits and lifecycle
 
-- Three BullMQ attempts, with normal exponential backoff extended for GitHub
-  rate-limit instructions and outstanding claim expiry. No long worker sleeps.
+- Processing failures have three BullMQ attempts. Definitely rejected rate-limit
+  posts and outstanding claims use delayed jobs without consuming these attempts
+  or calling AI again. A comment gets at most three definite rate-limit rejections;
+  unsent posts expire after 24 hours. Findings survive incomplete delivery.
 - Claims expire after 30 seconds and become unconfirmed rather than sendable.
 - GitHub requests have 10-second timeouts. Each list scan is bounded to 20 pages
   of 100 comments and 30 seconds; manual checking has a 30-second scan deadline.
@@ -90,8 +93,9 @@ reviews and new commits are separate reviews and can produce new comments.
   identities/receipts. Maintenance also expires terminal jobs' extra delivery
   copies after 90 days, in batches of 500. Existing `AnalysisJob.results` retain
   their existing lifecycle; this is not retention for all review data.
-- Job deletion cascades to plans and receipts. Suppression is scoped to a
-  retained job and does not survive deletion of its identity.
+- Failed jobs with delivery plans are excluded from automatic failed-job cleanup,
+  preserving review identities and receipts across PR reopen events. Explicit job
+  or repository deletion still cascades; suppression cannot survive that deletion.
 - The Octokit REST client does not enable a retry plugin for creation. Do not
   add transparent retries of comment POSTs on transport errors.
 

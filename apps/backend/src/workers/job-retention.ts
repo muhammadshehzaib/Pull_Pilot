@@ -11,8 +11,8 @@ import {
  *
  * Only FAILED is swept. COMPLETED rows are the review history users browse in
  * /history, and QUEUED/RUNNING may still be live, so neither is touched. FAILED
- * is terminal — analysis.worker.ts already set the status and stored the error
- * before rethrowing — so an aged-out row loses nothing that matters.
+ * jobs with a delivery plan are retained: their unique review identity and
+ * receipts prevent a reopened PR from posting the same comments again.
  *
  * Runs in batches so a large backlog cannot build one enormous DELETE.
  * Returns the number of rows removed.
@@ -25,7 +25,7 @@ export async function sweepFailedJobsOnce(retentionDays = JOB_RETENTION_DAYS): P
 
   for (;;) {
     const stale = await prisma.analysisJob.findMany({
-      where: { status: 'FAILED', updatedAt: { lt: cutoff } },
+      where: { status: 'FAILED', updatedAt: { lt: cutoff }, deliveryPlan: { is: null } },
       select: { id: true },
       orderBy: { updatedAt: 'asc' },
       take: DELETE_BATCH_SIZE,
@@ -36,7 +36,7 @@ export async function sweepFailedJobsOnce(retentionDays = JOB_RETENTION_DAYS): P
     // deleteMany on the ids we just selected; a concurrent worker moving a row out
     // of FAILED simply means fewer rows match, which is harmless here.
     const { count } = await prisma.analysisJob.deleteMany({
-      where: { id: { in: stale.map((j) => j.id) } },
+      where: { id: { in: stale.map((j) => j.id) }, status: 'FAILED', updatedAt: { lt: cutoff }, deliveryPlan: { is: null } },
     });
 
     total += count;

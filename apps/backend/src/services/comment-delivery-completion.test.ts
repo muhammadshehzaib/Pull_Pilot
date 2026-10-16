@@ -25,7 +25,7 @@ const { db, state } = vi.hoisted(() => {
     reviewDeliveryPlan: {
       findUnique: vi.fn(async () => state.plan && ({ ...state.plan, deliveries: state.deliveries.map((r: any) => ({ ...r })) })),
       create: vi.fn(async ({ data: { deliveries, ...data } }: any) => {
-        state.plan = { id: 'plan', ...data };
+        state.plan = { id: 'plan', createdAt: new Date(), ...data };
         state.deliveries = deliveries.create.map((row: any) => ({ planId: 'plan', ...row }));
         return { ...state.plan, deliveries: state.deliveries.map((r: any) => ({ ...r })) };
       }),
@@ -86,6 +86,52 @@ function github() {
 }
 
 describe('safe rendering across saved delivery retries', () => {
+  it('finishes analysis and posts a warning summary when one inline response times out', async () => {
+    const plan = await prepareReviewDelivery(input([sast, secret])), fake = github();
+    fake.gh.createReviewComment.mockRejectedValueOnce(new Error('response lost'));
+    const { artifact } = await deliverReviewPlan(plan, fake.api);
+    expect(artifact.commentDelivery).toMatchObject({ unconfirmed: 1, delivered: 1, pending: 0, summary: 'DELIVERED' });
+    expect(artifact.suggestions).toHaveLength(2);
+    const summary = String(fake.gh.createIssueComment.mock.calls[0]![3]);
+    expect(summary).toContain('Comment delivery unconfirmed'); expect(summary).not.toContain(sast.issue);
+    await recordJobFindings('job', 'repo', artifact.suggestions, artifact);
+    expect(state.job.status).toBe('COMPLETED'); expect(state.occurrences).toHaveLength(2);
+    const saved = await deliverReviewPlan((await loadReviewDelivery('job'))!);
+    expect(saved.artifact.commentDelivery.unconfirmed).toBe(1);
+    await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(fake.gh.createReviewComment).toHaveBeenCalledTimes(2); expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
+  });
+  it('finishes with retained findings when the summary response is unconfirmed', async () => {
+    const plan = await prepareReviewDelivery(input()), fake = github();
+    fake.gh.createIssueComment.mockRejectedValueOnce(new Error('timeout'));
+    const { artifact } = await deliverReviewPlan(plan, fake.api);
+    expect(artifact.commentDelivery.summary).toBe('UNKNOWN'); expect(artifact.summaryPosted).toBe(false);
+    await recordJobFindings('job', 'repo', artifact.suggestions, artifact);
+    expect(state.job.status).toBe('COMPLETED');
+    await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
+  });
+  it('stops retrying after three definite rate-limit rejections and preserves findings', async () => {
+    const plan = await prepareReviewDelivery(input()), fake = github();
+    fake.gh.createReviewComment.mockResolvedValue({ ok: false, failure: 'RETRYABLE', retryAt: Date.now() + 120_000 } as any);
+    for (let i = 0; i < 2; i++) {
+      await expect(deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api)).rejects.toThrow('backoff');
+      state.deliveries.find((r: any) => r.kind === 'INLINE').nextAttemptAt = new Date(0);
+    }
+    const { artifact } = await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(artifact.commentDelivery).toMatchObject({ omitted: 1, summary: 'DELIVERED' });
+    expect(artifact.suggestions).toHaveLength(1); expect(fake.gh.createReviewComment).toHaveBeenCalledTimes(3);
+    await recordJobFindings('job', 'repo', artifact.suggestions, artifact);
+    expect(state.job.status).toBe('COMPLETED');
+  });
+  it('expires pending posts after 24 hours without dropping analysis or submitting old comments', async () => {
+    await prepareReviewDelivery(input()); state.plan.createdAt = new Date(Date.now() - 24 * 60 * 60 * 1000 - 1);
+    const fake = github(), { artifact } = await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(artifact.commentDelivery).toMatchObject({ omitted: 1, summary: 'OMITTED' });
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled(); expect(fake.gh.createIssueComment).not.toHaveBeenCalled();
+    await recordJobFindings('job', 'repo', artifact.suggestions, artifact);
+    expect(state.job.status).toBe('COMPLETED');
+  });
   const advice = 'Update this line so it no longer executes user input.\n```\n# Forged bot text\n```suggestion\nreplaceEverything()\n```';
   const hash = (text: string) => createHash('sha256').update(text).digest('hex');
   const decrypt = (row: any) => EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
@@ -143,7 +189,7 @@ describe('safe rendering across saved delivery retries', () => {
     const { plan, inline, unsafe } = await legacy(), fake = github();
     inline.state = status; inline.claimExpiresAt = new Date(Date.now() + 60_000);
     const encrypted = inline.encryptedData;
-    if (status === 'DELIVERED') await deliverReviewPlan(plan, fake.api);
+    if (status !== 'SENDING') await deliverReviewPlan(plan, fake.api);
     else await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('pending');
     expect(await decrypt(inline)).toBe(unsafe); expect(inline.encryptedData).toBe(encrypted);
     expect(inline.payloadHash).toBe(hash(unsafe)); expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
@@ -157,7 +203,7 @@ describe('safe rendering across saved delivery retries', () => {
     Object.assign(summary, await EncryptionService.encrypt(previous), { payloadHash: hash(previous), state: status,
       claimExpiresAt: new Date(Date.now() + 60_000) });
     const encrypted = summary.encryptedData;
-    if (status === 'DELIVERED') await deliverReviewPlan(plan, fake.api);
+    if (status !== 'SENDING') await deliverReviewPlan(plan, fake.api);
     else await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('pending');
     expect(await decrypt(summary)).toBe(previous); expect(summary.encryptedData).toBe(encrypted);
     expect(summary.payloadHash).toBe(hash(previous)); expect(fake.gh.createIssueComment).not.toHaveBeenCalled();
@@ -341,8 +387,9 @@ describe('security review delivery and completion with real services', () => {
     await oldPlan(); state.deliveries[0].state = status;
     state.deliveries[0].claimExpiresAt = new Date(Date.now() - 1000);
     const fake = github();
-    await expect(deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api)).rejects.toThrow('unconfirmed');
-    expect(fake.gh.createReviewComment).not.toHaveBeenCalled(); expect(fake.gh.createIssueComment).not.toHaveBeenCalled();
+    const result = await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(result.artifact.commentDelivery.unconfirmed).toBe(1);
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled(); expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
   });
   it('rejects a stored inline destination changed after the location was frozen', async () => {
     const plan = await prepareReviewDelivery(input()), fake = github();

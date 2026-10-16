@@ -1,4 +1,4 @@
-import { Worker, Job, UnrecoverableError } from 'bullmq';
+import { Worker, Job, UnrecoverableError, DelayedError } from 'bullmq';
 import { redisConnection } from '../config/redis';
 import prisma from '../config/prisma';
 import { EncryptionService } from '../services/encryption.service';
@@ -20,10 +20,10 @@ import { deduplicate } from '../services/ai/finding-dedup.service';
 import { baselineBehavioral } from '../services/behavioral/contracts';
 import { runTestGapAnalysis } from '../services/test-gap/test-gap.service';
 import type { TestGapReport } from '../services/test-gap/test-gap-types';
-import { prepareReviewDelivery, loadReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
+import { prepareReviewDelivery, loadReviewDelivery, deliverReviewPlan, DeliveryPendingError } from '../services/comment-delivery.service';
 import type { GitHubService } from '../services/github.service';
 import { reviewBackoff } from '../services/review-backoff';
-import { DELIVERY_TERMINAL_STATES, needsLocationSummary } from '../services/comment-delivery-report';
+import { REVIEW_DELIVERY_SETTLED_STATES, needsLocationSummary } from '../services/comment-delivery-report';
 import { recordJobFindings } from '../services/historical/occurrence.service';
 import { RISK_ALGORITHM_VERSION } from '../services/analytics/facts';
 import { retrieveFeedbackAdaptation, adaptationAttribution } from '../services/feedback-loop/adaptation.service';
@@ -42,7 +42,7 @@ import { AiRequestError, assertReviewSize, MAX_AI_FINDINGS } from '../services/a
 
 export const analysisWorker = new Worker(
   ANALYSIS_QUEUE_NAME,
-  async (job: Job) => {
+  async (job: Job, token?: string) => {
     console.log(`\n⚙️  WORKER: Awakening for Job ${job.id}...`);
 
     const {
@@ -191,7 +191,7 @@ export const analysisWorker = new Worker(
       }
       const savedPlan = await loadReviewDelivery(jobId);
       if (savedPlan) {
-        const finished = savedPlan.deliveries?.every(r => (DELIVERY_TERMINAL_STATES as readonly string[]).includes(r.state)) && !needsLocationSummary(savedPlan.deliveries);
+        const finished = savedPlan.deliveries?.every(r => (REVIEW_DELIVERY_SETTLED_STATES as readonly string[]).includes(r.state)) && !needsLocationSummary(savedPlan.deliveries);
         const service = finished ? undefined : authorizedGitHub;
         return await finishDelivery(savedPlan, service);
       }
@@ -627,6 +627,16 @@ export const analysisWorker = new Worker(
           console.warn('AI review failure settlement pending; recovery will recheck', { reason: err.reason });
         }
         throw new UnrecoverableError(message);
+      }
+
+      if (err instanceof DeliveryPendingError) {
+        // The analysis is already saved. Wait in Redis without spending a
+        // processing attempt, holding a worker slot, or requesting AI again.
+        await assertNotSuperseded();
+        await advanceReview(jobId, userId, 'POSTING', 'Review saved; waiting to finish GitHub comment delivery.');
+        const retryAt = Number.isFinite(err.retryAt) ? err.retryAt! : Date.now() + 30_000;
+        await job.moveToDelayed(Math.max(Date.now() + 1000, retryAt), token);
+        throw new DelayedError();
       }
 
       const permanent = isPermanentJobError(err);

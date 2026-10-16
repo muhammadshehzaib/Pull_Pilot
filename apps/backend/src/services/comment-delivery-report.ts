@@ -1,6 +1,8 @@
 import type { CommentDelivery } from '@prisma/client';
 
 export const DELIVERY_TERMINAL_STATES = ['DELIVERED', 'REJECTED', 'OMITTED'] as const;
+// An uncertain POST must not be resent, but it need not invalidate the analysis.
+export const REVIEW_DELIVERY_SETTLED_STATES = [...DELIVERY_TERMINAL_STATES, 'UNKNOWN'] as const;
 export type DeliveryReport = ReturnType<typeof commentDeliveryReport>;
 
 export function needsLocationSummary(rows: Pick<CommentDelivery, 'kind' | 'reason'>[]) {

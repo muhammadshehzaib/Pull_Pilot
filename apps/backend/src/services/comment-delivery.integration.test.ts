@@ -141,7 +141,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
   it('recovers an accepted comment whose HTTP response was lost', async () => {
     const data = await input(false, 2), plan = await service.prepareReviewDelivery(data), fake = github();
     fake.gh.createReviewComment.mockImplementationOnce(async (_o, _r, _pr, _sha, path, _line, body) => { fake.accept('INLINE', body, path); throw new Error('response lost'); });
-    await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toThrow('unconfirmed');
+    expect((await service.deliverReviewPlan(plan, fake.api)).artifact.commentDelivery.unconfirmed).toBe(1);
     const result = await service.deliverReviewPlan(await reload(data.jobId), fake.api);
     expect(fake.comments).toHaveLength(2); expect(fake.gh.createReviewComment).toHaveBeenCalledTimes(2);
     expect(result.artifact.commentDelivery.unconfirmed).toBe(0);
@@ -162,7 +162,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
   it('does not resend an expired claim when the worker may have crashed before HTTP', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
     await db.commentDelivery.updateMany({ where: { planId: plan.id }, data: { state: 'SENDING', claimToken: 'abandoned', claimExpiresAt: new Date(0) } });
-    await expect(service.deliverReviewPlan(await reload(data.jobId), fake.api)).rejects.toThrow('unconfirmed');
+    expect((await service.deliverReviewPlan(await reload(data.jobId), fake.api)).artifact.commentDelivery.unconfirmed).toBe(1);
     expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
     expect((await reload(data.jobId)).deliveries[0].state).toBe('UNKNOWN');
   });
@@ -175,7 +175,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     const first = service.deliverReviewPlan(plan, fake.api);
     await started;
     await db.commentDelivery.updateMany({ where: { planId: plan.id }, data: { claimExpiresAt: new Date(0) } });
-    await expect(service.deliverReviewPlan(await reload(data.jobId), fake.api)).rejects.toThrow('unconfirmed');
+    expect((await service.deliverReviewPlan(await reload(data.jobId), fake.api)).artifact.commentDelivery.unconfirmed).toBe(1);
     release(); await first;
     expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
     expect((await reload(data.jobId)).deliveries[0].state).toBe('DELIVERED');
@@ -183,7 +183,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
   it('a lost summary response is reconciled without a second summary', async () => {
     const data = await input(true), plan = await service.prepareReviewDelivery(data), fake = github();
     fake.gh.createIssueComment.mockImplementationOnce(async (_o, _r, _pr, body) => { fake.accept('SUMMARY', body); return { ok: false, failure: 'UNKNOWN' }; });
-    await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toThrow();
+    expect((await service.deliverReviewPlan(plan, fake.api)).artifact.commentDelivery.summary).toBe('UNKNOWN');
     await service.deliverReviewPlan(await reload(data.jobId), fake.api);
     expect(fake.gh.createIssueComment).toHaveBeenCalledOnce(); expect(fake.comments).toHaveLength(2);
   });
@@ -214,14 +214,16 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
   it('an unknown inline send never becomes fallback summary content', async () => {
     const data = await input(true), plan = await service.prepareReviewDelivery(data), fake = github();
     fake.gh.createReviewComment.mockResolvedValue({ ok: false, failure: 'UNKNOWN' });
-    await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toThrow();
-    expect(fake.gh.createIssueComment).not.toHaveBeenCalled();
-    await expect(service.deliverReviewPlan(await reload(data.jobId), fake.api)).rejects.toThrow();
+    expect((await service.deliverReviewPlan(plan, fake.api)).artifact.commentDelivery.unconfirmed).toBe(1);
+    expect(fake.gh.createIssueComment).toHaveBeenCalledOnce();
+    const body = fake.comments.find(c => c.kind === 'SUMMARY')!.body;
+    expect(body).toContain('Comment delivery unconfirmed'); expect(body).not.toContain(finding.issue);
+    await service.deliverReviewPlan(await reload(data.jobId), fake.api);
     expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
   });
   it('honors definite rate-limit rejection backoff before safely retrying', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
-    const retryAt = Date.now() + 60_000;
+    const retryAt = Date.now() + 120_000;
     fake.gh.createReviewComment.mockResolvedValueOnce({ ok: false, failure: 'RETRYABLE', retryAt });
     await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toMatchObject({ retryAt });
     await expect(service.deliverReviewPlan(await reload(data.jobId), fake.api)).rejects.toMatchObject({ retryAt });
@@ -373,7 +375,7 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
   it('never treats an empty adapter response as proof of delivery', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
     fake.gh.createReviewComment.mockResolvedValueOnce(undefined as any);
-    await expect(service.deliverReviewPlan(plan, fake.api)).rejects.toThrow('unconfirmed');
+    expect((await service.deliverReviewPlan(plan, fake.api)).artifact.commentDelivery.unconfirmed).toBe(1);
     expect((await reload(data.jobId)).deliveries[0].state).toBe('UNKNOWN');
   });
   it('refuses legacy preparation and changed authentication identities', async () => {
@@ -395,6 +397,18 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     const expired = await reload(data.jobId);
     expect(expired.encryptedData).toBeNull(); expect(expired.deliveries[0].encryptedData).toBeNull();
     expect(expired.deliveries[0].githubCommentId).toBeTruthy(); expect(expired.deliveries[0].state).toBe('DELIVERED');
+  });
+  it('keeps failed tracked reviews through cleanup so reopening the same PR head stays deduplicated', async () => {
+    const data = await input(), plan = await service.prepareReviewDelivery(data), fake = github();
+    await service.deliverReviewPlan(plan, fake.api);
+    await db.analysisJob.update({ where: { id: data.jobId }, data: { status: 'FAILED', updatedAt: new Date(0) } });
+    const { sweepFailedJobsOnce } = await import('../workers/job-retention');
+    await sweepFailedJobsOnce(7);
+    expect(await db.analysisJob.findUnique({ where: { id: data.jobId } })).not.toBeNull();
+    expect((await reload(data.jobId)).deliveries[0].githubCommentId).toBeTruthy();
+    const previous = await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } });
+    await expect(db.analysisJob.create({ data: { repositoryId, eventType: previous.eventType,
+      referenceId: previous.referenceId, commitSha: previous.commitSha } })).rejects.toMatchObject({ code: 'P2002' });
   });
   it('purges disconnected payloads, preserves receipts, prevents late preparation, and cascades on deletion', async () => {
     const data = await input(), plan = await service.prepareReviewDelivery(data);

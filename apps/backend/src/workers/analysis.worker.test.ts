@@ -18,6 +18,9 @@ vi.mock('../services/historical/occurrence.service', async importOriginal => ({
   }),
 }));
 vi.mock('../services/comment-delivery.service', () => ({
+  DeliveryPendingError: class DeliveryPendingError extends Error {
+    constructor(message?: string, public retryAt?: number) { super(message); }
+  },
   loadReviewDelivery: vi.fn(async () => null),
   prepareReviewDelivery: vi.fn(async (input: any) => {
     await mockJobUpdate({ where: { id: input.jobId }, data: { status: 'POSTING', results: input.artifact } });
@@ -45,7 +48,7 @@ vi.mock('../services/feedback-loop/adaptation.service', async importOriginal => 
  * fake job payloads.
  */
 const { capturedHandler, WorkerMock, mockJobUpdate, mockJobFindUnique, mockRepoFindUnique, mockRuleFindMany, mockRuleCheckCreateMany, mockSecurityCheckCreateMany, mockDecrypt, mockFetchDiff, mockGetFileContent, mockGetRepoForUser, mockCreateReviewComment, mockGetProvider, mockAnalyzeCode, mockEmitStatus, GitHubServiceCtor } = vi.hoisted(() => {
-  const capturedHandler: { fn?: (job: any) => Promise<any> } = {};
+  const capturedHandler: { fn?: (job: any, token?: string) => Promise<any> } = {};
 
   const WorkerMock = vi.fn(function (this: any, _name: string, handler: any) {
     capturedHandler.fn = handler;
@@ -107,6 +110,7 @@ vi.mock('bullmq', () => ({
       this.name = 'UnrecoverableError';
     }
   },
+  DelayedError: class DelayedError extends Error { constructor() { super('delayed'); this.name = 'DelayedError'; } },
 }));
 
 vi.mock('../config/redis', () => ({ redisConnection: { host: 'mock' } }));
@@ -148,7 +152,7 @@ import { REVIEW_TIMEOUT_MS } from '../utils/constants';
 import { RepositoryAccessError } from '../errors/repository-access.error';
 import { AiRequestError, MAX_REVIEW_DIFF_BYTES, MAX_REVIEW_FILES } from '../services/ai/ai-request-policy';
 import { ClaudeProvider } from '../services/ai/providers/claude.provider';
-import { loadReviewDelivery, prepareReviewDelivery, deliverReviewPlan } from '../services/comment-delivery.service';
+import { loadReviewDelivery, prepareReviewDelivery, deliverReviewPlan, DeliveryPendingError } from '../services/comment-delivery.service';
 const defaultPrepare = vi.mocked(prepareReviewDelivery).getMockImplementation()!;
 const defaultDeliver = vi.mocked(deliverReviewPlan).getMockImplementation()!;
 
@@ -256,10 +260,31 @@ describe('analysis worker — durable delivery entry', () => {
     expect(mockRepoFindUnique).not.toHaveBeenCalled(); expect(mockDecrypt).not.toHaveBeenCalled();
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(mockFetchDiff).not.toHaveBeenCalled();
   });
+  it.each([0, 2])('delays saved delivery without spending a failed attempt (attemptsMade=%i)', async attemptsMade => {
+    const retryAt = Date.now() + 120_000;
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ analysisJobId: 'job-1', deliveries: [] } as any);
+    vi.mocked(deliverReviewPlan).mockRejectedValueOnce(new DeliveryPendingError('Waiting for GitHub', retryAt));
+    const moveToDelayed = vi.fn().mockResolvedValue(undefined);
+    await expect(capturedHandler.fn!({ ...makeJobPayload(), moveToDelayed, opts: { attempts: 3 }, attemptsMade }, 'claim-token'))
+      .rejects.toMatchObject({ name: 'DelayedError' });
+    expect(moveToDelayed).toHaveBeenCalledWith(retryAt, 'claim-token');
+    expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(mockDecrypt).not.toHaveBeenCalled();
+    expect(mockJobUpdate.mock.calls.map(call => call[0].data.status)).not.toContain('FAILED');
+    expect(mockJobUpdate.mock.calls.map(call => call[0].data.status)).not.toContain('RETRYING');
+  });
   it.each(['COMPLETED', 'CANCELLED', 'TIMEOUT', 'FAILED', 'SKIPPED'])('never restarts a terminal %s job', async status => {
     mockJobFindUnique.mockResolvedValue({ status, repositoryId: 'r-1', repository: authorizedRepository });
     expect(await capturedHandler.fn!(makeJobPayload())).toEqual({ status: 'already-terminal' });
     expect(mockAnalyzeCode).not.toHaveBeenCalled(); expect(deliverReviewPlan).not.toHaveBeenCalled();
+  });
+  it('publishes an already-settled partial review without retrying comment delivery', async () => {
+    vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ deliveries: [{ state: 'UNKNOWN', kind: 'INLINE' },
+      { state: 'DELIVERED', kind: 'SUMMARY' }] } as any);
+    vi.mocked(deliverReviewPlan).mockResolvedValueOnce({ artifact: { suggestions: [], commentFailures: ['delivery-unconfirmed'] } });
+    await capturedHandler.fn!(makeJobPayload());
+    expect(deliverReviewPlan).toHaveBeenCalledWith(expect.anything(), undefined, expect.any(AbortSignal));
+    expect(mockAnalyzeCode).not.toHaveBeenCalled();
+    expect(mockEmitStatus).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.stringContaining('partial'), 'COMPLETED', expect.anything());
   });
   it('reauthorizes fully delivered saved reviews before publishing them', async () => {
     vi.mocked(loadReviewDelivery).mockResolvedValueOnce({ analysisJobId: 'job-1', deliveries: [{ state: 'DELIVERED' }] } as any);

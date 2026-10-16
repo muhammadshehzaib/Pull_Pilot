@@ -47,6 +47,7 @@ describe('sweepFailedJobsOnce', () => {
     expect(removed).toBe(0);
     const where = mockJobFindMany.mock.calls[0][0].where;
     expect(where.status).toBe('FAILED');
+    expect(where.deliveryPlan).toEqual({ is: null });
 
     const cutoff = where.updatedAt.lt.getTime();
     const expected = Date.now() - 7 * DAY_MS;
@@ -71,7 +72,7 @@ describe('sweepFailedJobsOnce', () => {
 
     expect(removed).toBe(3);
     expect(mockJobDeleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ['a', 'b', 'c'] } },
+      where: { id: { in: ['a', 'b', 'c'] }, status: 'FAILED', updatedAt: { lt: expect.any(Date) }, deliveryPlan: { is: null } },
     });
   });
 
