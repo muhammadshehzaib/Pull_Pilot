@@ -14,6 +14,7 @@ import { ClaudeProvider } from './claude.provider';
 import { GrokProvider } from './grok.provider';
 import { GeminiProvider } from './gemini.provider';
 import { MAX_AI_PROMPT_BYTES, MAX_AI_OUTPUT_TOKENS, MAX_REVIEW_DIFF_BYTES, MAX_AI_FINDINGS } from '../ai-request-policy';
+import { reviewAnchors } from '../review-anchors';
 
 const providers = { OpenAI: OpenAiProvider, Claude: ClaudeProvider, Grok: GrokProvider, Gemini: GeminiProvider };
 type Name = keyof typeof providers;
@@ -25,6 +26,75 @@ function response(name: Name, text: string, truncated = false) {
 }
 beforeEach(() => { vi.clearAllMocks(); vi.spyOn(console, 'error').mockImplementation(() => {}); });
 afterEach(() => vi.restoreAllMocks());
+
+const wrapperDiff = 'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -0,0 +1 @@\n+const name = user.name;';
+const wrapperAnchor = [...reviewAnchors(wrapperDiff).values()][0]!;
+const wrappedFinding = { filePath: 'wrong-file.ts', lineNumber: 99, agentType: 'BUG', priority: 'HIGH',
+  issue: 'Null access', suggestion: 'Guard the user', anchorId: wrapperAnchor.id, anchorText: wrapperAnchor.text };
+
+describe.each(Object.keys(providers) as Name[])('%s wrapped findings', name => {
+  it.each(['findings', 'suggestions', 'issues'])('preserves %s after an empty summary array', async field => {
+    sdk(name).mockResolvedValueOnce(response(name, JSON.stringify({ summary: [], [field]: [wrappedFinding] })));
+    const output = await new providers[name]('test-key').analyzeCode(wrapperDiff);
+    expect(output).toEqual([{ filePath: 'a.ts', lineNumber: 1, agentType: 'BUG', priority: 'HIGH',
+      issue: 'Null access', suggestion: 'Guard the user', verifiedAnchor: wrapperAnchor.id }]);
+    expect(sdk(name)).toHaveBeenCalledOnce();
+  });
+
+  it.each(['findings', 'suggestions', 'issues'])('preserves %s with summary strings and either field order', async field => {
+    for (const payload of [{ summary: 'Review finished', [field]: [wrappedFinding] },
+      { [field]: [wrappedFinding], summary: 'Review finished' }]) {
+      sdk(name).mockResolvedValueOnce(response(name, JSON.stringify(payload)));
+      const output = await new providers[name]('test-key').analyzeCode(wrapperDiff);
+      expect(output).toHaveLength(1); expect(output[0]).toMatchObject({ issue: 'Null access', filePath: 'a.ts',
+        lineNumber: 1, verifiedAnchor: wrapperAnchor.id });
+    }
+    expect(sdk(name)).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses named findings rather than an unrelated nonempty metadata array', async () => {
+    sdk(name).mockResolvedValueOnce(response(name, JSON.stringify({ metadata: ['private-summary-text'], findings: [wrappedFinding] })));
+    const output = await new providers[name]('test-key').analyzeCode(wrapperDiff);
+    expect(output).toHaveLength(1); expect(output[0]!.issue).toBe('Null access');
+    expect(JSON.stringify(output)).not.toContain('private-summary-text');
+  });
+
+  it.each(['findings', 'suggestions', 'issues'])('accepts an explicit empty %s array after metadata', async field => {
+    sdk(name).mockResolvedValueOnce(response(name, JSON.stringify({ summary: 'No issues', [field]: [] })));
+    await expect(new providers[name]('test-key').analyzeCode(wrapperDiff)).resolves.toEqual([]);
+  });
+
+  it.each([
+    { summary: [] }, { summary: 'No issues' }, { results: [wrappedFinding] },
+    { findings: [], suggestions: [wrappedFinding] }, { suggestions: [wrappedFinding], issues: [] },
+    { findings: null }, { findings: [] , suggestions: [] },
+  ])('rejects ambiguous or unrecognized response %j without retry or raw metadata', async payload => {
+    sdk(name).mockResolvedValueOnce(response(name, JSON.stringify({ metadata: 'private-summary-text', ...payload })));
+    const error = await new providers[name]('test-key').analyzeCode(wrapperDiff).catch(error => error);
+    expect(error).toMatchObject({ reason: 'ai-invalid-response', retryable: false });
+    expect(error.message + JSON.stringify(vi.mocked(console.error).mock.calls)).not.toContain('private-summary-text');
+    expect(sdk(name)).toHaveBeenCalledOnce();
+  });
+
+  it.each([{ entries: [null] }, { entries: [{}] }, { entries: ['not a finding'] },
+    { entries: [{ issue: 'Missing fix' }] }, { entries: [wrappedFinding, null] }])(
+    'does not silently discard malformed member array $entries', async ({ entries }) => {
+      sdk(name).mockResolvedValueOnce(response(name, JSON.stringify({ findings: entries })));
+      await expect(new providers[name]('test-key').analyzeCode(wrapperDiff))
+        .rejects.toMatchObject({ reason: 'ai-invalid-response', retryable: false });
+      expect(sdk(name)).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('retains useful findings with an unverified location for the summary fallback', async () => {
+    sdk(name).mockResolvedValueOnce(response(name, JSON.stringify({ summary: [], findings: [
+      { issue: 'Null access', suggestion: 'Guard the user', priority: 'HIGH', agentType: 'BUG' },
+    ] })));
+    const output = await new providers[name]('test-key').analyzeCode(wrapperDiff);
+    expect(output).toHaveLength(1); expect(output[0]).toMatchObject({ filePath: 'unknown', lineNumber: 0, issue: 'Null access' });
+    expect(output[0]).not.toHaveProperty('verifiedAnchor');
+  });
+});
 
 describe.each(Object.keys(providers) as Name[])('%s cost and retry policy', name => {
   it('uses one SDK attempt, a bounded output budget and a prioritized findings prompt', async () => {

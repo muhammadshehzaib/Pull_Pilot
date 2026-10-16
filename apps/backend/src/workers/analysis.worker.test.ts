@@ -620,6 +620,25 @@ describe('analysis worker — failure paths', () => {
 
 describe('analysis worker — AI cost protection', () => {
   it.each([
+    { summary: [], results: [{ issue: 'private-source-value' }] },
+    { findings: [], suggestions: [{ issue: 'private-source-value' }] },
+    { findings: [{ issue: 'private-source-value' }] },
+  ])('does not complete, post or retry a malformed/ambiguous real Claude response: %j', async payload => {
+    mockRepoFindUnique.mockResolvedValueOnce(fullRepoWithVault);
+    mockFetchDiff.mockResolvedValueOnce('diff --git a/a.ts b/a.ts\n+x');
+    mockGetProvider.mockReturnValueOnce(new ClaudeProvider('test-key'));
+    mockClaudeSdkRequest.mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(payload) }] });
+    await expect(capturedHandler.fn!({ ...makeJobPayload(), opts: { attempts: 3 }, attemptsMade: 0 }))
+      .rejects.toMatchObject({ name: 'UnrecoverableError' });
+    expect(mockClaudeSdkRequest).toHaveBeenCalledOnce();
+    expect(mockJobUpdate).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED',
+      results: expect.objectContaining({ reason: 'ai-invalid-response' }) }) }));
+    expect(prepareReviewDelivery).not.toHaveBeenCalled(); expect(mockCreateReviewComment).not.toHaveBeenCalled();
+    expect(mockJobUpdate.mock.calls.some(([input]) => input.data?.status === 'COMPLETED')).toBe(false);
+    expect(JSON.stringify(mockJobUpdate.mock.calls) + JSON.stringify(mockEmitStatus.mock.calls)).not.toContain('private-source-value');
+  });
+
+  it.each([
     ['truncated', 'ai-response-truncated', 'FAILED'],
     ['invalid JSON', 'ai-invalid-response', 'FAILED'],
     ['invalid key', 'ai-invalid-key', 'SKIPPED'],

@@ -18,6 +18,7 @@ import {
 import { buildTestDraftPrompt, TEST_DRAFT_SYSTEM_PROMPT } from '../../test-gap/test-draft-prompt';
 import { labelledReviewDiff, normalizeAnchoredSuggestions } from '../review-anchors';
 import { assertReviewSize, MAX_AI_FINDINGS, AiRequestError } from '../ai-request-policy';
+import { extractReviewFindings } from '../review-response';
 
 export type { AiSuggestion };
 export { normalizeSuggestions } from '../finding-taxonomy';
@@ -56,9 +57,12 @@ export abstract class BaseAiProvider {
   protected renderReviewDiff(diff: string) { assertReviewSize(diff); return labelledReviewDiff(diff); }
   protected normalizeReviewFindings(raw: unknown, diff: string) { return normalizeAnchoredSuggestions(raw, diff); }
   protected reviewResponse(raw: unknown, diff: string): AiSuggestion[] {
-    const findings = Array.isArray(raw) ? raw : raw && typeof raw === 'object' ? Object.values(raw)[0] : undefined;
-    if (!Array.isArray(findings) || findings.length > MAX_AI_FINDINGS) throw new AiRequestError('ai-invalid-response');
-    return this.normalizeReviewFindings(findings, diff);
+    const findings = extractReviewFindings(raw);
+    const normalized = this.normalizeReviewFindings(findings, diff);
+    // A nonempty malformed answer must never normalize into "no problems";
+    // partial loss is also an invalid review, not a successful shorter one.
+    if (normalized.length !== findings.length) throw new AiRequestError('ai-invalid-response');
+    return normalized;
   }
   protected apiKey: string;
 
@@ -148,7 +152,8 @@ export abstract class BaseAiProvider {
 
       OUTPUT FORMAT RULES:
       You MUST output STRICT, RAW JSON only. Do not output markdown formatting (like \`\`\`json).
-      The response must be an array of objects.
+      Return an array of finding objects. If JSON-object mode requires a wrapper, return { "findings": [...] }.
+      Put findings only in that named array; summary or metadata fields must never replace it. Use [] (or { "findings": [] }) only when no findings exist.
       Return at most ${MAX_AI_FINDINGS} highest-priority findings. Keep issue under 300 characters and suggestion under 600 characters; finish the complete JSON within the output budget.
       Format per object:
       {

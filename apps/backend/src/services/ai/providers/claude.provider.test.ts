@@ -175,9 +175,7 @@ describe('ClaudeProvider', () => {
       expect(call.system).not.toContain('ADDITIONAL USER RULES TO ENFORCE');
     });
 
-    it('returns the LAST single-key wrapper value when first key holds an array (Object.values order)', async () => {
-      // Object.values respects insertion order; the implementation uses [0].
-      // This locks in the current contract: only the first key matters.
+    it('extracts the named suggestions array alongside unrelated metadata', async () => {
       mockCreate.mockResolvedValueOnce(
         makeResponse(JSON.stringify({ suggestions: [sampleSuggestion], meta: 'unused' })),
       );
