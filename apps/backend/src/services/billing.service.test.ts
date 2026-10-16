@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import prisma from '../config/prisma';
-import { BillingService, BillingConfigurationError, AVAILABLE_PLANS } from './billing.service';
+import { BillingService, BillingConfigurationError, BillingCheckoutConflictError, AVAILABLE_PLANS } from './billing.service';
 
 vi.mock('../config/prisma', () => ({
   default: {
@@ -15,6 +15,7 @@ vi.mock('../config/prisma', () => ({
       update: vi.fn(),
     },
     usageLedger: { aggregate: vi.fn().mockResolvedValue({ _sum: { publicReviewsCount: 0, privateReviewsCount: 0 } }) },
+    billingCheckout: { findUnique: vi.fn(), upsert: vi.fn() },
   },
 }));
 
@@ -39,6 +40,7 @@ const db = prisma as unknown as {
     update: ReturnType<typeof vi.fn>;
   };
   usageLedger: { aggregate: ReturnType<typeof vi.fn> };
+  billingCheckout: { findUnique: ReturnType<typeof vi.fn>; upsert: ReturnType<typeof vi.fn> };
 };
 
 const EVENT_AT = '2026-10-17T10:00:00Z';
@@ -62,6 +64,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) => callback(prisma));
   db.subscription.findUnique.mockResolvedValue(null);
+  db.subscription.findFirst.mockResolvedValue(null);
+  db.billingCheckout.findUnique.mockResolvedValue(null);
+  db.billingCheckout.upsert.mockResolvedValue({});
   for (const key of ENV_KEYS) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
@@ -154,8 +159,8 @@ describe('BillingService.createCheckout', () => {
     process.env.POLAR_PRODUCT_INDIE_YEARLY = 'prod_indie_y';
     process.env.FRONTEND_URL = 'https://app.example.com';
 
-    const create = vi.fn().mockResolvedValue({ url: 'https://polar.sh/checkout/xyz' });
-    BillingService.setClientForTesting({ checkouts: { create } } as any);
+    const create = vi.fn().mockResolvedValue({ id: 'checkout_1', url: 'https://polar.sh/checkout/xyz' });
+    BillingService.setClientForTesting({ checkouts: { create }, subscriptions: { list: vi.fn(async () => ({ items: [] })) } } as any);
 
     const result = await BillingService.createCheckout({
       userId: 'user-123',
@@ -166,6 +171,9 @@ describe('BillingService.createCheckout', () => {
     });
 
     expect(result).toEqual({ url: 'https://polar.sh/checkout/xyz' });
+    expect(db.billingCheckout.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: { userId: 'user-123', polarCheckoutId: 'checkout_1', productId: 'prod_indie_y', url: 'https://polar.sh/checkout/xyz' },
+    }));
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         products: ['prod_indie_y'],
@@ -176,6 +184,76 @@ describe('BillingService.createCheckout', () => {
         return_url: 'https://app.example.com/pricing',
       }),
     );
+  });
+});
+
+describe('checkout duplicate protection', () => {
+  const input = { userId: 'user-123', tier: 'INDIE' as const, billingCycle: 'monthly' as const };
+  let create: ReturnType<typeof vi.fn>, get: ReturnType<typeof vi.fn>, list: ReturnType<typeof vi.fn>, getSubscription: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    process.env.POLAR_PRODUCT_INDIE_MONTHLY = 'prod_indie_m';
+    create = vi.fn(async () => ({ id: 'checkout_1', url: 'https://polar.sh/checkout/one' }));
+    get = vi.fn(async () => ({ status: 'open', url: 'https://polar.sh/checkout/one' }));
+    list = vi.fn(async () => ({ items: [] }));
+    getSubscription = vi.fn();
+    BillingService.setClientForTesting({ checkouts: { create, get }, subscriptions: { list, get: getSubscription } } as any);
+  });
+  it('serializes simultaneous clicks and returns one checkout', async () => {
+    let pending: any = null;
+    let tail = Promise.resolve();
+    vi.mocked(prisma.$transaction).mockImplementation((callback: any) => {
+      const result = tail.then(() => callback(prisma));
+      tail = result.then(() => undefined, () => undefined);
+      return result;
+    });
+    db.billingCheckout.findUnique.mockImplementation(async () => pending);
+    db.billingCheckout.upsert.mockImplementation(async ({ create: data }: any) => { pending = data; return data; });
+    const results = await Promise.all([BillingService.createCheckout(input), BillingService.createCheckout(input)]);
+    expect(results[0]).toEqual(results[1]); expect(create).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(prisma.$queryRaw)).toHaveBeenCalled();
+  });
+  it('blocks a local active subscription', async () => {
+    db.subscription.findFirst.mockResolvedValueOnce({ plan: 'TEAM', status: 'active' });
+    await expect(BillingService.createCheckout(input)).rejects.toBeInstanceOf(BillingCheckoutConflictError);
+    expect(create).not.toHaveBeenCalled();
+  });
+  it('blocks provider subscriptions while the local webhook is delayed', async () => {
+    list.mockResolvedValueOnce({ items: [{ status: 'active' }] });
+    await expect(BillingService.createCheckout(input)).rejects.toBeInstanceOf(BillingCheckoutConflictError);
+    expect(create).not.toHaveBeenCalled();
+  });
+  it.each(['confirmed', 'succeeded'])('blocks %s checkout before webhook synchronization', async status => {
+    db.billingCheckout.findUnique.mockResolvedValueOnce({ polarCheckoutId: 'checkout_1', productId: 'prod_indie_m' });
+    get.mockResolvedValueOnce({ status, subscription_id: 'sub_1' });
+    getSubscription.mockResolvedValueOnce({ status: 'active' });
+    await expect(BillingService.createCheckout(input)).rejects.toBeInstanceOf(BillingCheckoutConflictError);
+    expect(create).not.toHaveBeenCalled();
+  });
+  it('blocks a different plan while another checkout is open', async () => {
+    db.billingCheckout.findUnique.mockResolvedValueOnce({ polarCheckoutId: 'checkout_1', productId: 'different-product' });
+    await expect(BillingService.createCheckout(input)).rejects.toBeInstanceOf(BillingCheckoutConflictError);
+    expect(create).not.toHaveBeenCalled();
+  });
+  it.each(['expired', 'failed'])('replaces a %s checkout', async status => {
+    db.billingCheckout.findUnique.mockResolvedValueOnce({ polarCheckoutId: 'checkout_1', productId: 'prod_indie_m' });
+    get.mockResolvedValueOnce({ status });
+    await BillingService.createCheckout(input); expect(create).toHaveBeenCalledOnce();
+  });
+  it('permits repurchase after the provider confirms the previous subscription ended', async () => {
+    db.billingCheckout.findUnique.mockResolvedValueOnce({ polarCheckoutId: 'checkout_1', productId: 'prod_indie_m' });
+    get.mockResolvedValueOnce({ status: 'succeeded', subscription_id: 'sub_1' });
+    getSubscription.mockResolvedValueOnce({ status: 'canceled' });
+    await BillingService.createCheckout(input); expect(create).toHaveBeenCalledOnce();
+  });
+  it('does not create another checkout when provider status is unavailable', async () => {
+    db.billingCheckout.findUnique.mockResolvedValueOnce({ polarCheckoutId: 'checkout_1', productId: 'prod_indie_m' });
+    get.mockRejectedValueOnce(new Error('provider unavailable'));
+    await expect(BillingService.createCheckout(input)).rejects.toThrow('provider unavailable');
+    expect(create).not.toHaveBeenCalled();
+  });
+  it('does not expose the checkout URL if saving the reuse record fails', async () => {
+    db.billingCheckout.upsert.mockRejectedValueOnce(new Error('database unavailable'));
+    await expect(BillingService.createCheckout(input)).rejects.toThrow('database unavailable');
   });
 });
 

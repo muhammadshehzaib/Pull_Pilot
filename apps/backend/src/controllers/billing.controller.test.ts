@@ -5,6 +5,7 @@ import { mockReq, mockRes } from '../test-utils/express-mocks';
 
 vi.mock('../services/billing.service', () => ({
   BillingConfigurationError: class BillingConfigurationError extends Error {},
+  BillingCheckoutConflictError: class BillingCheckoutConflictError extends Error {},
   BillingService: {
     getUserBillingOverview: vi.fn(),
     getCheckoutCustomer: vi.fn(),
@@ -176,6 +177,15 @@ describe('BillingController', () => {
 
       expect(res.status).toHaveBeenCalledWith(503);
       expect(res.json).toHaveBeenCalledWith({ error: 'Billing is not available right now' });
+    });
+    it('returns a useful conflict response for an existing subscription', async () => {
+      const { BillingCheckoutConflictError } = await import('../services/billing.service');
+      mocked.getCheckoutCustomer.mockResolvedValueOnce(null);
+      mocked.createCheckout.mockRejectedValueOnce(new BillingCheckoutConflictError('You already have a paid subscription.'));
+      const res = mockRes();
+      await BillingController.createCheckout(mockReq({ auth: { userId: 'user-123' } as any, body: { tier: 'TEAM' } }), res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({ error: 'You already have a paid subscription.' });
     });
 
     it('returns 500 when checkout creation fails unexpectedly', async () => {

@@ -35,7 +35,6 @@ applied before deploying the code. No live database was modified.
 
 ## Remaining confirmed issues
 
-- 29: checkout creation has no repeated-request or existing-subscription guard.
 - 30: repository removal filters only by GitHub repository ID, across installations.
 
 ## 27 — Highest active paid plan
@@ -76,3 +75,25 @@ in this session.
 Deployment: apply `20261024000000_account_review_quota` with old API/worker producers
 stopped, before starting the new code, so old writers cannot recreate installation
 ledgers after consolidation. No live database was modified.
+
+## 29 — One checkout per account
+
+Plan: serialize checkout creation with the account row lock, persist the exposed
+checkout, reuse an open session, and refuse a second purchase while a subscription
+or payment is active. Check Polar as well as local state to cover webhook delays.
+
+Implemented: concurrent requests reuse one checkout across API instances. A
+different plan cannot open another session while the first is open. Processing
+payments and paid subscriptions return HTTP 409 with a useful message shown by
+the Upgrade button. Expired/failed sessions can be replaced. A completed checkout
+allows repurchase only after Polar confirms its subscription ended. Provider
+failures block a new purchase rather than guessing that no subscription exists.
+
+Validation: billing/auth/controller regression tests, backend build, web typecheck,
+and the UpgradeButton lint check passed. The checkout migration was executed in a
+disposable PostgreSQL engine; uniqueness and deletion cascade passed. PostgreSQL
+integration tests cover real account locks and concurrent checkout reuse when
+`RECOVERY_TEST_DATABASE_URL` is configured.
+
+Deployment: apply `20261025000000_checkout_guard` before starting the new code.
+The Polar access token needs subscription read access as well as checkout access.

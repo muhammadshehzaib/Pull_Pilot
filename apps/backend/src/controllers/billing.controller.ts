@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import {
   AVAILABLE_PLANS,
   BillingConfigurationError,
+  BillingCheckoutConflictError,
   BillingService,
   PaidTier,
   PolarSubscriptionLike,
@@ -62,6 +63,9 @@ export class BillingController {
 
       return res.json({ url });
     } catch (err) {
+      if (err instanceof BillingCheckoutConflictError) {
+        return res.status(409).json({ error: err.message });
+      }
       if (err instanceof BillingConfigurationError) {
         console.error('Billing is not configured:', err.message);
         return res.status(503).json({ error: 'Billing is not available right now' });

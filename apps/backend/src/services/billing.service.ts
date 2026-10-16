@@ -114,6 +114,7 @@ function productIdToTier(): Map<string, PlanTier> {
 }
 
 export class BillingConfigurationError extends Error {}
+export class BillingCheckoutConflictError extends Error {}
 
 export class BillingService {
   private static client: PolarClient | null = null;
@@ -134,6 +135,7 @@ export class BillingService {
 
     this.client = createPolar({
       accessToken,
+      timeout: 10,
       environment: process.env.POLAR_SANDBOX === 'true' ? 'sandbox' : 'production',
     });
     return this.client;
@@ -197,20 +199,63 @@ export class BillingService {
     }
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const client = this.getClient();
 
-    const checkout = await this.getClient().checkouts.create({
-      products: [productId],
-      external_customer_id: input.userId,
-      customer_email: input.email ?? undefined,
-      customer_name: input.username ?? undefined,
-      success_url: `${frontendUrl}/dashboard?checkout=success&tier=${input.tier}`,
-      return_url: `${frontendUrl}/pricing`,
-      allow_discount_codes: true,
-      // Trials are a per-product decision in Polar; never enable them implicitly.
-      allow_trial: false,
-    });
+    return prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${input.userId} FOR UPDATE`;
+      const active = await EntitlementService.getSubscription(input.userId, tx);
+      const alreadySubscribed = 'You already have a paid subscription. Manage your existing subscription to change plans.';
+      if (active) throw new BillingCheckoutConflictError(alreadySubscribed);
+      // Also check Polar: the successful payment webhook may still be in flight.
+      const remote = await client.subscriptions.list({
+        external_customer_id: input.userId, product_id: [...productIdToTier().keys()],
+        status: ['active', 'past_due', 'trialing', 'incomplete'], limit: 1,
+      });
+      if (remote.items.length) throw new BillingCheckoutConflictError(alreadySubscribed);
 
-    return { url: checkout.url };
+      const pending = await tx.billingCheckout.findUnique({ where: { userId: input.userId } });
+      if (pending) {
+        const checkout = await client.checkouts.get(pending.polarCheckoutId);
+        if (checkout.status === 'open') {
+          if (pending.productId !== productId) throw new BillingCheckoutConflictError(
+            'A checkout for another plan is already open. Complete it or wait for it to expire before choosing another plan.',
+          );
+          return { url: checkout.url };
+        }
+        if (checkout.status === 'confirmed') throw new BillingCheckoutConflictError(
+          'Your payment is processing. Wait for it to finish before trying again.',
+        );
+        if (checkout.status === 'succeeded') {
+          // Do not mistake delayed webhooks/list indexing for permission to buy
+          // again. Allow a new purchase only after explicit provider termination.
+          const subscription = checkout.subscription_id ? await client.subscriptions.get(checkout.subscription_id) : null;
+          if (!subscription || !['canceled', 'unpaid', 'incomplete_expired'].includes(subscription.status)) {
+            throw new BillingCheckoutConflictError(alreadySubscribed);
+          }
+        } else if (!['expired', 'failed'].includes(checkout.status)) {
+          throw new BillingCheckoutConflictError('An existing checkout is still being processed. Please retry shortly.');
+        }
+      }
+
+      const checkout = await client.checkouts.create({
+        products: [productId],
+        external_customer_id: input.userId,
+        customer_email: input.email ?? undefined,
+        customer_name: input.username ?? undefined,
+        success_url: `${frontendUrl}/dashboard?checkout=success&tier=${input.tier}`,
+        return_url: `${frontendUrl}/pricing`,
+        allow_discount_codes: true,
+        // Trials are a per-product decision in Polar; never enable them implicitly.
+        allow_trial: false,
+      });
+
+      await tx.billingCheckout.upsert({
+        where: { userId: input.userId },
+        create: { userId: input.userId, polarCheckoutId: checkout.id, productId, url: checkout.url },
+        update: { polarCheckoutId: checkout.id, productId, url: checkout.url },
+      });
+      return { url: checkout.url };
+    }, { timeout: 60_000 });
   }
 
   /**

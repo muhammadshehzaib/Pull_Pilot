@@ -21,6 +21,7 @@ model User {
   subscriptions Subscription[]
   installationClaims InstallationClaim[]
   usageLedgers UsageLedger[]
+  billingCheckout BillingCheckout?
 
   @@map("users")
 }
@@ -102,6 +103,17 @@ model Subscription {
   @@index([userId])
   @@index([polarCustomerId])
   @@map("subscriptions")
+}
+
+/// The last checkout exposed to an account, shared across tabs and API instances.
+model BillingCheckout {
+  userId          String @id
+  user            User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  polarCheckoutId String @unique
+  productId       String
+  url             String
+
+  @@map("billing_checkouts")
 }
 
 model Installation {

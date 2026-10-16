@@ -46,7 +46,9 @@ export function UpgradeButton({
         return;
       }
       setError(
-        status === 503
+        status === 409
+          ? (err as ApiError).error
+          : status === 503
           ? 'Checkout is unavailable right now. Please try again shortly.'
           : 'Could not start checkout. Please try again.',
       );
