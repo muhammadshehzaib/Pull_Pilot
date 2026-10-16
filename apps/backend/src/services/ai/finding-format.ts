@@ -59,21 +59,21 @@ export function severityTally(findings: { priority: string }[]): string {
  * The body of one inline review comment.
  *
  * Severity leads, then the category, then the defect and the fix. The issue and
- * suggestion are emitted as a fenced block rather than prose so a multi-line
- * code suggestion does not break the comment layout on GitHub.
+ * suggestion are untrusted text. Advice is read-only: this field does not prove
+ * an exact replacement for the selected source range.
  */
 export function renderInlineComment(finding: AiSuggestion): string {
   const badge = severityBadge(finding.priority);
   const category = String(finding.agentType).replace(/_/g, ' ').toLowerCase();
 
   return [
-    `### ${badge} ${finding.agentType}`,
+    `### ${badge} ${escapeText(finding.agentType)}`,
     '',
-    `**${capitalize(category)}:** ${finding.issue}`,
+    `**${escapeText(capitalize(category))}:** ${escapeText(finding.issue)}`,
     '',
-    '```suggestion',
-    finding.suggestion,
-    '```',
+    '**Suggested approach (manual review):**',
+    '',
+    readOnlyBlock(finding.suggestion),
   ].join('\n');
 }
 
@@ -81,15 +81,48 @@ export function renderInlineComment(finding: AiSuggestion): string {
 export function renderFindingListItem(finding: AiSuggestion, index: number): string {
   const badge = severityBadge(finding.priority);
   return [
-    `${index + 1}. **${badge}** \`${finding.filePath}:${finding.lineNumber}\``,
-    `   - **${finding.agentType}:** ${finding.issue}`,
-    `   - **Fix:** ${firstLine(finding.suggestion)}`,
+    `${index + 1}. **${badge}** ${inlineCode(`${finding.filePath}:${finding.lineNumber}`)}`,
+    `   - **${escapeText(finding.agentType)}:** ${escapeText(finding.issue)}`,
+    `   - **Fix (manual review):** ${escapeText(firstLine(finding.suggestion))}`,
   ].join('\n');
 }
 
 function firstLine(text: string): string {
-  const line = text.split('\n').find((candidate) => candidate.trim().length > 0) ?? text;
+  const line = text.replace(/\r\n?/g, '\n').split('\n').find((candidate) => candidate.trim().length > 0) ?? text;
   return line.length > 220 ? `${line.slice(0, 217)}...` : line;
+}
+
+/** Plain prose cannot introduce headings, links, HTML, or additional fences. */
+function escapeText(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/[!-/:-@\[-`{-~]/g, character => {
+    if (character === '&') return '&amp;';
+    if (character === '<') return '&lt;';
+    if (character === '>') return '&gt;';
+    if (character === '@') return '&#64;';
+    return `\\${character}`;
+  });
+}
+
+function longestBacktickRun(text: string): number {
+  let longest = 0, run = 0;
+  for (const character of text) {
+    run = character === '`' ? run + 1 : 0;
+    if (run > longest) longest = run;
+  }
+  return longest;
+}
+
+function readOnlyBlock(text: string): string {
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const fence = '`'.repeat(Math.max(3, longestBacktickRun(normalized) + 1));
+  return `${fence}text\n${normalized}\n${fence}`;
+}
+
+function inlineCode(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const delimiter = '`'.repeat(longestBacktickRun(normalized) + 1);
+  const padding = normalized.includes('`') ? ' ' : '';
+  return `${delimiter}${padding}${normalized}${padding}${delimiter}`;
 }
 
 function capitalize(text: string): string {

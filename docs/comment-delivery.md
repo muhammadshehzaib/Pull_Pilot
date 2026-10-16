@@ -55,6 +55,19 @@ recoverable even after a crash between omission and summary-slot creation.
 See [comment location validation](comment-line-validation-plan.md) for limits,
 tests, and deployment. Verified locations do not prove an AI's reasoning correct.
 
+Finding suggestions are now read-only advice for manual review. The existing
+field can contain prose or code examples; it is never treated as an authenticated
+source replacement. Backtick fences grow to contain embedded delimiters, and
+descriptions/fallback text are escaped to prevent injected Markdown or HTML.
+New artifacts store `commentRenderingVersion: 2`. Old READY payloads are checked
+against their saved digest and safely regenerated before claiming, using an
+atomic update against READY plus the old digest. This narrowly scoped upgrade
+changes only definitely-unsent encrypted bytes and their digest, preserving the
+frozen findings, artifact hash, destination, delivery key and marker. SENDING,
+UNKNOWN and DELIVERED payloads/receipts remain unchanged. A lost upgrade race
+cannot authorize a POST. Historical comments are not edited or deleted.
+See the [suggestion safety plan](comment-suggestion-safety-plan.md).
+
 The endpoint is `POST /api/jobs/:id/comments/reconcile`, restricted to the owning
 user and an active repository, with the existing request rate limiter.
 

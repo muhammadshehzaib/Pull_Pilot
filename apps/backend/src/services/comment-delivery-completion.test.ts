@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 import type { GitHubService } from './github.service';
 import { normalizeStoredSuggestions, type AiSuggestion } from './ai/finding-taxonomy';
 
@@ -50,12 +51,13 @@ const { db, state } = vi.hoisted(() => {
 });
 vi.mock('../config/prisma', () => ({ default: db }));
 
-import { prepareReviewDelivery, deliverReviewPlan, loadReviewDelivery } from './comment-delivery.service';
+import { prepareReviewDelivery, deliverReviewPlan, loadReviewDelivery, deliveryMarker } from './comment-delivery.service';
 import { recordJobFindings, snapshotIdentity, findingIdentity } from './historical/occurrence.service';
 import { EncryptionService } from './encryption.service';
 import { scanSast } from './security/probes/sast';
 import { scanSecrets } from './security/probes/secrets';
 import { verifiedLocationFixture } from '../test-utils/comment-locations';
+import { markdownNodes } from '../test-utils/markdown';
 
 const diff = (line: string) => `diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -0,0 +1 @@\n+${line}\n`;
 const sast = scanSast(diff('eval(req.body.code);')).findings[0]!;
@@ -82,6 +84,128 @@ function github() {
     createReviewComment: vi.fn(receipt), createIssueComment: vi.fn(receipt) };
   return { gh, api: gh as unknown as GitHubService };
 }
+
+describe('safe rendering across saved delivery retries', () => {
+  const advice = 'Update this line so it no longer executes user input.\n```\n# Forged bot text\n```suggestion\nreplaceEverything()\n```';
+  const hash = (text: string) => createHash('sha256').update(text).digest('hex');
+  const decrypt = (row: any) => EncryptionService.decrypt(row.encryptedData, row.iv, row.authTag, row.salt);
+  async function legacy() {
+    const plan = await prepareReviewDelivery(input([{ ...sast, suggestion: advice }]));
+    const artifact = JSON.parse(await decrypt(plan));
+    delete artifact.commentRenderingVersion;
+    Object.assign(state.plan, await EncryptionService.encrypt(JSON.stringify(artifact)));
+    const inline = state.deliveries.find((r: any) => r.kind === 'INLINE');
+    const unsafe = `### Old review\n\n\`\`\`suggestion\n${advice}\n\`\`\`\n\n${deliveryMarker(inline.id)}`;
+    Object.assign(inline, await EncryptionService.encrypt(unsafe), { payloadHash: hash(unsafe) });
+    return { plan: (await loadReviewDelivery('job'))!, inline, unsafe };
+  }
+
+  it('marks newly frozen artifacts as safe and sends only read-only advice', async () => {
+    const plan = await prepareReviewDelivery(input([{ ...sast, suggestion: advice }])), fake = github();
+    expect(JSON.parse(await decrypt(plan)).commentRenderingVersion).toBe(2);
+    await deliverReviewPlan(plan, fake.api);
+    const posted = String(fake.gh.createReviewComment.mock.calls[0]![6]);
+    expect(markdownNodes(posted).filter(n => n.type === 'code_block')).toEqual([{ type: 'code_block', info: 'text', literal: advice + '\n' }]);
+    expect(markdownNodes(posted).filter(n => n.type === 'heading')).toHaveLength(1);
+    expect(posted.endsWith(deliveryMarker(plan.deliveries.find(r => r.kind === 'INLINE')!.id))).toBe(true);
+  });
+
+  it('upgrades an old READY inline payload without changing the frozen artifact or identity', async () => {
+    const { plan, inline, unsafe } = await legacy(), fake = github();
+    const identity = { id: inline.id, findingKey: inline.findingKey, deliveryKey: inline.deliveryKey, path: inline.path, line: inline.line };
+    await deliverReviewPlan(plan, fake.api);
+    const posted = String(fake.gh.createReviewComment.mock.calls[0]![6]);
+    expect(posted).not.toBe(unsafe);
+    expect(markdownNodes(posted).filter(n => n.type === 'code_block')).toEqual([{ type: 'code_block', info: 'text', literal: advice + '\n' }]);
+    expect(inline).toMatchObject({ ...identity, payloadHash: hash(posted), state: 'DELIVERED' });
+    expect(await decrypt(inline)).toBe(posted);
+    expect(state.plan.artifactHash).toBe(plan.artifactHash); expect(state.plan.encryptedData).toBe(plan.encryptedData);
+    await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
+  });
+
+  it('rebuilds an already-READY legacy summary using escaped fallback advice', async () => {
+    const { plan, inline } = await legacy(), fake = github();
+    inline.state = 'REJECTED';
+    const summary = state.deliveries.find((r: any) => r.kind === 'SUMMARY');
+    const unsafe = `Old summary\n\n\`\`\`suggestion\n${advice}\n\`\`\`\n\n${deliveryMarker(summary.id)}`;
+    Object.assign(summary, await EncryptionService.encrypt(unsafe), { state: 'READY', payloadHash: hash(unsafe) });
+    await deliverReviewPlan(plan, fake.api);
+    const posted = String(fake.gh.createIssueComment.mock.calls[0]![3]);
+    expect(posted).toContain('Findings that could not be attached inline');
+    expect(markdownNodes(posted).filter(n => n.type === 'code_block')).toEqual([]);
+    expect(summary.payloadHash).toBe(hash(posted)); expect(await decrypt(summary)).toBe(posted);
+    expect(posted.endsWith(deliveryMarker(summary.id))).toBe(true);
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+  });
+
+  it.each(['UNKNOWN', 'SENDING', 'DELIVERED'])('preserves %s legacy bytes without reposting', async status => {
+    const { plan, inline, unsafe } = await legacy(), fake = github();
+    inline.state = status; inline.claimExpiresAt = new Date(Date.now() + 60_000);
+    const encrypted = inline.encryptedData;
+    if (status === 'DELIVERED') await deliverReviewPlan(plan, fake.api);
+    else await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('pending');
+    expect(await decrypt(inline)).toBe(unsafe); expect(inline.encryptedData).toBe(encrypted);
+    expect(inline.payloadHash).toBe(hash(unsafe)); expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+  });
+
+  it.each(['UNKNOWN', 'SENDING', 'DELIVERED'])('preserves %s legacy summary bytes without reposting', async status => {
+    const { plan, inline, unsafe } = await legacy(), fake = github();
+    inline.state = 'DELIVERED';
+    const summary = state.deliveries.find((r: any) => r.kind === 'SUMMARY');
+    const previous = unsafe.replace(deliveryMarker(inline.id), deliveryMarker(summary.id));
+    Object.assign(summary, await EncryptionService.encrypt(previous), { payloadHash: hash(previous), state: status,
+      claimExpiresAt: new Date(Date.now() + 60_000) });
+    const encrypted = summary.encryptedData;
+    if (status === 'DELIVERED') await deliverReviewPlan(plan, fake.api);
+    else await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('pending');
+    expect(await decrypt(summary)).toBe(previous); expect(summary.encryptedData).toBe(encrypted);
+    expect(summary.payloadHash).toBe(hash(previous)); expect(fake.gh.createIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('keeps upgraded bytes stable through a definite rate-limit rejection and retry', async () => {
+    const { plan, inline } = await legacy(), fake = github();
+    fake.gh.createReviewComment.mockResolvedValueOnce({ ok: false, failure: 'RETRYABLE', retryAt: Date.now() + 60_000 } as any);
+    await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('backoff');
+    const encrypted = inline.encryptedData, payloadHash = inline.payloadHash;
+    inline.nextAttemptAt = new Date(0);
+    await deliverReviewPlan((await loadReviewDelivery('job'))!, fake.api);
+    expect(fake.gh.createReviewComment.mock.calls[0]![6]).toBe(fake.gh.createReviewComment.mock.calls[1]![6]);
+    expect(inline.payloadHash).toBe(payloadHash); expect(inline.encryptedData).toBe(encrypted);
+  });
+
+  it('rejects damaged legacy bytes before upgrading or posting', async () => {
+    const { plan, inline } = await legacy(), fake = github();
+    inline.payloadHash = 'wrong-hash';
+    await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('payload changed');
+    expect(fake.gh.createReviewComment).not.toHaveBeenCalled(); expect(inline.state).toBe('READY');
+  });
+
+  it('does not send if another worker wins the claim while a legacy payload is being upgraded', async () => {
+    const { plan, inline, unsafe } = await legacy(), fake = github();
+    const original = db.commentDelivery.updateMany.getMockImplementation();
+    db.commentDelivery.updateMany.mockImplementation(async (args: any) => {
+      if (args.where.id === inline.id && args.data.encryptedData) {
+        inline.state = 'SENDING'; inline.claimExpiresAt = new Date(Date.now() + 60_000);
+        return { count: 0 };
+      }
+      return original(args);
+    });
+    try { await expect(deliverReviewPlan(plan, fake.api)).rejects.toThrow('pending'); }
+    finally { db.commentDelivery.updateMany.mockImplementation(original); }
+    expect(await decrypt(inline)).toBe(unsafe); expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+  });
+
+  it('reconciles a legacy accepted comment using its original marker without rewriting it', async () => {
+    const { plan, inline, unsafe } = await legacy(), fake = github();
+    inline.state = 'UNKNOWN';
+    fake.gh.listDeliveryComments.mockResolvedValue({ complete: true, comments: [{ id: '42', authorId: '123',
+      body: unsafe, path: inline.path, originalCommitId: 'head', url: 'https://github.com/owner/repo/pull/7#comment-42' }] } as any);
+    await deliverReviewPlan(plan, fake.api);
+    expect(inline.state).toBe('DELIVERED'); expect(inline.githubCommentId).toBe('42');
+    expect(await decrypt(inline)).toBe(unsafe); expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+  });
+});
 
 describe('security review delivery and completion with real services', () => {
   it.each([['SAST', sast], ['SECRETS', secret]] as const)('completes a delivered %s finding and safely resumes without reposting', async (_probe, finding) => {

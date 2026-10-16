@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { markdownNodes } from '../test-utils/markdown';
 
 // Pipeline tests exercise detector results without OS scheduling/fake-timer
 // interference. Dedicated isolated-probe and scan-limits tests run real threads.
@@ -997,7 +998,9 @@ describe('analysis worker — security probes', () => {
     const [, , , , , , comment] = mockCreateReviewComment.mock.calls[0];
     expect(comment).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
     expect(comment).toContain('redacted');
-    expect(comment).toContain('[redacted]');
+    const displayed = markdownNodes(String(comment)).map(node => node.literal ?? '').join('');
+    expect(displayed).toContain('[redacted]');
+    expect(displayed).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
 
     const finalResults = mockJobUpdate.mock.calls
       .map((c: any[]) => c[0]?.data?.results)

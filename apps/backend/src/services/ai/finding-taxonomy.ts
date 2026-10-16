@@ -39,6 +39,7 @@ export interface AiSuggestion {
   lineNumber: number;
   agentType: FindingCategory;
   issue: string;
+  /** Advice/code examples for manual review, never an authenticated replacement patch. */
   suggestion: string;
   priority: FindingSeverity;
   /** Which engine produced this finding. Optional for backward compatibility. */

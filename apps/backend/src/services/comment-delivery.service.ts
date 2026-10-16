@@ -18,6 +18,7 @@ const terminal = (state: string) => (DELIVERY_TERMINAL_STATES as readonly string
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 export const deliveryMarker = (id: string) => `<!-- aipr-delivery:v1:${id} -->`;
 const LEASE_MS = 30_000;
+const COMMENT_RENDERING_VERSION = 2;
 
 export class DeliveryPendingError extends Error {
   constructor(message = 'Comment delivery is unconfirmed or pending', public readonly retryAt?: number) { super(message); }
@@ -35,6 +36,19 @@ async function open(row: { encryptedData: string | null; iv: string | null; auth
 async function payload(id: string, body: string) {
   const text = `${body}\n\n${deliveryMarker(id)}`;
   return { ...await EncryptionService.encrypt(text), payloadHash: digest(text) };
+}
+
+function summaryBody(artifact: FrozenReview, rows: CommentDelivery[]): string {
+  const rejected = new Set(rows.filter(r => r.kind === 'INLINE' && r.state === 'REJECTED').map(r => r.findingKey));
+  const fallback = artifact.suggestions.filter(f => rejected.has(findingIdentity(f)));
+  const unverified = new Set(rows.filter(r => r.kind === 'INLINE' && r.reason === 'location-unverified').map(r => r.findingKey));
+  const uncertain = artifact.suggestions.filter(f => unverified.has(findingIdentity(f)));
+  const report = commentDeliveryReport(rows);
+  return [artifact.summaryBase, `- **Comments Posted Inline**: ${report.delivered}/${report.expected}`,
+    report.omitted ? `- **Comments omitted inline**: ${report.omitted}` : '',
+    fallback.length ? '\n## Findings that could not be attached inline\n\n' + fallback.map(renderFindingListItem).join('\n') : '',
+    uncertain.length ? '\n## Findings without a verified code location\n\nThe reported file and line below could not be confirmed. These findings were not attached inline.\n\n' + uncertain.map(renderFindingListItem).join('\n') : '',
+  ].filter(Boolean).join('\n');
 }
 
 async function lockedJob(tx: Prisma.TransactionClient, jobId: string, repositoryId: string) {
@@ -60,7 +74,8 @@ export async function prepareReviewDelivery(input: {
   // ruleKey aliases and other cleanup must happen before any identity is saved.
   const bound = bindFindingAnchors(normalizeStoredSuggestions(input.artifact.suggestions), input.reviewedDiff ?? '');
   const suggestions = [...new Map(bound.map(f => [findingIdentity(f), f])).values()];
-  const artifact: FrozenReview = { ...input.artifact, suggestions, summaryBase: input.summaryBase, commentLocationVersion: 1 };
+  const artifact: FrozenReview = { ...input.artifact, suggestions, summaryBase: input.summaryBase,
+    commentLocationVersion: 1, commentRenderingVersion: COMMENT_RENDERING_VERSION };
   const sealed = await EncryptionService.encrypt(JSON.stringify(artifact));
   const rows: Prisma.CommentDeliveryUncheckedCreateWithoutPlanInput[] = [];
   for (const f of suggestions) {
@@ -155,6 +170,26 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
       }
     }
     if (row.nextAttemptAt && row.nextAttemptAt.getTime() > Date.now()) throw new DeliveryPendingError('GitHub requested delivery backoff', row.nextAttemptAt.getTime());
+    if (artifact.commentRenderingVersion !== COMMENT_RENDERING_VERSION) {
+      // Upgrade only definitely-unsent bytes, before acquiring a send claim.
+      // Frozen findings and receipts stay immutable. A lost CAS means another
+      // worker claimed/changed the row; it must never authorize a new POST.
+      const previous = await open(row);
+      if (digest(previous) !== row.payloadHash) throw new Error('Review delivery payload changed');
+      const finding = artifact.suggestions.find(f => findingIdentity(f) === row.findingKey);
+      const body = row.kind === 'INLINE' ? renderInlineComment(finding!)
+        : summaryBody(artifact, await prisma.commentDelivery.findMany({ where: { planId: plan.id } }));
+      const text = `${body}\n\n${deliveryMarker(row.id)}`;
+      if (digest(text) !== row.payloadHash) {
+        const replacement = { ...await EncryptionService.encrypt(text), payloadHash: digest(text) };
+        const upgraded = await prisma.$transaction(async tx => {
+          await lockedJob(tx, plan.analysisJobId, repositoryId);
+          return tx.commentDelivery.updateMany({ where: { id: row.id, state: 'READY', payloadHash: row.payloadHash }, data: replacement });
+        });
+        if (!upgraded.count) return;
+        row = { ...row, ...replacement };
+      }
+    }
     const claimToken = randomUUID();
     const claimed = await prisma.$transaction(async tx => {
       await lockedJob(tx, plan.analysisJobId, repositoryId);
@@ -210,16 +245,7 @@ export async function deliverReviewPlan(plan: Plan, gh?: GitHubService, signal?:
   }
   const summary = rows.find(r => r.kind === 'SUMMARY');
   if (summary?.state === 'WAITING') {
-    const rejected = new Set(rows.filter(r => r.kind === 'INLINE' && r.state === 'REJECTED').map(r => r.findingKey));
-    const fallback = artifact.suggestions.filter(f => rejected.has(findingIdentity(f)));
-    const unverified = new Set(rows.filter(r => r.kind === 'INLINE' && r.reason === 'location-unverified').map(r => r.findingKey));
-    const uncertain = artifact.suggestions.filter(f => unverified.has(findingIdentity(f)));
-    const report = commentDeliveryReport(rows);
-    const body = [artifact.summaryBase, `- **Comments Posted Inline**: ${report.delivered}/${report.expected}`,
-      report.omitted ? `- **Comments omitted inline**: ${report.omitted}` : '',
-      fallback.length ? '\n## Findings that could not be attached inline\n\n' + fallback.map(renderFindingListItem).join('\n') : '',
-      uncertain.length ? '\n## Findings without a verified code location\n\nThe reported file and line below could not be confirmed. These findings were not attached inline.\n\n' + uncertain.map(renderFindingListItem).join('\n') : '',
-    ].filter(Boolean).join('\n');
+    const body = summaryBody(artifact, rows);
     await prisma.$transaction(async tx => {
       await lockedJob(tx, plan.analysisJobId, repositoryId);
       await tx.commentDelivery.updateMany({ where: { id: summary.id, state: 'WAITING' }, data: { state: 'READY', ...await payload(summary.id, body) } });

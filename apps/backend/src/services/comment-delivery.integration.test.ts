@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { GitHubService, DeliveredGitHubComment, CommentPostResult } from './github.service';
 import { scanSast } from './security/probes/sast';
 import { scanSecrets } from './security/probes/secrets';
@@ -51,6 +51,47 @@ describe.skipIf(!url)('durable comment delivery on PostgreSQL', () => {
     return { gh, api: gh as unknown as GitHubService, comments, accept };
   }
   async function reload(jobId: string) { return (await service.loadReviewDelivery(jobId))!; }
+
+  async function legacyRenderingPlan() {
+    const data = await input();
+    const plan = await service.prepareReviewDelivery(data);
+    const { EncryptionService } = await import('./encryption.service');
+    const frozen = JSON.parse(await EncryptionService.decrypt(plan.encryptedData!, plan.iv!, plan.authTag!, plan.salt!));
+    delete frozen.commentRenderingVersion;
+    await db.reviewDeliveryPlan.update({ where: { id: plan.id }, data: await EncryptionService.encrypt(JSON.stringify(frozen)) });
+    const row = plan.deliveries[0]!;
+    const unsafe = `\`\`\`suggestion\nKeep its contract\n\`\`\`\n\n${service.deliveryMarker(row.id)}`;
+    await db.commentDelivery.update({ where: { id: row.id }, data: { ...await EncryptionService.encrypt(unsafe),
+      payloadHash: createHash('sha256').update(unsafe).digest('hex') } });
+    return { data, plan: await reload(data.jobId), row, unsafe };
+  }
+
+  it('upgrades a legacy READY payload under concurrent delivery claims without duplicate posts', async () => {
+    const { data, plan, row } = await legacyRenderingPlan(), fake = github();
+    await Promise.allSettled([service.deliverReviewPlan(plan, fake.api), service.deliverReviewPlan(await reload(data.jobId), fake.api)]);
+    const result = await service.deliverReviewPlan(await reload(data.jobId), fake.api);
+    expect(fake.gh.createReviewComment).toHaveBeenCalledOnce();
+    const posted = fake.comments[0]!.body;
+    expect(posted).toContain('Suggested approach (manual review)'); expect(posted).not.toContain('```suggestion');
+    expect(posted.endsWith(service.deliveryMarker(row.id))).toBe(true);
+    const saved = await reload(data.jobId);
+    expect(saved.artifactHash).toBe(plan.artifactHash); expect(saved.encryptedData).toBe(plan.encryptedData);
+    expect(saved.deliveries[0]).toMatchObject({ id: row.id, deliveryKey: row.deliveryKey, findingKey: row.findingKey,
+      state: 'DELIVERED', payloadHash: createHash('sha256').update(posted).digest('hex') });
+    await record(data.jobId, repositoryId, result.artifact.suggestions, result.artifact);
+    expect((await db.analysisJob.findUniqueOrThrow({ where: { id: data.jobId } })).status).toBe('COMPLETED');
+  });
+
+  it('reconciles a possibly accepted legacy payload without rewriting it or posting again', async () => {
+    const { data, plan, row, unsafe } = await legacyRenderingPlan(), fake = github();
+    const before = (await reload(data.jobId)).deliveries[0]!;
+    await db.commentDelivery.update({ where: { id: row.id }, data: { state: 'UNKNOWN' } });
+    fake.accept('INLINE', unsafe, row.path!);
+    await service.deliverReviewPlan(plan, fake.api);
+    const after = (await reload(data.jobId)).deliveries[0]!;
+    expect(after.state).toBe('DELIVERED'); expect(after.payloadHash).toBe(before.payloadHash);
+    expect(after.encryptedData).toBe(before.encryptedData); expect(fake.gh.createReviewComment).not.toHaveBeenCalled();
+  });
 
   it('prepares an encrypted immutable plan once under concurrent attempts', async () => {
     const data = await input(true, 2);

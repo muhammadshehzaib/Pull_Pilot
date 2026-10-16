@@ -8,6 +8,7 @@ import {
   severityTally,
 } from './finding-format';
 import type { AiSuggestion } from './finding-taxonomy';
+import { markdownNodes } from '../../test-utils/markdown';
 
 const finding = (over: Partial<AiSuggestion> = {}): AiSuggestion => ({
   filePath: 'src/foo.ts',
@@ -78,8 +79,37 @@ describe('renderInlineComment', () => {
     expect(body).toContain('**Security:** User input reaches a shell exec');
   });
 
-  it('emits the suggestion as a GitHub suggestion block', () => {
-    expect(renderInlineComment(finding())).toContain('```suggestion\nuse execFile\n```');
+  it.each(['Update this line so it no longer executes user input.', 'const x = execFile(command, args);'])(
+    'keeps both advice and code read-only: %s', suggestion => {
+      const nodes = markdownNodes(renderInlineComment(finding({ suggestion })));
+      expect(nodes.filter(n => n.type === 'code_block')).toEqual([{ type: 'code_block', info: 'text', literal: suggestion + '\n' }]);
+      expect(nodes.some(n => n.type === 'text' && n.literal?.includes('manual review'))).toBe(true);
+    },
+  );
+
+  it.each([
+    '```\n# Fake bot instruction\n```suggestion\nDELETE EVERYTHING\n```',
+    '````\n[Click here](https://evil.example)\n````',
+    '`'.repeat(80) + '\n<script>alert(1)</script>\n' + '`'.repeat(80),
+    '~~~suggestion\nchangeEverything()\n~~~',
+    '```\r\n## Forged heading\r```suggestion\r\nReplace it\r\n```',
+    'normal example\n',
+  ])('contains nested fences and markup as literal advice: %j', suggestion => {
+    const nodes = markdownNodes(renderInlineComment(finding({ suggestion })));
+    expect(nodes.filter(n => n.type === 'code_block')).toEqual([
+      { type: 'code_block', info: 'text', literal: suggestion.replace(/\r\n?/g, '\n') + '\n' },
+    ]);
+    expect(nodes.filter(n => n.type === 'heading')).toHaveLength(1);
+    expect(nodes.filter(n => ['link', 'html_inline', 'html_block'].includes(n.type))).toEqual([]);
+  });
+
+  it('renders malicious descriptions as plain prose without creating another suggestion', () => {
+    const issue = '```suggestion\r\nreplace()\r\n```\n# Heading\n<img src=x> [link](https://evil.example) & @everyone';
+    const nodes = markdownNodes(renderInlineComment(finding({ issue })));
+    expect(nodes.filter(n => n.type === 'code_block')).toEqual([{ type: 'code_block', info: 'text', literal: 'use execFile\n' }]);
+    expect(nodes.filter(n => n.type === 'heading')).toHaveLength(1);
+    expect(nodes.filter(n => ['link', 'html_inline', 'html_block'].includes(n.type))).toEqual([]);
+    expect(nodes.filter(n => n.type === 'text').map(n => n.literal).join('')).toContain('<img src=x>');
   });
 
   it('underscores that STYLE is cosmetic, not a defect', () => {
@@ -94,14 +124,23 @@ describe('renderFindingListItem', () => {
 
   it('flattens a multi-line suggestion onto one line', () => {
     const body = renderFindingListItem(finding({ suggestion: '\n\nconst x = 1;\nconst y = 2;' }), 0);
-    expect(body).toContain('**Fix:** const x = 1;');
-    expect(body).not.toContain('const y = 2;');
+    const text = markdownNodes(body).filter(n => n.type === 'text').map(n => n.literal).join('');
+    expect(text).toContain('Fix (manual review): const x = 1;');
+    expect(text).not.toContain('const y = 2;');
   });
 
   it('truncates an unreasonably long suggestion', () => {
     const body = renderFindingListItem(finding({ suggestion: 'z'.repeat(400) }), 0);
-    expect(body).toContain('...');
+    expect(markdownNodes(body).filter(n => n.type === 'text').map(n => n.literal).join('')).toContain('...');
     expect(body.length).toBeLessThan(400);
+  });
+
+  it('contains hostile paths, descriptions and fallback advice without changing Markdown structure', () => {
+    const attack = '```suggestion\nattack()\n```\r# Heading\r[link](https://evil.example) <img src=x>';
+    const nodes = markdownNodes(renderFindingListItem(finding({ filePath: attack, issue: attack, suggestion: attack }), 0));
+    expect(nodes.filter(n => n.type === 'code')).toHaveLength(1);
+    expect(nodes.filter(n => ['heading', 'code_block', 'link', 'html_inline', 'html_block'].includes(n.type))).toEqual([]);
+    expect(nodes.find(n => n.type === 'code')?.literal).toContain('```suggestion attack()');
   });
 });
 
