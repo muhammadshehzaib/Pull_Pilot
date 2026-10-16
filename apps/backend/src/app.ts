@@ -14,6 +14,7 @@ import billingRoutes from './routes/billing.routes';
 import behavioralRoutes from './routes/behavioral.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import { apiErrorHandler } from './middlewares/api-error.middleware';
+import { installRequestBodyParsers } from './middlewares/request-body.middleware';
 
 const app: Application = express();
 
@@ -25,18 +26,10 @@ app.use(
     credentials: true,
   }),
 );
-app.use(
-  express.json({
-    // Keep the exact wire bytes: GitHub signs the raw payload, and a
-    // parse→stringify round-trip is not byte-stable (unicode escapes, key
-    // order), so webhook HMAC verification must run against these bytes.
-    verify: (req, _res, buf) => {
-      (req as Request).rawBody = buf;
-    },
-  }),
-);
-app.use(cookieParser());
+// Log before parsing so malformed/oversized deliveries are visible too.
 app.use(createAccessLogger());
+installRequestBodyParsers(app);
+app.use(cookieParser());
 
 // 2. Health Check
 app.get('/health', (req: Request, res: Response) => {

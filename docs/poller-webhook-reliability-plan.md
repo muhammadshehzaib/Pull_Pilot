@@ -46,4 +46,30 @@ does not add automatic webhook redelivery or change queue persistence behavior.
 - Poller fix: 12 focused tests passed, including first-run database failure,
   later timer failure, retry after recovery, no overlap while a query is pending,
   timer shutdown, and safe logging. Backend production TypeScript build passed.
-- Webhook fix and final regression verification pending.
+- Poller fix pushed to master as `23d2160`.
+- Webhook fix: 13 real HTTP integration tests exercise the production Express
+  app, real JSON parsers, signature middleware, webhook controller, and access
+  logger. Database, quota, and queue dependencies are mocked; unrelated routes
+  are stubbed. Signed push/PR payloads above 100 KiB are queued; exact 25 MiB
+  payloads succeed; one-byte-over, chunked-over, and decompressed-over requests
+  receive 413. Invalid/missing signatures remain rejected. Ordinary API limits
+  and exact billing raw-byte capture remain intact. Malformed JSON receives a
+  safe 400; rejected requests appear in access logs without query strings or
+  payload contents.
+- Final backend regression suite: **1,539 passed, 62 skipped**. The skipped
+  database integration tests require a configured test database. Backend
+  production TypeScript build passed. Changes reviewed and `git diff --check`
+  passed. No live production database outage or nginx runtime test was performed.
+
+## Operational behavior after deployment
+
+- Polling retries at the existing configured interval (normally 60 seconds),
+  with no overlapping cycles. Production polling remains disabled by default;
+  this protection applies when it is explicitly enabled.
+- The GitHub JSON endpoint accepts 26,214,400 bytes, matching nginx `25m`.
+  Other JSON endpoints remain capped at 102,400 bytes. The backend reports
+  `PAYLOAD_TOO_LARGE` plus the byte limit for parser rejections. Nginx can reject
+  larger requests before the backend; those use nginx's own 413/access log.
+- Redeploy both the API and worker from master. This change adds no database
+  migration. Previously rejected deliveries are not recovered automatically;
+  inspect GitHub webhook delivery history and redeliver them after deployment.
