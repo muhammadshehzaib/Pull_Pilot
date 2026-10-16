@@ -6,6 +6,7 @@ import { Sidebar } from '../../components/Sidebar';
 import { useAuth } from '../../lib/useAuth';
 import { AuthUnavailable } from '../../components/AuthUnavailable';
 import { api } from '../../lib/api';
+import { loadRepositoryOptions } from '../../lib/repository-options';
 import { AGENT_LABELS, PRIORITY_LABELS, type AgentType, type Priority } from '../../lib/review';
 import {
   ENFORCEMENT_HINTS,
@@ -58,6 +59,9 @@ export default function EngineeringRulesPage() {
   const { user, loading: authLoading, error: authError, retry: retryAuth } = useAuth();
   const [repos, setRepos] = useState<RepoOption[]>([]);
   const [reposLoading, setReposLoading] = useState(true);
+  const [reposError, setReposError] = useState('');
+  const [repoSelectionError, setRepoSelectionError] = useState('');
+  const [repoLoadAttempt, setRepoLoadAttempt] = useState(0);
   const [repoId, setRepoId] = useState('');
   const [rules, setRules] = useState<RepositoryRule[]>([]);
   /** Which repository `rules` belongs to; null until the first fetch settles. */
@@ -79,20 +83,25 @@ export default function EngineeringRulesPage() {
   // page with no Suspense requirement.
   useEffect(() => {
     if (!user) return;
-    api<{ repositories: Array<{ id: string; fullName: string; isActive: boolean }> }>(
-      '/api/repositories?limit=50',
-    )
-      .then((res) => {
-        const active: RepoOption[] = res.repositories
+    const controller = new AbortController();
+    loadRepositoryOptions(controller.signal)
+      .then((repositories) => {
+        if (controller.signal.aborted) return;
+        const active: RepoOption[] = repositories
           .filter((r) => r.isActive)
           .map((r) => ({ id: r.id, fullName: r.fullName }));
         setRepos(active);
         const preselect = new URLSearchParams(window.location.search).get('repo');
-        setRepoId(preselect && active.some((r) => r.id === preselect) ? preselect : active[0]?.id ?? '');
+        if (preselect) {
+          const found = active.some(r => r.id === preselect);
+          setRepoId(found ? preselect : '');
+          setRepoSelectionError(found ? '' : 'The requested repository is missing or inactive. Choose a repository to manage its rules.');
+        } else setRepoId(active[0]?.id ?? '');
       })
-      .catch(() => setRepos([]))
-      .finally(() => setReposLoading(false));
-  }, [user]);
+      .catch(() => { if (!controller.signal.aborted) setReposError('Repositories could not be loaded. Please retry.'); })
+      .finally(() => { if (!controller.signal.aborted) setReposLoading(false); });
+    return () => controller.abort();
+  }, [user, repoLoadAttempt]);
 
   const refreshRules = async (id = repoId) => {
     if (!id) return;
@@ -256,21 +265,30 @@ export default function EngineeringRulesPage() {
         </header>
 
         <div className="glass-card" style={{ marginBottom: '1.5rem' }}>
+          {reposLoading && <p role="status">Loading repositories…</p>}
+          {reposError && <div role="alert">{reposError} <button type="button" onClick={() => {
+            setReposLoading(true); setReposError(''); setRepoLoadAttempt(n => n + 1);
+          }}>Retry repositories</button></div>}
+          {repoSelectionError && <p role="alert">{repoSelectionError}</p>}
           <label className="field">
             <span className="field-label">Repository</span>
-            {repos.length === 0 ? (
+            {repos.length === 0 && !reposLoading && !reposError ? (
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                 No connected repositories yet — connect one from the Repositories page first.
               </div>
             ) : (
               <select
                 className="text-input"
+                aria-label="Repository"
+                disabled={reposLoading || !!reposError}
                 value={repoId}
                 onChange={(e) => {
                   setRepoId(e.target.value);
+                  setRepoSelectionError('');
                   resetForm();
                 }}
               >
+                <option value="" disabled>Choose a repository</option>
                 {repos.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.fullName}

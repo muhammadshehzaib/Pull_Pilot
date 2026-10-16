@@ -26,3 +26,14 @@ addition to its existing error field. History shows the explanation for failed,
 timed-out, cancelled, and skipped reviews even when findings were retained.
 Validation: 47 backend controller tests and 12 history tests passed; backend build
 and web typecheck passed.
+
+## 33 — Exact rules repository selection
+
+Plan: load every repository page before resolving a deep link. Missing/inactive
+targets must require explicit selection instead of substituting the first repo.
+
+Implemented: a shared paginated repository loader feeds the rules picker. Unknown
+deep links show an explanation and leave the picker unselected; Add remains
+disabled until selection. Repository load failures show an error and retry.
+Validation: four rules-page tests cover later-page deep links, missing/inactive
+targets, explicit selection, and failed loading/retry. Web typecheck and lint passed.
