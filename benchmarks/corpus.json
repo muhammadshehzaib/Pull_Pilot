@@ -3380,6 +3380,583 @@
       }
     },
     {
+      "id": "seed-products-variant-stock-bug",
+      "family": "domain",
+      "pairId": "products-variant-stock",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "Availability is determined by the selected variant, not aggregate product stock.",
+      "diff": "diff --git a/src/products/availability.js b/src/products/availability.js\nindex 5475fbf..ffcf02b 100644\n--- a/src/products/availability.js\n+++ b/src/products/availability.js\n@@ -1,4 +1,3 @@\n export function available(product, variantId) {\n-  const variant = product.variants.find(item => item.id === variantId);\n-  return !!variant && variant.stock > 0;\n+  return product.stock > 0;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/availability.js",
+          "before": "export function available(product, variantId) {\n  const variant = product.variants.find(item => item.id === variantId);\n  return !!variant && variant.stock > 0;\n}\n",
+          "after": "export function available(product, variantId) {\n  return product.stock > 0;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-variant-stock",
+          "description": "An out-of-stock size is offered because other sizes have stock.",
+          "filePath": "src/products/availability.js",
+          "terms": [
+            "variant",
+            "stock",
+            "size"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-variant-stock-clean",
+      "family": "domain",
+      "pairId": "products-variant-stock",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "Availability is determined by the selected variant, not aggregate product stock.",
+      "diff": "diff --git a/src/products/availability.js b/src/products/availability.js\nindex ffcf02b..5475fbf 100644\n--- a/src/products/availability.js\n+++ b/src/products/availability.js\n@@ -1,3 +1,4 @@\n export function available(product, variantId) {\n-  return product.stock > 0;\n+  const variant = product.variants.find(item => item.id === variantId);\n+  return !!variant && variant.stock > 0;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/availability.js",
+          "before": "export function available(product, variantId) {\n  return product.stock > 0;\n}\n",
+          "after": "export function available(product, variantId) {\n  const variant = product.variants.find(item => item.id === variantId);\n  return !!variant && variant.stock > 0;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-variant-price-bug",
+      "family": "domain",
+      "pairId": "products-variant-price",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "Each selectable variant owns its own integer-cent price; checkout must use the selected variant price.",
+      "diff": "diff --git a/src/products/pricing.js b/src/products/pricing.js\nindex c34bd95..be0995f 100644\n--- a/src/products/pricing.js\n+++ b/src/products/pricing.js\n@@ -1,5 +1,3 @@\n export function price(product, variantId) {\n-  const variant = product.variants.find(item => item.id === variantId);\n-  if (!variant) throw new Error(\"variant missing\");\n-  return variant.priceCents;\n+  return product.priceCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/pricing.js",
+          "before": "export function price(product, variantId) {\n  const variant = product.variants.find(item => item.id === variantId);\n  if (!variant) throw new Error(\"variant missing\");\n  return variant.priceCents;\n}\n",
+          "after": "export function price(product, variantId) {\n  return product.priceCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-variant-price",
+          "description": "A premium variant is sold at the cheaper base product price.",
+          "filePath": "src/products/pricing.js",
+          "terms": [
+            "variant",
+            "price",
+            "base"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-variant-price-clean",
+      "family": "domain",
+      "pairId": "products-variant-price",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "Each selectable variant owns its own integer-cent price; checkout must use the selected variant price.",
+      "diff": "diff --git a/src/products/pricing.js b/src/products/pricing.js\nindex be0995f..c34bd95 100644\n--- a/src/products/pricing.js\n+++ b/src/products/pricing.js\n@@ -1,3 +1,5 @@\n export function price(product, variantId) {\n-  return product.priceCents;\n+  const variant = product.variants.find(item => item.id === variantId);\n+  if (!variant) throw new Error(\"variant missing\");\n+  return variant.priceCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/pricing.js",
+          "before": "export function price(product, variantId) {\n  return product.priceCents;\n}\n",
+          "after": "export function price(product, variantId) {\n  const variant = product.variants.find(item => item.id === variantId);\n  if (!variant) throw new Error(\"variant missing\");\n  return variant.priceCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-zero-price-update-bug",
+      "family": "domain",
+      "pairId": "products-zero-price-update",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "An explicit priceCents=0 makes a product free. Only an omitted field should preserve the previous value.",
+      "diff": "diff --git a/src/products/update.js b/src/products/update.js\nindex b313045..0db77f6 100644\n--- a/src/products/update.js\n+++ b/src/products/update.js\n@@ -1,3 +1,3 @@\n export function update(product, patch) {\n-  if (patch.priceCents !== undefined) product.priceCents = patch.priceCents;\n+  if (patch.priceCents) product.priceCents = patch.priceCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/update.js",
+          "before": "export function update(product, patch) {\n  if (patch.priceCents !== undefined) product.priceCents = patch.priceCents;\n}\n",
+          "after": "export function update(product, patch) {\n  if (patch.priceCents) product.priceCents = patch.priceCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-zero-price-update",
+          "description": "Updating a paid product to zero silently preserves its old paid price.",
+          "filePath": "src/products/update.js",
+          "terms": [
+            "zero",
+            "0",
+            "truth",
+            "price"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-zero-price-update-clean",
+      "family": "domain",
+      "pairId": "products-zero-price-update",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "An explicit priceCents=0 makes a product free. Only an omitted field should preserve the previous value.",
+      "diff": "diff --git a/src/products/update.js b/src/products/update.js\nindex 0db77f6..b313045 100644\n--- a/src/products/update.js\n+++ b/src/products/update.js\n@@ -1,3 +1,3 @@\n export function update(product, patch) {\n-  if (patch.priceCents) product.priceCents = patch.priceCents;\n+  if (patch.priceCents !== undefined) product.priceCents = patch.priceCents;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/update.js",
+          "before": "export function update(product, patch) {\n  if (patch.priceCents) product.priceCents = patch.priceCents;\n}\n",
+          "after": "export function update(product, patch) {\n  if (patch.priceCents !== undefined) product.priceCents = patch.priceCents;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-stale-cache-bug",
+      "family": "domain",
+      "pairId": "products-stale-cache",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "Unpublishing a product must invalidate the existing public cache entry before subsequent reads.",
+      "diff": "diff --git a/src/products/unpublish.js b/src/products/unpublish.js\nindex b470fbb..74711b4 100644\n--- a/src/products/unpublish.js\n+++ b/src/products/unpublish.js\n@@ -1,4 +1,3 @@\n export function unpublish(product, cache) {\n   product.published = false;\n-  cache.delete(product.id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/unpublish.js",
+          "before": "export function unpublish(product, cache) {\n  product.published = false;\n  cache.delete(product.id);\n}\n",
+          "after": "export function unpublish(product, cache) {\n  product.published = false;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-stale-cache",
+          "description": "The public cache continues serving an unpublished product.",
+          "filePath": "src/products/unpublish.js",
+          "terms": [
+            "cache",
+            "invalid",
+            "stale",
+            "publish"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-stale-cache-clean",
+      "family": "domain",
+      "pairId": "products-stale-cache",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "Unpublishing a product must invalidate the existing public cache entry before subsequent reads.",
+      "diff": "diff --git a/src/products/unpublish.js b/src/products/unpublish.js\nindex 74711b4..b470fbb 100644\n--- a/src/products/unpublish.js\n+++ b/src/products/unpublish.js\n@@ -1,3 +1,4 @@\n export function unpublish(product, cache) {\n   product.published = false;\n+  cache.delete(product.id);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/unpublish.js",
+          "before": "export function unpublish(product, cache) {\n  product.published = false;\n}\n",
+          "after": "export function unpublish(product, cache) {\n  product.published = false;\n  cache.delete(product.id);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-soft-delete-filter-bug",
+      "family": "domain",
+      "pairId": "products-soft-delete-filter",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "Public product lists exclude rows whose deletedAt is non-null, even if published remains true.",
+      "diff": "diff --git a/src/products/list.js b/src/products/list.js\nindex 86e8136..511a205 100644\n--- a/src/products/list.js\n+++ b/src/products/list.js\n@@ -1,3 +1,3 @@\n export function list(products) {\n-  return products.filter(product => product.published && product.deletedAt === null);\n+  return products.filter(product => product.published);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/list.js",
+          "before": "export function list(products) {\n  return products.filter(product => product.published && product.deletedAt === null);\n}\n",
+          "after": "export function list(products) {\n  return products.filter(product => product.published);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-soft-delete-filter",
+          "description": "A soft-deleted product reappears in public catalog results.",
+          "filePath": "src/products/list.js",
+          "terms": [
+            "delet",
+            "filter",
+            "public"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-soft-delete-filter-clean",
+      "family": "domain",
+      "pairId": "products-soft-delete-filter",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "Public product lists exclude rows whose deletedAt is non-null, even if published remains true.",
+      "diff": "diff --git a/src/products/list.js b/src/products/list.js\nindex 511a205..86e8136 100644\n--- a/src/products/list.js\n+++ b/src/products/list.js\n@@ -1,3 +1,3 @@\n export function list(products) {\n-  return products.filter(product => product.published);\n+  return products.filter(product => product.published && product.deletedAt === null);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/list.js",
+          "before": "export function list(products) {\n  return products.filter(product => product.published);\n}\n",
+          "after": "export function list(products) {\n  return products.filter(product => product.published && product.deletedAt === null);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-draft-publication-bug",
+      "family": "domain",
+      "pairId": "products-draft-publication",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "Only products approved by moderation may be published. A draft has moderationStatus=\"pending\".",
+      "diff": "diff --git a/src/products/publication.js b/src/products/publication.js\nindex 0f82d9c..a94d549 100644\n--- a/src/products/publication.js\n+++ b/src/products/publication.js\n@@ -1,4 +1,4 @@\n export function publish(product) {\n-  if (product.moderationStatus !== \"approved\") throw new Error(\"approval required\");\n+  if (product.moderationStatus === \"rejected\") throw new Error(\"approval required\");\n   product.published = true;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/publication.js",
+          "before": "export function publish(product) {\n  if (product.moderationStatus !== \"approved\") throw new Error(\"approval required\");\n  product.published = true;\n}\n",
+          "after": "export function publish(product) {\n  if (product.moderationStatus === \"rejected\") throw new Error(\"approval required\");\n  product.published = true;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-draft-publication",
+          "description": "A pending draft is published without moderation approval.",
+          "filePath": "src/products/publication.js",
+          "terms": [
+            "pending",
+            "approv",
+            "draft",
+            "publish"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-draft-publication-clean",
+      "family": "domain",
+      "pairId": "products-draft-publication",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "Only products approved by moderation may be published. A draft has moderationStatus=\"pending\".",
+      "diff": "diff --git a/src/products/publication.js b/src/products/publication.js\nindex a94d549..0f82d9c 100644\n--- a/src/products/publication.js\n+++ b/src/products/publication.js\n@@ -1,4 +1,4 @@\n export function publish(product) {\n-  if (product.moderationStatus === \"rejected\") throw new Error(\"approval required\");\n+  if (product.moderationStatus !== \"approved\") throw new Error(\"approval required\");\n   product.published = true;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/publication.js",
+          "before": "export function publish(product) {\n  if (product.moderationStatus === \"rejected\") throw new Error(\"approval required\");\n  product.published = true;\n}\n",
+          "after": "export function publish(product) {\n  if (product.moderationStatus !== \"approved\") throw new Error(\"approval required\");\n  product.published = true;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-literal-search-bug",
+      "family": "domain",
+      "pairId": "products-literal-search",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "User-entered catalog searches are literal case-sensitive substrings; regex metacharacters have no special meaning.",
+      "diff": "diff --git a/src/products/search.js b/src/products/search.js\nindex 595046c..cbdb6d0 100644\n--- a/src/products/search.js\n+++ b/src/products/search.js\n@@ -1,3 +1,3 @@\n export function search(products, query) {\n-  return products.filter(product => product.name.includes(query));\n+  return products.filter(product => new RegExp(query).test(product.name));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/search.js",
+          "before": "export function search(products, query) {\n  return products.filter(product => product.name.includes(query));\n}\n",
+          "after": "export function search(products, query) {\n  return products.filter(product => new RegExp(query).test(product.name));\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-literal-search",
+          "description": "Searching for a.b incorrectly matches axb because unescaped input becomes a regex.",
+          "filePath": "src/products/search.js",
+          "terms": [
+            "regex",
+            "literal",
+            "escape",
+            "RegExp"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-literal-search-clean",
+      "family": "domain",
+      "pairId": "products-literal-search",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "User-entered catalog searches are literal case-sensitive substrings; regex metacharacters have no special meaning.",
+      "diff": "diff --git a/src/products/search.js b/src/products/search.js\nindex cbdb6d0..595046c 100644\n--- a/src/products/search.js\n+++ b/src/products/search.js\n@@ -1,3 +1,3 @@\n export function search(products, query) {\n-  return products.filter(product => new RegExp(query).test(product.name));\n+  return products.filter(product => product.name.includes(query));\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/search.js",
+          "before": "export function search(products, query) {\n  return products.filter(product => new RegExp(query).test(product.name));\n}\n",
+          "after": "export function search(products, query) {\n  return products.filter(product => product.name.includes(query));\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-free-price-filter-bug",
+      "family": "domain",
+      "pairId": "products-free-price-filter",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "maxCents is optional; maxCents=0 explicitly requests free products only. Product prices are nonnegative.",
+      "diff": "diff --git a/src/products/filters.js b/src/products/filters.js\nindex 55869b1..bb4e285 100644\n--- a/src/products/filters.js\n+++ b/src/products/filters.js\n@@ -1,3 +1,3 @@\n export function filter(products, maxCents) {\n-  return products.filter(product => maxCents === undefined || product.priceCents <= maxCents);\n+  return products.filter(product => !maxCents || product.priceCents <= maxCents);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/filters.js",
+          "before": "export function filter(products, maxCents) {\n  return products.filter(product => maxCents === undefined || product.priceCents <= maxCents);\n}\n",
+          "after": "export function filter(products, maxCents) {\n  return products.filter(product => !maxCents || product.priceCents <= maxCents);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-free-price-filter",
+          "description": "The free-products filter includes paid products because zero is treated as an absent limit.",
+          "filePath": "src/products/filters.js",
+          "terms": [
+            "zero",
+            "free",
+            "maxCents",
+            "falsy"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-free-price-filter-clean",
+      "family": "domain",
+      "pairId": "products-free-price-filter",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "maxCents is optional; maxCents=0 explicitly requests free products only. Product prices are nonnegative.",
+      "diff": "diff --git a/src/products/filters.js b/src/products/filters.js\nindex bb4e285..55869b1 100644\n--- a/src/products/filters.js\n+++ b/src/products/filters.js\n@@ -1,3 +1,3 @@\n export function filter(products, maxCents) {\n-  return products.filter(product => !maxCents || product.priceCents <= maxCents);\n+  return products.filter(product => maxCents === undefined || product.priceCents <= maxCents);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/filters.js",
+          "before": "export function filter(products, maxCents) {\n  return products.filter(product => !maxCents || product.priceCents <= maxCents);\n}\n",
+          "after": "export function filter(products, maxCents) {\n  return products.filter(product => maxCents === undefined || product.priceCents <= maxCents);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-empty-stock-bug",
+      "family": "domain",
+      "pairId": "products-empty-stock",
+      "variant": "bug",
+      "domain": "products",
+      "category": "products",
+      "contract": "The buy button is enabled only when a product has at least one unit in stock.",
+      "diff": "diff --git a/src/products/buy-button.js b/src/products/buy-button.js\nindex 0e69ed0..900f2df 100644\n--- a/src/products/buy-button.js\n+++ b/src/products/buy-button.js\n@@ -1,3 +1,3 @@\n export function canBuy(product) {\n-  return product.stock > 0;\n+  return product.stock >= 0;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/buy-button.js",
+          "before": "export function canBuy(product) {\n  return product.stock > 0;\n}\n",
+          "after": "export function canBuy(product) {\n  return product.stock >= 0;\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-empty-stock",
+          "description": "A product with zero stock has an enabled buy button.",
+          "filePath": "src/products/buy-button.js",
+          "terms": [
+            "zero",
+            "stock",
+            "bound",
+            "0"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-empty-stock-clean",
+      "family": "domain",
+      "pairId": "products-empty-stock",
+      "variant": "clean",
+      "domain": "products",
+      "category": "products",
+      "contract": "The buy button is enabled only when a product has at least one unit in stock.",
+      "diff": "diff --git a/src/products/buy-button.js b/src/products/buy-button.js\nindex 900f2df..0e69ed0 100644\n--- a/src/products/buy-button.js\n+++ b/src/products/buy-button.js\n@@ -1,3 +1,3 @@\n export function canBuy(product) {\n-  return product.stock >= 0;\n+  return product.stock > 0;\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/buy-button.js",
+          "before": "export function canBuy(product) {\n  return product.stock >= 0;\n}\n",
+          "after": "export function canBuy(product) {\n  return product.stock > 0;\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-tenant-sku-bug",
+      "family": "domain",
+      "pairId": "products-tenant-sku",
+      "variant": "bug",
+      "domain": "products",
+      "category": "authorization",
+      "contract": "SKU values are unique only within a tenant. Merchant lookups must match both SKU and authenticated tenant ID.",
+      "diff": "diff --git a/src/products/lookup.js b/src/products/lookup.js\nindex 3cd8c73..284decb 100644\n--- a/src/products/lookup.js\n+++ b/src/products/lookup.js\n@@ -1,3 +1,3 @@\n export function lookup(products, tenantId, sku) {\n-  return products.find(product => product.sku === sku && product.tenantId === tenantId);\n+  return products.find(product => product.sku === sku);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/lookup.js",
+          "before": "export function lookup(products, tenantId, sku) {\n  return products.find(product => product.sku === sku && product.tenantId === tenantId);\n}\n",
+          "after": "export function lookup(products, tenantId, sku) {\n  return products.find(product => product.sku === sku);\n}\n"
+        }
+      ],
+      "expectedBugs": [
+        {
+          "id": "products-tenant-sku",
+          "description": "Merchant B reads merchant A's product when their SKUs coincide.",
+          "filePath": "src/products/lookup.js",
+          "terms": [
+            "tenant",
+            "SKU",
+            "merchant",
+            "access"
+          ]
+        }
+      ],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
+      "id": "seed-products-tenant-sku-clean",
+      "family": "domain",
+      "pairId": "products-tenant-sku",
+      "variant": "clean",
+      "domain": "products",
+      "category": "authorization",
+      "contract": "SKU values are unique only within a tenant. Merchant lookups must match both SKU and authenticated tenant ID.",
+      "diff": "diff --git a/src/products/lookup.js b/src/products/lookup.js\nindex 284decb..3cd8c73 100644\n--- a/src/products/lookup.js\n+++ b/src/products/lookup.js\n@@ -1,3 +1,3 @@\n export function lookup(products, tenantId, sku) {\n-  return products.find(product => product.sku === sku);\n+  return products.find(product => product.sku === sku && product.tenantId === tenantId);\n }\n",
+      "context": [],
+      "files": [
+        {
+          "path": "src/products/lookup.js",
+          "before": "export function lookup(products, tenantId, sku) {\n  return products.find(product => product.sku === sku);\n}\n",
+          "after": "export function lookup(products, tenantId, sku) {\n  return products.find(product => product.sku === sku && product.tenantId === tenantId);\n}\n"
+        }
+      ],
+      "expectedBugs": [],
+      "provenance": {
+        "kind": "authored",
+        "license": "AGPL-3.0-only"
+      }
+    },
+    {
       "id": "real-axios-axios-7369-bug",
       "family": "historical-pr",
       "pairId": "axios-axios-7369",
