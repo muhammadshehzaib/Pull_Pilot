@@ -5,6 +5,7 @@ import { GitHubService } from '../services/github.service';
 import { GitHubAppService } from '../services/github-app.service';
 import { POLL_ENABLED, POLL_INTERVAL_MS } from '../utils/constants';
 import { QuotaService } from '../services/quota.service';
+import { safeErrorMetadata } from '../utils/safe-error';
 
 type PolledRepo = {
   id: string;
@@ -80,7 +81,9 @@ export async function pollRepositoriesOnce(gh?: GitHubService) {
         await redisConnection.set(seenKey, '1');
       }
     } catch (err) {
-      console.warn(`⚠️ Poll failed for ${repo.fullName}: ${(err as Error).message}`);
+      console.warn('Repository poll failed; continuing with other repositories', {
+        repositoryId: repo.id, ...safeErrorMetadata(err),
+      });
     }
   }
 }
@@ -153,14 +156,20 @@ export function startRepoPoller() {
     polling = true;
     try {
       await pollRepositoriesOnce();
+    } catch (err) {
+      // Timers do not await async callbacks. Handle failures here so a temporary
+      // database outage cannot become an unhandled rejection in the worker.
+      console.warn('Repository polling cycle failed; retrying on the next scheduled check', safeErrorMetadata(err));
     } finally {
       polling = false;
     }
   };
 
-  setInterval(tick, POLL_INTERVAL_MS).unref();
+  const timer = setInterval(() => { void tick(); }, POLL_INTERVAL_MS);
+  timer.unref();
   void tick();
   console.log(
     `🛰️ Repo poller active (every ${Math.round(POLL_INTERVAL_MS / 1000)}s): webhook-less repos are reviewed on new commits and PRs.`,
   );
+  return () => { clearInterval(timer); };
 }

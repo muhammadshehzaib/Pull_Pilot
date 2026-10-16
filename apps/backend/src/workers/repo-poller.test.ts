@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const { mockRepoFindMany, mockRepoUpdate, mockJobCreate, mockQueueAdd, mockRedisGet, mockRedisSet } =
   vi.hoisted(() => ({
@@ -31,7 +31,9 @@ vi.mock('../services/quota.service', () => ({
   },
 }));
 
-import { pollRepositoriesOnce } from './repo-poller';
+vi.mock('../utils/constants', () => ({ POLL_ENABLED: true, POLL_INTERVAL_MS: 1000 }));
+
+import { pollRepositoriesOnce, startRepoPoller } from './repo-poller';
 
 // pollRepositoriesOnce accepts the GitHub service as a parameter, so the
 // GitHub API is faked by injection rather than by mocking octokit.
@@ -55,6 +57,12 @@ beforeEach(() => {
   process.env.GITHUB_ACCESS_TOKEN = 'ghp-bot';
   mockJobCreate.mockResolvedValue({ id: 'job-1' });
   mockRedisGet.mockResolvedValue(null);
+});
+
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('repo poller — default branch', () => {
@@ -156,6 +164,59 @@ describe('repo poller — pull requests', () => {
 });
 
 describe('repo poller — resilience', () => {
+  it('handles the first database outage and recovers at the next scheduled tick', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const secret = 'database-password-must-not-be-logged';
+    mockRepoFindMany.mockRejectedValueOnce(new Error(secret)).mockResolvedValue([]);
+
+    const stop = startRepoPoller();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(warn).toHaveBeenCalledWith(
+      'Repository polling cycle failed; retrying on the next scheduled check', {},
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain(secret);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockRepoFindMany).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    stop?.();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(mockRepoFindMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('handles a later scheduled outage and continues after database recovery', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    mockRepoFindMany.mockResolvedValueOnce([])
+      .mockRejectedValueOnce(Object.assign(new Error('private connection string'), { code: 'ECONNREFUSED' }))
+      .mockResolvedValue([]);
+
+    startRepoPoller();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(mockRepoFindMany).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledWith(
+      'Repository polling cycle failed; retrying on the next scheduled check', { code: 'ECONNREFUSED' },
+    );
+  });
+
+  it('does not overlap slow polls and releases the guard after a rejection', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    let rejectQuery!: (error: Error) => void;
+    mockRepoFindMany.mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectQuery = reject; }))
+      .mockResolvedValue([]);
+
+    startRepoPoller();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mockRepoFindMany).toHaveBeenCalledTimes(1);
+    rejectQuery(new Error('temporary outage'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mockRepoFindMany).toHaveBeenCalledTimes(2);
+  });
+
   it('a failing repo does not stop the others from being polled', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     mockRepoFindMany.mockResolvedValueOnce([
