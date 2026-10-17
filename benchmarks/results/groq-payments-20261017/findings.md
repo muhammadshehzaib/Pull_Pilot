@@ -42,9 +42,9 @@ read-only model-list requests are not review attempts. No requests followed the
 
 The initial model failure and smoke predate endpoint-aware metadata, so their
 unchanged raw records say `GROK`. Their actual service was Groq. Later records use
-`provider: GROQ`, `adapter: GROK`, and Groq-labelled token usage. [audit.json](audit.json)
-records the phases and HTTP statuses from the sanitized console output. Original
-failures remain intact; later attempts do not replace them.
+`provider: GROQ`, `adapter: GROK`, and Groq-labelled token usage. The ignored local
+`audit.json` records the phases and HTTP statuses from the sanitized console
+output. Original failures remain intact; later attempts do not replace them.
 
 ## Fixes made while testing
 
@@ -117,6 +117,6 @@ Gemini to hide incomplete cases.
 When quota is available, review the still-unreviewed cases in fresh directories,
 keeping the successful controls and failed attempts. In particular, test the
 retry-idempotency bug and webhook replay before proceeding to other domains.
-[resume-plan.json](resume-plan.json) lists the 97 of 100 authored domain cases
+The ignored local `resume-plan.json` lists the 97 of 100 authored domain cases
 still outstanding under the latest JSON-format policy, including the one failed
 case. The earlier successful smoke remains a separate phase.

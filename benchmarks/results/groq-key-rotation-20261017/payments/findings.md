@@ -1,7 +1,7 @@
 # Resumed payment reviews after a key change
 
 Service: **Groq**, model: `openai/gpt-oss-120b`. These are not xAI Grok results.
-The 17 cases left by the prior [resume plan](../../groq-payments-20261017/resume-plan.json)
+The 17 cases left by the prior local resume plan
 were reviewed without repeating the three completed controls. The production
 review policy remains the JSON-object policy from `dead814`; configuration
 isolation was fixed in `c0dda17`.
@@ -24,8 +24,8 @@ worker threads. Its worker guard was fixed, and the same-input offline scanner
 recovery passed without repeating the paid model call. The HTTP 413 carried a
 35-second retry delay; a later explicit request completed successfully. Both
 original problems remain in the first-attempt report, and both recoveries are
-saved separately. Thus all 17 pending cases received an AI review, while the
-first-attempt operational failure count remains two.
+saved separately as ignored local evidence. Thus all 17 pending cases received
+an AI review, while the first-attempt operational failure count remains two.
 
 New first-attempt defect-comment precision is 10 / 11 (90.9%) on this small,
 known development sample. This is not a measured production rate, a competitor

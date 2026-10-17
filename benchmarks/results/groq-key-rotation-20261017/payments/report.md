@@ -12,6 +12,7 @@ This is a review-core benchmark, not a deployed GitHub/queue throughput test. Se
 
 | Metric | Result |
 | --- | --- |
+| Planned / attempted / unattempted reviews | 17 / 17 / 0 |
 | Distinct cases / known bugs | 17 / 10 |
 | Case attempts, including repetitions | 17 |
 | Successful / failed | 15 / 2 |

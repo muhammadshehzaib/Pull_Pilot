@@ -157,6 +157,19 @@ tool charges and hosting are not inferred. Estimates are not invoices.
 ## Adjudicate before interpreting accuracy
 
 Each run writes `run.json`, `labels.json`, `report.json`, and `report.md`.
+Run experiments under the ignored `.benchmark-runs/` directory. Keep per-request
+raw evidence, quota diagnostics, session journals, and resume plans locally or
+as CI artifacts; these are also ignored beneath `results/`. Ignoring a path does
+not untrack an already committed file; use `git rm --cached` to keep its local
+copy while removing it from the repository.
+
+Publish selected, sanitized snapshots under `results/`: summaries, reports,
+adjudication labels, pricing provenance, and aggregate `run.json` records needed
+to rescore the results. Scanner baseline runs are required reproducibility
+fixtures. Do not ignore every `run.json` or discard failed attempts from a
+published aggregate. Configuration-probe and recovery logs remain local; describe
+their outcomes and retain original failures in the curated report.
+
 For every finding, inspect the trigger and the code in `corpus.json`. Edit
 `labels.json`, set `reviewer` and a concrete `rationale`, then choose:
 

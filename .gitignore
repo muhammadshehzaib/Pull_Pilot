@@ -55,5 +55,15 @@ coverage/
 .env.benchmark
 .benchmark-runs/
 
+# Benchmark diagnostics and per-request evidence stay local or in CI artifacts.
+# Curated aggregate run.json files, labels, reports and scanner baselines stay tracked.
+/benchmarks/results/**/raw/
+/benchmarks/results/**/recoveries/
+/benchmarks/results/**/configuration-probe/
+/benchmarks/results/**/quota.json
+/benchmarks/results/**/session*.json
+/benchmarks/results/**/resume-plan.json
+/benchmarks/results/**/audit.json
+
 # System specific
 npm-debug.log*
