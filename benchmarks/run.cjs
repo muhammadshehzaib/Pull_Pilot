@@ -3,7 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
-const { sha, findingId, estimateCost, labelTemplate, score, markdown } = require('./lib.cjs');
+const { sha, corpusHash, findingId, estimateCost, labelTemplate, score, markdown } = require('./lib.cjs');
 const root = path.resolve(__dirname, '..');
 const defaultCorpusPath = path.join(__dirname, 'corpus.json');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -117,7 +117,7 @@ async function main() {
       fs.writeFileSync(path.join(folder, 'THIRD-PARTY-NOTICE.txt'), item.provenance.licenseText || 'Authored PullPilot benchmark fixture; AGPL-3.0-only. See the project LICENSE.');
       mapping.push({ blindId, caseId: item.id, inputSha256: sha(input) });
     }
-    write(path.join(dir, 'mapping.private.json'), { corpusSha256: sha(fs.readFileSync(corpusPath, 'utf8')), seed, mapping });
+    write(path.join(dir, 'mapping.private.json'), { corpusSha256: corpusHash(corpus), seed, mapping });
     console.log(`Exported ${mapping.length} blinded inputs. Keep mapping.private.json out of reviewer repositories.`);
     return;
   }
@@ -127,7 +127,7 @@ async function main() {
   let commit;
   try { commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(); } catch { commit = null; }
   const run = { schemaVersion: 1, id: crypto.randomUUID(), mode,
-    startedAt: new Date().toISOString(), corpusSha256: sha(fs.readFileSync(corpusPath, 'utf8')),
+    startedAt: new Date().toISOString(), corpusSha256: corpusHash(corpus),
     gitCommit: commit, implementationSha256: implementationHash(), lockfileSha256: sha(fs.readFileSync(path.join(root, 'package-lock.json'))),
     runtime: process.version, seed, repetitions, timingScope: 'review-core', provider: opts.provider || null,
     scope: 'Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.',

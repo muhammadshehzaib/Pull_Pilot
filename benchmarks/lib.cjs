@@ -1,5 +1,8 @@
 const crypto = require('node:crypto');
 const sha = value => crypto.createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value) ? value : JSON.stringify(value)).digest('hex');
+// Git may check JSON out with CRLF on Windows. Fingerprint parsed content so
+// identical corpora remain compatible across checkout line endings.
+const corpusHash = corpus => sha(JSON.stringify(corpus, null, 2) + '\n');
 const findingId = (caseId, repetition, index, finding) => sha([caseId, repetition, index, finding]).slice(0, 24);
 
 function estimateCost(usage, rates) {
@@ -40,7 +43,7 @@ function labelTemplate(run, corpus) {
 }
 
 function score(run, corpus, labels) {
-  if (run.corpusSha256 !== sha(JSON.stringify(corpus, null, 2) + '\n')) throw new Error('Corpus content does not match this run');
+  if (run.corpusSha256 !== corpusHash(corpus)) throw new Error('Corpus content does not match this run');
   if (labels.runId !== run.id || labels.corpusSha256 !== run.corpusSha256) throw new Error('Labels belong to another run or corpus');
   const byId = new Map(corpus.cases.map(c => [c.id, c]));
   const findings = new Map();
@@ -155,4 +158,4 @@ function compare(left, right, leftReport, rightReport) {
       'API estimates and competitor subscription costs have different accounting; unknown costs remain unknown.'],
   };
 }
-module.exports = { sha, findingId, estimateCost, quantile, labelTemplate, score, markdown, compare };
+module.exports = { sha, corpusHash, findingId, estimateCost, quantile, labelTemplate, score, markdown, compare };

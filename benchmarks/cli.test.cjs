@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { sha } = require('./lib.cjs');
+const { sha, corpusHash } = require('./lib.cjs');
 const { inputFor } = require('./run.cjs');
 const corpus = require('./corpus.json');
 const cli = path.join(__dirname, 'run.cjs');
@@ -12,7 +12,7 @@ const item = corpus.cases[0];
 test('external imports preserve failures and refuse missing cases, wrong input or invalid cost', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pullpilot-import-check-'));
   try {
-    const external = { corpusSha256: sha(fs.readFileSync(path.join(__dirname, 'corpus.json'), 'utf8')), reviewer: 'Fake vendor (harness test only)', timingScope: 'end-to-end', results: [
+    const external = { corpusSha256: corpusHash(corpus), reviewer: 'Fake vendor (harness test only)', timingScope: 'end-to-end', results: [
       { caseId: item.id, repetition: 1, inputSha256: sha(inputFor(item)), status: 'error', durationMs: 123, costUsd: null, findings: [] },
     ] };
     function run(value, name) {
@@ -40,6 +40,12 @@ test('domain exports select one group and the frozen corpus remains selectable',
     const mapping = JSON.parse(fs.readFileSync(path.join(output, 'mapping.private.json'), 'utf8'));
     assert.equal(mapping.mapping.length, 20);
     assert.ok(mapping.mapping.every(item => item.caseId.startsWith('seed-payments-')));
+    const windowsCorpus = path.join(temp, 'corpus-crlf.json');
+    fs.writeFileSync(windowsCorpus, (JSON.stringify(corpus, null, 2) + '\n').replaceAll('\n', '\r\n'));
+    const windowsOutput = path.join(temp, 'windows');
+    const windowsExport = spawnSync(process.execPath, [cli, '--mode', 'export', '--domain', 'payments', '--corpus', windowsCorpus, '--out', windowsOutput], { encoding: 'utf8' });
+    assert.equal(windowsExport.status, 0, windowsExport.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(windowsOutput, 'mapping.private.json'), 'utf8')).corpusSha256, corpusHash(corpus));
     const oldOutput = path.join(temp, 'v1');
     const archived = spawnSync(process.execPath, [cli, '--mode', 'export', '--corpus', path.join(__dirname, 'corpora/v1.json'), '--out', oldOutput], { encoding: 'utf8' });
     assert.equal(archived.status, 0, archived.stderr);
