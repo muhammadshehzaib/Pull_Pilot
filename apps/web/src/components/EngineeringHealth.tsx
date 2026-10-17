@@ -551,12 +551,12 @@ export function EngineeringHealth({ refreshKey = 0 }: { refreshKey?: number }) {
                             <span className="eh-badge eh-badge-neutral">{display(r.reviewedPRs)}</span>
                           </td>
                           <td>
-                            <span className={`eh-badge ${r.criticalFindings > 0 ? 'eh-badge-danger' : 'eh-badge-neutral'}`}>
+                            <span className={`eh-badge ${(r.criticalFindings ?? 0) > 0 ? 'eh-badge-danger' : 'eh-badge-neutral'}`}>
                               {display(r.criticalFindings)}
                             </span>
                           </td>
                           <td>
-                            <span className={`eh-badge ${r.securityFindings > 0 ? 'eh-badge-warning' : 'eh-badge-neutral'}`}>
+                            <span className={`eh-badge ${(r.securityFindings ?? 0) > 0 ? 'eh-badge-warning' : 'eh-badge-neutral'}`}>
                               {display(r.securityFindings)}
                             </span>
                           </td>
