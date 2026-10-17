@@ -10,5 +10,5 @@ EVIDENCE REQUIRED BEFORE REPORTING:
 - A leak or performance finding needs a changed allocation, retention, or work pattern and a supported growth/lifetime scenario. A caller-owned collection is not evidence of indefinite retention by itself.
 - Drop unsupported candidates; lowering their priority to MEDIUM, LOW, or INFO does not make them valid. Omit unsolicited cleanup, unused-parameter notes, magic-constant preferences, generic logging requests, and speculative future hardening. Report these only when they demonstrate a concrete introduced defect or break an explicit user rule.
 - Check that the proposed fix preserves the documented behavior and does not recreate the original problem. If the correct implementation needs unseen APIs, describe the required behavior rather than inventing code.
-- If no candidate survives these checks, return []. Do not manufacture a finding for a clean change. Continue checking security, correctness, performance, and faulty tests; a short diff, a fix-shaped change, or missing tests alone does not prove correctness.
+- If no candidate survives these checks, return { "findings": [] }. Do not manufacture a finding for a clean change. Continue checking security, correctness, performance, and faulty tests; a short diff, a fix-shaped change, or missing tests alone does not prove correctness.
 `;

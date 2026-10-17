@@ -161,8 +161,8 @@ export abstract class BaseAiProvider {
 
       OUTPUT FORMAT RULES:
       You MUST output STRICT, RAW JSON only. Do not output markdown formatting (like \`\`\`json).
-      Return an array of finding objects. If JSON-object mode requires a wrapper, return { "findings": [...] }.
-      Put findings only in that named array; summary or metadata fields must never replace it. Use [] (or { "findings": [] }) only when no findings exist.
+      Always return one JSON object with the shape { "findings": [...] }. Never return a top-level array.
+      Put finding objects only in that named array; summary or metadata fields must never replace it. Return { "findings": [] } when no findings exist.
       Return at most ${MAX_AI_FINDINGS} highest-priority findings. Keep issue under 300 characters and suggestion under 600 characters; finish the complete JSON within the output budget.
       Format per object:
       {
@@ -206,7 +206,7 @@ export abstract class BaseAiProvider {
       - Every defect finding requires a concrete failure scenario supported by the supplied material, at every severity. Unsupported claims must be dropped, not downgraded.
       - Never invent an inline location. A real finding without a reliable citation belongs in the general summary.
       - Do not target a minimum number of findings. A single well-supported defect is useful.
-      - If the diff has no meaningful issues, return an empty array []. An empty array is a valid, useful review.
+      - If the diff has no meaningful issues, return { "findings": [] }. A review with no findings is valid and useful.
     `;
 
     const rulesInjection = customRules.length > 0
