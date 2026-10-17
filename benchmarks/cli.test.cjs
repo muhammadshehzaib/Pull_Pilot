@@ -9,6 +9,31 @@ const { inputFor } = require('./run.cjs');
 const corpus = require('./corpus.json');
 const cli = path.join(__dirname, 'run.cjs');
 const item = corpus.cases[0];
+
+test('failure limit checkpoints the failed attempt and retains the unattempted plan', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pullpilot-stop-check-'));
+  try {
+    const planned = corpus.cases.filter(c => c.domain === 'payments');
+    const input = path.join(temp, 'external.json');
+    fs.writeFileSync(input, JSON.stringify({ corpusSha256: corpusHash(corpus), reviewer: 'Harness only', timingScope: 'review-core',
+      results: planned.map(c => ({ caseId: c.id, repetition: 1, inputSha256: sha(inputFor(c)), status: 'error', durationMs: 1, costUsd: null, findings: [] })) }));
+    const output = path.join(temp, 'result');
+    const result = spawnSync(process.execPath, [cli, '--mode', 'import', '--domain', 'payments', '--input', input, '--max-failures', '1', '--out', output], { encoding: 'utf8' });
+    assert.equal(result.status, 2, result.stderr);
+    const run = JSON.parse(fs.readFileSync(path.join(output, 'run.json'), 'utf8'));
+    assert.equal(run.plannedCases.length, 20);
+    assert.equal(run.results.length, 1);
+    assert.equal(run.results[0].status, 'error');
+    assert.equal(run.stoppedEarly, true);
+    assert.equal(run.stopReason, 'failure-limit');
+    const report = JSON.parse(fs.readFileSync(path.join(output, 'report.json'), 'utf8'));
+    assert.equal(report.overall.cases, 1);
+    assert.equal(report.overall.failures, 1);
+  } finally {
+    assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()));
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
 test('external imports preserve failures and refuse missing cases, wrong input or invalid cost', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pullpilot-import-check-'));
   try {

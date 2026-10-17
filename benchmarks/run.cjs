@@ -14,7 +14,7 @@ function args(argv) {
     if (!/^--[a-z-]+$/.test(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || result[argv[i].slice(2)] !== undefined) throw new Error('Expected unique --option value pairs');
     result[argv[i].slice(2)] = argv[i + 1];
   }
-  const allowed = new Set(['mode', 'out', 'provider', 'limit', 'repetitions', 'timeout-ms', 'family', 'domain', 'corpus', 'case', 'rates', 'run', 'labels', 'input', 'seed', 'left', 'right']);
+  const allowed = new Set(['mode', 'out', 'provider', 'limit', 'repetitions', 'timeout-ms', 'max-failures', 'family', 'domain', 'corpus', 'case', 'rates', 'run', 'labels', 'input', 'seed', 'left', 'right']);
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`Unknown option: ${key}`);
   return result;
 }
@@ -95,6 +95,7 @@ async function main() {
   selected.sort((a, b) => sha([seed, a.id]).localeCompare(sha([seed, b.id])));
   selected = selected.slice(0, integer(opts.limit, selected.length, corpus.cases.length));
   const repetitions = integer(opts.repetitions, 1, 10);
+  const maxFailures = integer(opts['max-failures'], selected.length * repetitions, corpus.cases.length * 10);
   const timeoutMs = integer(opts['timeout-ms'], 90_000, 600_000);
   const dir = path.resolve(opts.out || path.join(root, '.benchmark-runs', `${mode}-${Date.now()}`));
   fs.mkdirSync(dir, { recursive: true });
@@ -131,7 +132,7 @@ async function main() {
     gitCommit: commit, implementationSha256: implementationHash(), lockfileSha256: sha(fs.readFileSync(path.join(root, 'package-lock.json'))),
     runtime: process.version, seed, repetitions, timingScope: 'review-core', provider: opts.provider || null,
     scope: 'Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.',
-    config: { timeoutMs, osv: false, semgrep: false, minSeverity: 'low' }, pricing: rates,
+    config: { timeoutMs, maxFailures, osv: false, semgrep: false, minSeverity: 'low' }, pricing: rates,
     plannedCases: selected.map(c => c.id), results: [] };
   let imported = null;
   if (mode === 'import') {
@@ -164,11 +165,13 @@ async function main() {
       if (!key) throw new Error(`Live mode needs ${choice[0]} in environment or .env.benchmark`);
       const Provider = backend(`services/ai/providers/${choice[1]}.provider.js`)[`${choice[2]}Provider`];
       provider = new Provider(key);
-      run.provider = opts.provider.toUpperCase();
+      Object.assign(run, require('./provider-identity.cjs').providerIdentity(opts.provider.toUpperCase(),
+        opts.provider.toUpperCase() === 'GROK' ? backend('utils/constants.js').GROK_BASE_URL : undefined));
     }
   }
   write(path.join(dir, 'run.json'), run);
-  for (let repetition = 1; repetition <= repetitions; repetition++) {
+  let failures = 0;
+  reviewLoop: for (let repetition = 1; repetition <= repetitions; repetition++) {
     for (const item of selected) {
       const input = inputFor(item);
       const start = performance.now();
@@ -193,7 +196,8 @@ async function main() {
             const aiStart = performance.now();
             try {
               modelFindings = await provider.analyzeCode(filtered, input.customRules, input.context,
-                { signal: AbortSignal.timeout(timeoutMs), onUsage: usage => result.usage.push(usage) });
+                { signal: AbortSignal.timeout(timeoutMs), onUsage: usage => result.usage.push(
+                  run.adapter === 'GROK' && run.provider === 'GROQ' ? { ...usage, provider: 'GROQ' } : usage) });
             } finally { result.aiDurationMs = performance.now() - aiStart; }
           }
           const findings = deduplicate(bindFindingAnchors([
@@ -216,6 +220,11 @@ async function main() {
       run.results.push(result);
       write(path.join(dir, 'run.json'), run); // Checkpoint completed paid calls; never retry them automatically.
       console.log(`${run.results.length}/${selected.length * repetitions} ${item.id} ${result.status} ${result.findings.length} finding(s)`);
+      if (result.status !== 'ok' && ++failures >= maxFailures) {
+        run.stoppedEarly = run.results.length < selected.length * repetitions;
+        run.stopReason = 'failure-limit';
+        break reviewLoop;
+      }
     }
   }
   run.finishedAt = new Date().toISOString();

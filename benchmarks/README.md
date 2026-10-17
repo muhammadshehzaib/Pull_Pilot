@@ -93,6 +93,16 @@ npm run benchmark -- --mode live --provider GEMINI --repetitions 3 --out .benchm
 `--case <id>`, `--limit N`, `--seed <text>` and
 `--timeout-ms N` select scope/order. Default timeout: 90 seconds per model call.
 The runner checkpoints every attempt and refuses to overwrite an existing run.
+Use `--max-failures 1` to stop a batch after its first failed/degraded attempt.
+The failed attempt and complete planned case list are retained; unattempted cases
+are not counted as completed reviews. Without this option all selected cases run.
+
+The Grok adapter also works with a configured Groq OpenAI-compatible endpoint.
+For that setup use the Groq-hosted model ID in `GROK_MODEL` and the configured
+Groq endpoint in `GROK_BASE_URL`. Results identify the service as `GROQ` and the
+reused adapter as `GROK`, including Groq-labelled usage for cost accounting.
+This is Groq-hosted model evaluation, not an xAI Grok evaluation.
+
 Checkpoints use atomic replacement with bounded retries for transient Windows
 file locks, preserving the previous completed checkpoint if saving fails.
 Failed cases remain in recall's denominator, are counted separately, and are
