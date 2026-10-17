@@ -80,7 +80,7 @@ describe('GeminiProvider', () => {
       const promptArg = mockGenerateContent.mock.calls[0][0] as string;
       expect(promptArg).toContain('UNIQUE_DIFF_BODY');
       expect(promptArg).toContain('Rule X');
-      expect(promptArg).toMatch(/world-class/i);
+      expect(promptArg).toContain('software security and correctness reviewer');
     });
 
     it('returns the parsed value when model returns an empty array', async () => {

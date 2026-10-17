@@ -68,7 +68,7 @@ describe('ClaudeProvider', () => {
       await provider.analyzeCode('THE_DIFF_GOES_HERE');
 
       const call = mockCreate.mock.calls[0][0];
-      expect(call.system).toMatch(/world-class software security/i);
+      expect(call.system).toContain('software security and correctness reviewer');
       expect(call.messages[0].content).toContain('THE_DIFF_GOES_HERE');
       expect(call.max_tokens).toBeGreaterThan(0);
     });
