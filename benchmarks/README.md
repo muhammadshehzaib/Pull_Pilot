@@ -159,16 +159,19 @@ tool charges and hosting are not inferred. Estimates are not invoices.
 Each run writes `run.json`, `labels.json`, `report.json`, and `report.md`.
 Run experiments under the ignored `.benchmark-runs/` directory. Keep per-request
 raw evidence, quota diagnostics, session journals, and resume plans locally or
-as CI artifacts; these are also ignored beneath `results/`. Ignoring a path does
-not untrack an already committed file; use `git rm --cached` to keep its local
-copy while removing it from the repository.
+as CI artifacts. New files beneath `results/` are also ignored by default so
+ongoing experiments do not clutter Source Control. Existing committed snapshots
+remain tracked. Ignoring a path does not untrack an already committed file;
+use `git rm --cached` to keep its local copy while removing it from the repository.
 
 Publish selected, sanitized snapshots under `results/`: summaries, reports,
 adjudication labels, pricing provenance, and aggregate `run.json` records needed
-to rescore the results. Scanner baseline runs are required reproducibility
-fixtures. Do not ignore every `run.json` or discard failed attempts from a
-published aggregate. Configuration-probe and recovery logs remain local; describe
-their outcomes and retain original failures in the curated report.
+to rescore the results. To publish a new snapshot, inspect its contents and use
+`git add -f -- <specific-reviewed-file>` for each selected file. Avoid force-adding
+an entire results directory. Scanner baseline runs are required reproducibility
+fixtures; keep them tracked. Do not discard failed attempts from a published
+aggregate. Configuration-probe and recovery logs remain local; describe their
+outcomes and retain original failures in the curated report.
 
 For every finding, inspect the trigger and the code in `corpus.json`. Edit
 `labels.json`, set `reviewer` and a concrete `rationale`, then choose:
