@@ -12,6 +12,12 @@ The [first live Gemini payment run](results/payments-gemini-20261017/findings.md
 completed 18 of 20 reviews, detected all eight known bugs in completed buggy
 cases, and preserved provider errors and unsupported warnings for inspection.
 
+The [evidence-policy follow-up](results/precision-evidence-v1-20261017/findings.md)
+records the shared review-policy change and a limited live check: one previously
+noisy clean case went from two unsupported warnings plus one cleanup note to no
+comments. The paired bug request hit a rate limit; preserved recall and overall
+precision improvements still require a completed live evaluation.
+
 ## Dataset
 
 `corpus.json` (domain-v2) contains **192 distinct changes / 96 labelled bugs**:
