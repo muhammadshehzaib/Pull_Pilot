@@ -13,7 +13,7 @@
  */
 
 /** Product name as shown to users. */
-export const BRAND_NAME = 'PullPilot';
+export const BRAND_NAME = 'Pull Pilot';
 
 /** Short positioning line, reused in titles and social cards. */
 export const BRAND_TAGLINE = 'Beautiful Code by Default';
@@ -36,7 +36,7 @@ export const BRAND_AUTHOR = `${BRAND_NAME} Team`;
  */
 export const SITE_URL = 'https://reviewer.shehzaib.com';
 
-/** Bare host for display in the footer and header. */
+/** Bare deployment host, kept separate from the product's display name. */
 export const SITE_HOST = 'reviewer.shehzaib.com';
 
 /** Public source repository. */

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle2, Sparkles } from 'lucide-react';
 import { BrandLogo } from '../../components/BrandLogo';
-import { SITE_HOST } from '../../config/brand';
+import { BRAND_NAME } from '../../config/brand';
 import { Footer } from '../../components/Footer';
 import { UpgradeButton } from '../../components/UpgradeButton';
 import { BACKEND_URL } from '../../utils/constants';
@@ -20,7 +20,7 @@ export default function PricingPage() {
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
             <BrandLogo size={28} />
             <span style={{ fontSize: '0.84rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f172a' }}>
-              {SITE_HOST}
+              {BRAND_NAME}
             </span>
           </Link>
 

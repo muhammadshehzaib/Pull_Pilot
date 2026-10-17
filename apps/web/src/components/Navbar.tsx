@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Cpu, ChevronRight, Menu, X, GitBranch, ArrowUpRight } from 'lucide-react';
+import { ChevronRight, Menu, X, GitBranch, ArrowUpRight } from 'lucide-react';
 import { BACKEND_URL, GITHUB_APP_INSTALL_URL } from '../utils/constants';
-import { BRAND_NAME, SITE_HOST } from '../config/brand';
+import { BRAND_NAME } from '../config/brand';
 
 import { BrandLogo } from './BrandLogo';
 
@@ -27,15 +27,17 @@ export function Navbar({ user }: NavbarProps) {
   return (
     <>
       <header className="nav-pill-wrapper">
-        <nav className={`nav-pill-container ${scrolled ? 'nav-pill-scrolled' : ''}`}>
+        <nav className={`nav-pill-container site-navbar ${scrolled ? 'nav-pill-scrolled' : ''}`}>
           {/* Brand */}
           <Link
             href="/"
+            className="nav-brand"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.6rem',
               textDecoration: 'none',
+              flexShrink: 0,
             }}
           >
             <BrandLogo size={28} />
@@ -44,11 +46,11 @@ export function Navbar({ user }: NavbarProps) {
                 fontSize: '0.84rem',
                 fontWeight: 700,
                 letterSpacing: '0.12em',
-                textTransform: 'uppercase',
                 color: '#0f172a',
+                whiteSpace: 'nowrap',
               }}
             >
-              {SITE_HOST}
+              {BRAND_NAME}
             </span>
           </Link>
 
@@ -91,7 +93,7 @@ export function Navbar({ user }: NavbarProps) {
           </div>
 
           {/* Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
             {user ? (
               <Link
                 href="/dashboard"
@@ -103,15 +105,15 @@ export function Navbar({ user }: NavbarProps) {
             ) : (
               <>
                 <a
-                  href={GITHUB_APP_INSTALL_URL}
+                  href={`${BACKEND_URL}/api/auth/github`}
                   className="nav-link-item hidden-mobile"
                   style={{ fontWeight: 600, fontSize: '0.86rem' }}
                 >
                   Sign In
                 </a>
                 <a
-                  href={`${BACKEND_URL}/api/auth/github`}
-                  className="btn-primary-pill btn-shimmer"
+                  href={GITHUB_APP_INSTALL_URL}
+                  className="btn-primary-pill btn-shimmer nav-install-button"
                   style={{
                     fontSize: '0.85rem',
                     padding: '0.5rem 1.15rem',
@@ -236,12 +238,43 @@ export function Navbar({ user }: NavbarProps) {
       )}
 
       <style jsx global>{`
-        @media (max-width: 768px) {
-          .hidden-mobile {
+        .site-navbar {
+          gap: 0.5rem;
+        }
+        .site-navbar .nav-link-item,
+        .site-navbar .btn-primary-pill {
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+        .site-navbar .btn-primary-pill svg {
+          flex-shrink: 0;
+        }
+        @media (max-width: 1100px) {
+          .site-navbar .hidden-mobile {
             display: none !important;
           }
-          .mobile-only-btn {
+          .site-navbar .mobile-only-btn {
             display: flex !important;
+          }
+        }
+        @media (max-width: 480px) {
+          .nav-pill-wrapper:has(.site-navbar) {
+            padding-inline: 0.75rem;
+          }
+          .site-navbar {
+            padding-inline: 0.65rem 0.4rem;
+          }
+          .site-navbar .nav-brand {
+            gap: 0.4rem !important;
+          }
+          .site-navbar .nav-brand span {
+            letter-spacing: 0.02em !important;
+          }
+          .site-navbar .nav-install-button {
+            padding-inline: 0.75rem !important;
+          }
+          .site-navbar .nav-install-button svg {
+            display: none;
           }
         }
       `}</style>

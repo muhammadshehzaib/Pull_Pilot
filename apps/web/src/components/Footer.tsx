@@ -11,7 +11,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { BrandLogo } from './BrandLogo';
-import { BRAND_NAME, SITE_HOST } from '../config/brand';
+import { BRAND_NAME } from '../config/brand';
 import { CODE_HANDLING_BADGE } from '../config/privacy';
 
 export function Footer() {
@@ -56,11 +56,10 @@ export function Footer() {
                   fontSize: '0.82rem',
                   fontWeight: 800,
                   letterSpacing: '0.16em',
-                  textTransform: 'uppercase',
                   color: '#0f172a',
                 }}
               >
-                {SITE_HOST}
+                {BRAND_NAME}
               </span>
             </Link>
 
@@ -322,7 +321,7 @@ export function Footer() {
           transition: 'color 0.35s ease',
         }}
       >
-        {SITE_HOST}
+        {BRAND_NAME}
       </motion.div>
     </footer>
   );

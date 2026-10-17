@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { ArrowLeft, HelpCircle, Mail, MessageSquare, BookOpen, ExternalLink } from 'lucide-react';
 import { BrandLogo } from '../../components/BrandLogo';
-import { SITE_HOST } from '../../config/brand';
+import { BRAND_NAME } from '../../config/brand';
 import { codeRetentionFaq } from '../../config/privacy';
 
 const FAQS = [
@@ -42,7 +42,7 @@ export default function SupportPage() {
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', textDecoration: 'none' }}>
             <BrandLogo size={28} />
             <span style={{ fontSize: '0.84rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#0f172a' }}>
-              {SITE_HOST}
+              {BRAND_NAME}
             </span>
           </Link>
           <Link href="/" className="btn-secondary-pill" style={{ fontSize: '0.84rem', padding: '0.45rem 1rem' }}>
