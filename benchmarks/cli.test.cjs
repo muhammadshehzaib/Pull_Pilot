@@ -29,6 +29,9 @@ test('failure limit checkpoints the failed attempt and retains the unattempted p
     const report = JSON.parse(fs.readFileSync(path.join(output, 'report.json'), 'utf8'));
     assert.equal(report.overall.cases, 1);
     assert.equal(report.overall.failures, 1);
+    const rendered = fs.readFileSync(path.join(output, 'report.md'), 'utf8');
+    assert.match(rendered, /PARTIAL RUN: 19 selected reviews were not attempted/);
+    assert.match(rendered, /20 \/ 1 \/ 19/);
   } finally {
     assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()));
     fs.rmSync(temp, { recursive: true, force: true });
