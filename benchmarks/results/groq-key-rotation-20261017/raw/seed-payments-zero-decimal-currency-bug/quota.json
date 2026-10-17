@@ -1,0 +1,11 @@
+{
+  "observedAt": "2026-10-17T18:23:25.935Z",
+  "httpStatus": 200,
+  "requestLimit": 1000,
+  "remainingRequests": 989,
+  "tokenLimit": 8000,
+  "remainingTokens": 4731,
+  "requestResetSeconds": 950.4,
+  "tokenResetSeconds": 24.517,
+  "retryAfterSeconds": null
+}

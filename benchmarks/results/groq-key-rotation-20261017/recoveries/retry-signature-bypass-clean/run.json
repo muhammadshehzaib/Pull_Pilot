@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "id": "3b5c2216-83ed-427e-8410-4e466031ccc9",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:18:54.674Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-signature-bypass-clean"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-signature-bypass-clean",
+      "repetition": 1,
+      "inputSha256": "12afedbf92779d8ab01bd7ee50bc3e38ebd6e17a5cc9737eff3759d84926fc2f",
+      "status": "ok",
+      "durationMs": 1657.9063999999998,
+      "aiDurationMs": 1561.2345999999998,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2105,
+          "outputTokens": 279,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0
+    }
+  ],
+  "adapter": "GROK",
+  "finishedAt": "2026-10-17T18:18:56.423Z"
+}

@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "c65ed011-6584-46e9-a362-15667d473a31",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:20:10.703Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-declined-as-paid-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "repetition": 1,
+      "inputSha256": "f1ea6a7f66765b0606206e5ded8bb5375436c4122d799f496f8861c03683f12f",
+      "status": "ok",
+      "durationMs": 2186.3427,
+      "aiDurationMs": 2076.8777999999998,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2094,
+          "outputTokens": 591,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/confirmation.js",
+          "lineNumber": 3,
+          "issue": "Removed status check allows any payment (including \"declined\") to trigger markPaid, violating the contract that only status=\"succeeded\" may mark an order paid.",
+          "suggestion": "Re‑introduce a validation of payment.status before marking the order paid, e.g.,\n```js\nif (payment.status !== \"succeeded\") return false;\nawait markPaid(order.id);\nreturn true;\n``` or explicitly handle other statuses.",
+          "agentType": "BUG",
+          "priority": "HIGH"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    }
+  ],
+  "adapter": "GROK",
+  "finishedAt": "2026-10-17T18:20:13.001Z"
+}

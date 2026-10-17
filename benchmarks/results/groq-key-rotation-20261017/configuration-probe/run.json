@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "id": "72b32299-8b77-45d8-8792-fd996892f7c5",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:11:50.066Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "cad09784f020c71436f51402d41bed01cdcd75d0",
+  "implementationSha256": "91267b9a308965fc69f0e40830a081385a11f592fce4e13a875aaf48115d12f1",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://docs.x.ai/developers/models/grok-4.3",
+    "asOf": "2026-10-17",
+    "basis": "Published standard global-endpoint short-context rates below 200k prompt tokens. Not an account invoice or a claim about discounts.",
+    "models": {
+      "GROK:grok-4.3": {
+        "inputPerMillion": 1.25,
+        "cachedInputPerMillion": 0.2,
+        "outputPerMillion": 2.5
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-retry-idempotency-clean",
+    "seed-payments-out-of-order-webhook-clean",
+    "seed-payments-declined-as-paid-clean",
+    "seed-payments-zero-decimal-currency-clean",
+    "seed-payments-webhook-replay-clean",
+    "seed-payments-client-amount-clean",
+    "seed-payments-partial-refund-limit-clean",
+    "seed-payments-client-amount-bug",
+    "seed-payments-zero-decimal-currency-bug",
+    "seed-payments-currency-mismatch-bug",
+    "seed-payments-retry-idempotency-bug",
+    "seed-payments-currency-mismatch-clean",
+    "seed-payments-negative-refund-clean",
+    "seed-payments-partial-refund-limit-bug",
+    "seed-payments-signature-bypass-bug",
+    "seed-payments-out-of-order-webhook-bug",
+    "seed-payments-signature-bypass-clean",
+    "seed-payments-webhook-replay-bug",
+    "seed-payments-negative-refund-bug",
+    "seed-payments-declined-as-paid-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "repetition": 1,
+      "inputSha256": "bfa0be5f63183c13dfd665a4cc52607ba74ac5487974e1c573cf733ddc78700f",
+      "status": "error",
+      "durationMs": 842.8004999999999,
+      "aiDurationMs": 702.7029000000001,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-invalid-request"
+    }
+  ],
+  "adapter": "GROK",
+  "stoppedEarly": true,
+  "stopReason": "failure-limit",
+  "finishedAt": "2026-10-17T18:11:51.320Z"
+}

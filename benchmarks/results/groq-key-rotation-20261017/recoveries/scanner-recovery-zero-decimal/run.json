@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "id": "3bc22ca6-b8d7-448d-94f2-84d1ab87f2f2",
+  "mode": "scanners",
+  "startedAt": "2026-10-17T18:15:13.896Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "cad09784f020c71436f51402d41bed01cdcd75d0",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": null,
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": null,
+  "plannedCases": [
+    "seed-payments-zero-decimal-currency-clean"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-zero-decimal-currency-clean",
+      "repetition": 1,
+      "inputSha256": "ecdce365330308cfadc3906c1d40327d36889ed513c6cb0741af6897258f4918",
+      "status": "ok",
+      "durationMs": 245.31259999999997,
+      "aiDurationMs": null,
+      "usage": [],
+      "costUsd": 0,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0
+    }
+  ],
+  "finishedAt": "2026-10-17T18:15:14.454Z"
+}

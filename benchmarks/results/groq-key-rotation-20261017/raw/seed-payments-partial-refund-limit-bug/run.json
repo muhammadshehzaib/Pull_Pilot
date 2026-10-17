@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "41fbad26-e2ca-49f8-a718-f1ff8b004afb",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:20:21.253Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-partial-refund-limit-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-partial-refund-limit-bug",
+      "repetition": 1,
+      "inputSha256": "4f25e4ff6c371b87eb636e5786be2767e223259cdf3d0fc45428f82d2a8923fe",
+      "status": "ok",
+      "durationMs": 2659.2046,
+      "aiDurationMs": 2559.9821,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2147,
+          "outputTokens": 765,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/refunds.js",
+          "lineNumber": 2,
+          "issue": "The new check only compares amountCents to payment.capturedCents, ignoring payment.refundedCents. This permits multiple partial refunds whose sum can exceed the originally captured amount, violating the documented contract and risking over‑refunds.",
+          "suggestion": "Change the condition to enforce the remaining refundable amount, e.g.,\n```js\nif (amountCents > payment.capturedCents - payment.refundedCents) {\n  throw new Error(\"refund exceeds remaining\");\n}\n```\nThis restores the original safeguard and aligns behavior with the contract.",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_857044f292bd0bb16bd62b20e2926cfd"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    }
+  ],
+  "adapter": "GROK",
+  "finishedAt": "2026-10-17T18:20:24.004Z"
+}

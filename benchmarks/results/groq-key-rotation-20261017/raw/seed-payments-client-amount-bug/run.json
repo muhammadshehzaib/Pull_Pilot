@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "670ce7f1-af33-48eb-8ef9-7cf42c515d37",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:16:44.151Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-client-amount-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-client-amount-bug",
+      "repetition": 1,
+      "inputSha256": "57d13cdb9b06618cb3b9384edd4fa322989f6731ea1d8b1df36dac99019bcd84",
+      "status": "ok",
+      "durationMs": 1808.5864000000001,
+      "aiDurationMs": 1593.6958,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2093,
+          "outputTokens": 391,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/checkout.js",
+          "lineNumber": 2,
+          "issue": "Untrusted request body field amountCents is used to set the charge amount, violating the contract that the server must charge the order's totalCents. An attacker can under‑charge or over‑charge the order.",
+          "suggestion": "Restore the use of the server‑owned value: return gateway.charge({ orderId: order.id, amountCents: order.totalCents }); If the API requires a client‑provided amount, validate that body.amountCents equals order.totalCents and reject mismatches.",
+          "agentType": "SECURITY",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_a856536257d2789b10c1edd4836e291c"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    }
+  ],
+  "adapter": "GROK",
+  "finishedAt": "2026-10-17T18:16:46.231Z"
+}

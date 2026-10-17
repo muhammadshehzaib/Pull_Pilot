@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "runId": "0d2fd0c6-5ac8-47ce-b82a-a8e63d80576c",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "reviewer": "Codex-assisted source/contract adjudication",
+  "method": "Each returned finding inspected against the unchanged diff, contract, and authored reproduction; not independent human review. No keyword-based verdicts.",
+  "labels": [
+    {
+      "findingId": "46602b0e2ca3f15027ea00f1",
+      "caseId": "seed-payments-client-amount-bug",
+      "verdict": "tp",
+      "bugId": "payments-client-amount",
+      "rationale": "Correctly identifies the newly trusted request-body amount: a buyer can change a 2500-cent server order to a one-cent charge. Restoring the server-owned total addresses the authored failure.",
+      "candidates": [
+        "payments-client-amount"
+      ]
+    },
+    {
+      "findingId": "eb766fdb93cdfbdd7985442b",
+      "caseId": "seed-payments-retry-idempotency-bug",
+      "verdict": "tp",
+      "bugId": "payments-retry-idempotency",
+      "rationale": "The changed charge call generates a fresh idempotency key for each retry. The stated trigger and duplicate-billing consequence match the supplied gateway deduplication contract and executable proof.",
+      "candidates": [
+        "payments-retry-idempotency"
+      ]
+    },
+    {
+      "findingId": "fcf70a5b4b57be30ed58f13a",
+      "caseId": "seed-payments-signature-bypass-bug",
+      "verdict": "tp",
+      "bugId": "payments-signature-bypass",
+      "rationale": "Removing verification permits a forged raw webhook to reach markPaid. The finding identifies the removed authentication step, matches the contract and authored forgery proof, and proposes restoring verification. There is no verified added-line anchor; deliver via general summary.",
+      "candidates": [
+        "payments-signature-bypass"
+      ]
+    },
+    {
+      "findingId": "5a04f26b671f93f146f73fa5",
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "verdict": "tp",
+      "bugId": "payments-declined-as-paid",
+      "rationale": "The deleted succeeded-status guard lets a declined resolved gateway result mark the order paid. The issue and fix match the exact documented behavior and executable target proof. This is a general-summary finding without a verified added-line anchor.",
+      "candidates": [
+        "payments-declined-as-paid"
+      ]
+    },
+    {
+      "findingId": "fbe5948c2a2d1a3f2f90acd8",
+      "caseId": "seed-payments-partial-refund-limit-bug",
+      "verdict": "tp",
+      "bugId": "payments-partial-refund-limit",
+      "rationale": "The changed bound ignores amounts already refunded; two sequential 700-cent refunds exceed a 1000-cent capture. The warning and remaining-balance remedy match the supplied sequential contract and authored reproduction.",
+      "candidates": [
+        "payments-partial-refund-limit"
+      ]
+    },
+    {
+      "findingId": "e3aa748e1990a44d1d356b63",
+      "caseId": "seed-payments-partial-refund-limit-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "The NaN explanation is conditional on an undefined refundedCents property, but no supplied caller or contract establishes that missing payment-state input. The documented sequential refund state and authored proof initialize refundedCents numerically. This is an unsupported input hypothesis rather than an evidenced regression on supported inputs.",
+      "candidates": []
+    },
+    {
+      "findingId": "494c2d356e1438b44668e4dd",
+      "caseId": "seed-payments-currency-mismatch-bug",
+      "verdict": "tp",
+      "bugId": "payments-currency-mismatch",
+      "rationale": "Removing currency equality accepts equal numeric minor-unit amounts across different currencies. The cited changed line, trigger, and restoration match the authored USD/JPY reconciliation failure and contract.",
+      "candidates": [
+        "payments-currency-mismatch"
+      ]
+    },
+    {
+      "findingId": "1c7bdf4fa5d2568f0865567b",
+      "caseId": "seed-payments-out-of-order-webhook-bug",
+      "verdict": "tp",
+      "bugId": "payments-out-of-order-webhook",
+      "rationale": "The deleted terminal-state guard lets a delayed processing event overwrite succeeded. Both the described sequence and proposed restoration match the documented state-machine rule and authored proof. No verified added-line anchor is available.",
+      "candidates": [
+        "payments-out-of-order-webhook"
+      ]
+    },
+    {
+      "findingId": "905b875dae2b6cb8e87a77a0",
+      "caseId": "seed-payments-zero-decimal-currency-bug",
+      "verdict": "tp",
+      "bugId": "payments-zero-decimal-currency",
+      "rationale": "The new unconditional multiplier scales JPY by 100 despite its zero-decimal contract. The example, source citation, and currency-specific factor fix match the authored overcharge regression.",
+      "candidates": [
+        "payments-zero-decimal-currency"
+      ]
+    },
+    {
+      "findingId": "1c9545b1cb3719e0864b5587",
+      "caseId": "seed-payments-webhook-replay-bug",
+      "verdict": "tp",
+      "bugId": "payments-webhook-replay",
+      "rationale": "Correctly identifies the removed seen.has guard and repeated fulfill call for a sequential event replay; restoration fixes the authored duplicate-fulfillment failure. The extra suggestion of double charges is not established by the shown fulfill implementation and should not be presented as verified impact. No verified added-line anchor is available.",
+      "candidates": [
+        "payments-webhook-replay"
+      ]
+    },
+    {
+      "findingId": "2980b7a1f890ae274714a905",
+      "caseId": "seed-payments-negative-refund-bug",
+      "verdict": "tp",
+      "bugId": "payments-negative-refund",
+      "rationale": "Removing amountCents <= 0 admits negative and zero safe integers to the gateway. The finding identifies the documented positive-amount rule and proposes the exact missing guard used by the authored negative-refund proof.",
+      "candidates": [
+        "payments-negative-refund"
+      ]
+    }
+  ]
+}

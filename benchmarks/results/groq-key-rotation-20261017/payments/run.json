@@ -1,0 +1,1075 @@
+{
+  "schemaVersion": 1,
+  "id": "0d2fd0c6-5ac8-47ce-b82a-a8e63d80576c",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:14:09.113Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-client-amount-bug",
+    "seed-payments-client-amount-clean",
+    "seed-payments-retry-idempotency-bug",
+    "seed-payments-signature-bypass-bug",
+    "seed-payments-signature-bypass-clean",
+    "seed-payments-declined-as-paid-bug",
+    "seed-payments-partial-refund-limit-bug",
+    "seed-payments-partial-refund-limit-clean",
+    "seed-payments-currency-mismatch-bug",
+    "seed-payments-currency-mismatch-clean",
+    "seed-payments-out-of-order-webhook-bug",
+    "seed-payments-zero-decimal-currency-bug",
+    "seed-payments-zero-decimal-currency-clean",
+    "seed-payments-webhook-replay-bug",
+    "seed-payments-webhook-replay-clean",
+    "seed-payments-negative-refund-bug",
+    "seed-payments-negative-refund-clean"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-client-amount-bug",
+      "repetition": 1,
+      "inputSha256": "57d13cdb9b06618cb3b9384edd4fa322989f6731ea1d8b1df36dac99019bcd84",
+      "status": "ok",
+      "durationMs": 1808.5864000000001,
+      "aiDurationMs": 1593.6958,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2093,
+          "outputTokens": 391,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/checkout.js",
+          "lineNumber": 2,
+          "issue": "Untrusted request body field amountCents is used to set the charge amount, violating the contract that the server must charge the order's totalCents. An attacker can under‑charge or over‑charge the order.",
+          "suggestion": "Restore the use of the server‑owned value: return gateway.charge({ orderId: order.id, amountCents: order.totalCents }); If the API requires a client‑provided amount, validate that body.amountCents equals order.totalCents and reject mismatches.",
+          "agentType": "SECURITY",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_a856536257d2789b10c1edd4836e291c"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "670ce7f1-af33-48eb-8ef9-7cf42c515d37"
+    },
+    {
+      "caseId": "seed-payments-client-amount-clean",
+      "repetition": 1,
+      "inputSha256": "260e17526f6dab35bb68803972515bd9feae79654c3e595a30f2fd1fe3de3cee",
+      "status": "ok",
+      "durationMs": 1572.0515,
+      "aiDurationMs": 1438.1835999999998,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2097,
+          "outputTokens": 252,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0,
+      "sourceRunId": "a19304dc-5d0d-4d34-9822-b28e0b61955a"
+    },
+    {
+      "caseId": "seed-payments-retry-idempotency-bug",
+      "repetition": 1,
+      "inputSha256": "fa204f905636fe02f98f019e74681991c0b63b2a2e9f5c696b585e50d4837438",
+      "status": "ok",
+      "durationMs": 2072.5996000000005,
+      "aiDurationMs": 1889.935,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2115,
+          "outputTokens": 557,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "Using randomId() for idempotencyKey generates a new key on each retry, breaking the contract that retries must create only one charge; the gateway will treat each retry as a new charge, leading to duplicate billing.",
+          "suggestion": "Replace randomId() with a deterministic identifier tied to the order, e.g., order.id or a hash of order properties, so repeated calls use the same idempotencyKey and the gateway can deduplicate correctly.",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_2f1115b4f8d9e14b900404cd03ad9732"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "032f91b7-7adc-47b1-a84f-01a8226c1a20"
+    },
+    {
+      "caseId": "seed-payments-signature-bypass-bug",
+      "repetition": 1,
+      "inputSha256": "7bc868fd1b9e9a28c6a2bc7bca0ff985475f677175f1d92d400a20eb044595d8",
+      "status": "ok",
+      "durationMs": 2017.3871000000001,
+      "aiDurationMs": 1900.9317,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2083,
+          "outputTokens": 532,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/webhooks.js",
+          "lineNumber": 2,
+          "issue": "Removed verify(rawBody, signature) check allows any caller to supply arbitrary rawBody and signature, causing markPaid to be invoked without authenticating the webhook. This violates the documented contract and enables attackers to mark orders paid fraudulently.",
+          "suggestion": "Re‑introduce signature verification before processing the payload. For example:\n```\nif (!verify(rawBody, signature)) {\n  throw new Error(\"invalid signature\");\n}\nconst event = JSON.parse(rawBody);\nreturn markPaid(event.orderId);\n```\nEnsure verify is called with the raw request body and that errors are handled appropriately.",
+          "agentType": "SECURITY",
+          "priority": "CRITICAL"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "5e5632f3-04b0-402d-8064-0b1b27807ba8"
+    },
+    {
+      "caseId": "seed-payments-signature-bypass-clean",
+      "repetition": 1,
+      "inputSha256": "12afedbf92779d8ab01bd7ee50bc3e38ebd6e17a5cc9737eff3759d84926fc2f",
+      "status": "error",
+      "durationMs": 444.07669999999996,
+      "aiDurationMs": 345.8001,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-invalid-request",
+      "sourceRunId": "11842f42-8e8c-4a71-a36b-74497eb0db18"
+    },
+    {
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "repetition": 1,
+      "inputSha256": "f1ea6a7f66765b0606206e5ded8bb5375436c4122d799f496f8861c03683f12f",
+      "status": "ok",
+      "durationMs": 2186.3427,
+      "aiDurationMs": 2076.8777999999998,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2094,
+          "outputTokens": 591,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/confirmation.js",
+          "lineNumber": 3,
+          "issue": "Removed status check allows any payment (including \"declined\") to trigger markPaid, violating the contract that only status=\"succeeded\" may mark an order paid.",
+          "suggestion": "Re‑introduce a validation of payment.status before marking the order paid, e.g.,\n```js\nif (payment.status !== \"succeeded\") return false;\nawait markPaid(order.id);\nreturn true;\n``` or explicitly handle other statuses.",
+          "agentType": "BUG",
+          "priority": "HIGH"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "c65ed011-6584-46e9-a362-15667d473a31"
+    },
+    {
+      "caseId": "seed-payments-partial-refund-limit-bug",
+      "repetition": 1,
+      "inputSha256": "4f25e4ff6c371b87eb636e5786be2767e223259cdf3d0fc45428f82d2a8923fe",
+      "status": "ok",
+      "durationMs": 2659.2046,
+      "aiDurationMs": 2559.9821,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2147,
+          "outputTokens": 765,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/refunds.js",
+          "lineNumber": 2,
+          "issue": "The new check only compares amountCents to payment.capturedCents, ignoring payment.refundedCents. This permits multiple partial refunds whose sum can exceed the originally captured amount, violating the documented contract and risking over‑refunds.",
+          "suggestion": "Change the condition to enforce the remaining refundable amount, e.g.,\n```js\nif (amountCents > payment.capturedCents - payment.refundedCents) {\n  throw new Error(\"refund exceeds remaining\");\n}\n```\nThis restores the original safeguard and aligns behavior with the contract.",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_857044f292bd0bb16bd62b20e2926cfd"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "41fbad26-e2ca-49f8-a718-f1ff8b004afb"
+    },
+    {
+      "caseId": "seed-payments-partial-refund-limit-clean",
+      "repetition": 1,
+      "inputSha256": "c6039a30f4a1173b83199419a64766381d195075b95f7348068b31b98139dc33",
+      "status": "ok",
+      "durationMs": 3987.6185000000005,
+      "aiDurationMs": 3899.918,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2145,
+          "outputTokens": 1168,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/refunds.js",
+          "lineNumber": 2,
+          "issue": "If payment.refundedCents is undefined, the subtraction yields NaN, the > comparison is false, and the function proceeds, allowing a refund that can exceed payment.capturedCents and violating the contract that total refunds must not exceed captured amount.",
+          "suggestion": "Initialize payment.refundedCents to 0 when the payment object is created or guard the subtraction, e.g., const refunded = payment.refundedCents ?? 0; if (amountCents > payment.capturedCents - refunded) throw ...;",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_efec0704322fd596f96158d895e1fefe"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "6343a66e-358a-4e96-8caa-38c74fb53928"
+    },
+    {
+      "caseId": "seed-payments-currency-mismatch-bug",
+      "repetition": 1,
+      "inputSha256": "c73f1037e2817511988b79a97efa1d375e1052ae05b8fdaff6362866da50952d",
+      "status": "ok",
+      "durationMs": 1983.6191,
+      "aiDurationMs": 1886.3713000000002,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2075,
+          "outputTokens": 403,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/reconciliation.js",
+          "lineNumber": 2,
+          "issue": "Removed currency comparison causes matches() to return true for payments with correct amount but wrong currency, violating the contract that a settled payment must match both amount and currency, potentially leading to incorrect reconciliation.",
+          "suggestion": "Re-add the currency check so the function validates both fields, e.g.,\n```js\nreturn payment.amount === order.amount && payment.currency === order.currency;\n```",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_07b10dd5a54f6d8792712044d59ff3b5"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "29156a10-4857-4764-a190-d584e098901e"
+    },
+    {
+      "caseId": "seed-payments-currency-mismatch-clean",
+      "repetition": 1,
+      "inputSha256": "f77a9d3a0f024fff09e6917b4c546d9880118084579dd51738ca3c7867abd66e",
+      "status": "ok",
+      "durationMs": 1323.0955,
+      "aiDurationMs": 1241.5672,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2076,
+          "outputTokens": 259,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0,
+      "sourceRunId": "61fe86c7-54f0-4ddb-9598-553b954e26dd"
+    },
+    {
+      "caseId": "seed-payments-out-of-order-webhook-bug",
+      "repetition": 1,
+      "inputSha256": "dc569f4e0f5c363ee2bdddee4eee05afc7785f6e9320cd7eee9037c88679074e",
+      "status": "ok",
+      "durationMs": 2438.1677,
+      "aiDurationMs": 2297.3932,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2055,
+          "outputTokens": 749,
+          "cachedInputTokens": 1792,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.00062325,
+      "findings": [
+        {
+          "filePath": "src/payments/status.js",
+          "lineNumber": 2,
+          "issue": "Removed guard allows a payment already in \"succeeded\" state to be overwritten by later events (e.g., \"processing\"), violating the contract that \"succeeded\" is terminal and must not be downgraded.",
+          "suggestion": "Re‑introduce a check that prevents downgrading a succeeded payment. For example:\n```js\nif (payment.status === \"succeeded\" && event.status !== \"succeeded\") {\n  return; // ignore downgrade\n}\npayment.status = event.status;\n```\nor assign only when not downgrading:\n```js\nif (payment.status !== \"succeeded\" || event.status === \"succeeded\") {\n  payment.status = event.status;\n}\n```",
+          "agentType": "BUG",
+          "priority": "HIGH"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "06efc3f1-4ca7-4855-8c91-339da5ad1e9a"
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-bug",
+      "repetition": 1,
+      "inputSha256": "4c1b6b17f7fced658faaec4e4c0f5db417872e13dffc473d62f9509b486f22c7",
+      "status": "ok",
+      "durationMs": 2061.2019999999998,
+      "aiDurationMs": 1939.1845000000003,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2101,
+          "outputTokens": 572,
+          "cachedInputTokens": 1792,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.00052395,
+      "findings": [
+        {
+          "filePath": "src/payments/currency.js",
+          "lineNumber": 2,
+          "issue": "When currency is \"JPY\", the function now multiplies amount by 100 instead of 1, violating the contract that JPY has zero decimal places and causing amounts to be over‑scaled (e.g., ¥10 becomes 1000 minor units).",
+          "suggestion": "Restore the currency‑specific factor logic. For example:\n```js\nexport function minorUnits(amount, currency) {\n  const factor = currency === \"JPY\" ? 1 : 100;\n  return Math.round(amount * factor);\n}\n```\nIf other currencies are added, use a map of factors instead of a hard‑coded 100.",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_a9aef0cf17e55ae7feff61e70e834c63"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "d2085ac7-0378-48b5-a65a-9984ecd6fd3d"
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-clean",
+      "repetition": 1,
+      "inputSha256": "ecdce365330308cfadc3906c1d40327d36889ed513c6cb0741af6897258f4918",
+      "status": "degraded",
+      "durationMs": 2024.5932999999998,
+      "aiDurationMs": 1729.4662000000003,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2123,
+          "outputTokens": 358,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Bounded credential/code scan",
+          "status": "DEGRADED",
+          "findingCount": 0,
+          "detail": "Scanner timed out or was unavailable; its checks did not complete."
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Bounded credential/code scan",
+          "status": "DEGRADED",
+          "findingCount": 0,
+          "detail": "Scanner timed out or was unavailable; its checks did not complete."
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0,
+      "sourceRunId": "a601143f-c501-4acd-96a3-f9bb55af383c"
+    },
+    {
+      "caseId": "seed-payments-webhook-replay-bug",
+      "repetition": 1,
+      "inputSha256": "11bcedd70c6090e5c5179df7f896525bc1dca55e2305b12cf4f704655da781a6",
+      "status": "ok",
+      "durationMs": 2448.629,
+      "aiDurationMs": 2293.3112,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2072,
+          "outputTokens": 477,
+          "cachedInputTokens": 1792,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.0004626,
+      "findings": [
+        {
+          "filePath": "src/payments/fulfillment.js",
+          "lineNumber": 2,
+          "issue": "Removing the duplicate‑event check allows processEvent to call fulfill multiple times for the same event.id, violating the contract that each gateway event must be fulfilled exactly once and potentially causing double charges or state corruption.",
+          "suggestion": "Re‑introduce the guard before invoking fulfill, e.g.,\n```js\nif (seen.has(event.id)) return;\nawait fulfill(event.orderId);\nseen.add(event.id);\n``` ensuring the check runs before any side effects.",
+          "agentType": "BUG",
+          "priority": "HIGH"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "33fdc43e-b52d-4afc-9e81-58b7f59c3a5b"
+    },
+    {
+      "caseId": "seed-payments-webhook-replay-clean",
+      "repetition": 1,
+      "inputSha256": "ea7c2dfbd1435c4d809083964ae30b446525a6ee028726ed42c97c0363ef9e4d",
+      "status": "ok",
+      "durationMs": 1963.1876000000002,
+      "aiDurationMs": 1727.2699000000002,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2096,
+          "outputTokens": 509,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0,
+      "sourceRunId": "5c555cd3-4270-4c4d-b44f-c622dd5bdc8b"
+    },
+    {
+      "caseId": "seed-payments-negative-refund-bug",
+      "repetition": 1,
+      "inputSha256": "eb88074f338a4b911bda13ad3afa787f73c87e6560e85ab9ed5903c4facefa21",
+      "status": "ok",
+      "durationMs": 1925.3497,
+      "aiDurationMs": 1673.1747,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2116,
+          "outputTokens": 488,
+          "cachedInputTokens": 1792,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.00047580000000000007,
+      "findings": [
+        {
+          "filePath": "src/payments/refund-validation.js",
+          "lineNumber": 2,
+          "issue": "Removed positivity check allows zero or negative refund amounts, violating the contract that refunds must be positive safe integers. Gateway may receive invalid amounts, causing errors or unintended refunds.",
+          "suggestion": "Restore the missing validation or add an explicit check for amountCents > 0, e.g., `if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error(\"invalid amount\");` to enforce the contract.",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_7ceab48434eeae5736def3dc1461dd52"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0,
+      "sourceRunId": "c09ae75e-f21c-4ef9-8eb5-495d38d9477c"
+    },
+    {
+      "caseId": "seed-payments-negative-refund-clean",
+      "repetition": 1,
+      "inputSha256": "c28fe284cf0e6da7ae93f2fff51af2633d0922fdb941a8bfc188870095f38f5e",
+      "status": "ok",
+      "durationMs": 1026.8024,
+      "aiDurationMs": 941.8079,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2116,
+          "outputTokens": 133,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0,
+      "sourceRunId": "16904299-fefa-4a85-aad4-9ff70c944911"
+    }
+  ],
+  "adapter": "GROK",
+  "finishedAt": "2026-10-17T18:25:36.638Z",
+  "aggregation": {
+    "type": "first attempt per pending case in key-rotation session",
+    "reviewPolicyCommit": "dead814b937229511f5cb80ad25d33c8c63f132c",
+    "sourceImplementationHashes": [
+      "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc"
+    ],
+    "previouslyCompletedCasesExcluded": [
+      "seed-payments-retry-idempotency-clean",
+      "seed-payments-declined-as-paid-clean",
+      "seed-payments-out-of-order-webhook-clean"
+    ],
+    "unattemptedCases": [],
+    "sourceRuns": [
+      {
+        "caseId": "seed-payments-client-amount-bug",
+        "runId": "670ce7f1-af33-48eb-8ef9-7cf42c515d37",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "e172c749ed99f551ceaa5cfd29ec1855dea5985bbe56fa65c3a0439fb18f3e01"
+      },
+      {
+        "caseId": "seed-payments-client-amount-clean",
+        "runId": "a19304dc-5d0d-4d34-9822-b28e0b61955a",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "cd0c1243dad7c84f7c9e6d746586cbd78b7fc46f019693543a27962d2ae513c3"
+      },
+      {
+        "caseId": "seed-payments-retry-idempotency-bug",
+        "runId": "032f91b7-7adc-47b1-a84f-01a8226c1a20",
+        "gitCommit": "cad09784f020c71436f51402d41bed01cdcd75d0",
+        "runSha256": "adb48aaf652a515ed7c2e4bc39ae1f163dd1e3eddf071da0f7a37396bb704ba6"
+      },
+      {
+        "caseId": "seed-payments-signature-bypass-bug",
+        "runId": "5e5632f3-04b0-402d-8064-0b1b27807ba8",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "8d5825d158ac24d11419d596adab45b9db15bb593237be3ddae7d437a569a8e0"
+      },
+      {
+        "caseId": "seed-payments-signature-bypass-clean",
+        "runId": "11842f42-8e8c-4a71-a36b-74497eb0db18",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "92fda7e31c2ea1aa92edb2108c61331427f146f0085cb5a92f0914f1d00ab018"
+      },
+      {
+        "caseId": "seed-payments-declined-as-paid-bug",
+        "runId": "c65ed011-6584-46e9-a362-15667d473a31",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "1dad11bd56700ae129f60d993b9e899cb0a7c10bba0f6084c10cb11b18735049"
+      },
+      {
+        "caseId": "seed-payments-partial-refund-limit-bug",
+        "runId": "41fbad26-e2ca-49f8-a718-f1ff8b004afb",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "4aba75da75f928f43a30f7d57598b2ac18ba76de8ee91f830b0ffa5df3c4c5d3"
+      },
+      {
+        "caseId": "seed-payments-partial-refund-limit-clean",
+        "runId": "6343a66e-358a-4e96-8caa-38c74fb53928",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "f38a5d1195e8f27fc50d14b5e2636dd943d0e2669df30fedb0175b959be75915"
+      },
+      {
+        "caseId": "seed-payments-currency-mismatch-bug",
+        "runId": "29156a10-4857-4764-a190-d584e098901e",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "c244b32edb320b3490b4b4f6c8522c10bd0515aa26246094a7624f2bb80dfab2"
+      },
+      {
+        "caseId": "seed-payments-currency-mismatch-clean",
+        "runId": "61fe86c7-54f0-4ddb-9598-553b954e26dd",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "9ca392047c5595c17591779f0f43eb93278469a7a657b9a5dbacaf51ace7f597"
+      },
+      {
+        "caseId": "seed-payments-out-of-order-webhook-bug",
+        "runId": "06efc3f1-4ca7-4855-8c91-339da5ad1e9a",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "a068393ef3988d1f4afb46f77a1302c531768ad9053caeef6a39349ee2684979"
+      },
+      {
+        "caseId": "seed-payments-zero-decimal-currency-bug",
+        "runId": "d2085ac7-0378-48b5-a65a-9984ecd6fd3d",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "f3a8e447000d023802e3f252d97067524e1e719159a279b6170446948518a160"
+      },
+      {
+        "caseId": "seed-payments-zero-decimal-currency-clean",
+        "runId": "a601143f-c501-4acd-96a3-f9bb55af383c",
+        "gitCommit": "cad09784f020c71436f51402d41bed01cdcd75d0",
+        "runSha256": "75a2844acc2a5a7cf9e25ea5ea1c59260d56835faf854c01e2d15aabaebfa2eb"
+      },
+      {
+        "caseId": "seed-payments-webhook-replay-bug",
+        "runId": "33fdc43e-b52d-4afc-9e81-58b7f59c3a5b",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "c45a9feeba6126100a166a35faaea87ddd5efdf6517441702190eeae6ca67bc3"
+      },
+      {
+        "caseId": "seed-payments-webhook-replay-clean",
+        "runId": "5c555cd3-4270-4c4d-b44f-c622dd5bdc8b",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "be195a862389e277c06316e4f8a88a10ea812e5ab02ddea50bc26e6d2cec13a0"
+      },
+      {
+        "caseId": "seed-payments-negative-refund-bug",
+        "runId": "c09ae75e-f21c-4ef9-8eb5-495d38d9477c",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "dc9ffda2dbf4d4e9ede5a1d19ba555eea8aab8aaf3e2ee08010f953b744f0740"
+      },
+      {
+        "caseId": "seed-payments-negative-refund-clean",
+        "runId": "16904299-fefa-4a85-aad4-9ff70c944911",
+        "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+        "runSha256": "9833b09b5820d846f4cc8f8e2197aa03408bb2a01dc7d7e260af9961a43aee50"
+      }
+    ],
+    "scannerRecovery": "Original degraded status is retained; a separate offline recovery exists for the first JPY control.",
+    "retries": "Original errors are retained in first-attempt metrics. Explicit recovery requests are saved separately.",
+    "pacing": "Minimum 8 seconds, quota-header headroom, and a conservative 61-second observed-token window; waiting is outside review-core duration."
+  }
+}

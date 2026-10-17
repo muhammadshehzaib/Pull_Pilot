@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "33fdc43e-b52d-4afc-9e81-58b7f59c3a5b",
+  "mode": "live",
+  "startedAt": "2026-10-17T18:23:35.207Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "c0dda179f0b67039903c1dccadbddaa890db5cca",
+  "implementationSha256": "c8400e0606850bf314ad766fe97786509158a1cb1a417b2ee399294dffcf71dc",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-webhook-replay-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-webhook-replay-bug",
+      "repetition": 1,
+      "inputSha256": "11bcedd70c6090e5c5179df7f896525bc1dca55e2305b12cf4f704655da781a6",
+      "status": "ok",
+      "durationMs": 2448.629,
+      "aiDurationMs": 2293.3112,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2072,
+          "outputTokens": 477,
+          "cachedInputTokens": 1792,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.0004626,
+      "findings": [
+        {
+          "filePath": "src/payments/fulfillment.js",
+          "lineNumber": 2,
+          "issue": "Removing the duplicate‑event check allows processEvent to call fulfill multiple times for the same event.id, violating the contract that each gateway event must be fulfilled exactly once and potentially causing double charges or state corruption.",
+          "suggestion": "Re‑introduce the guard before invoking fulfill, e.g.,\n```js\nif (seen.has(event.id)) return;\nawait fulfill(event.orderId);\nseen.add(event.id);\n``` ensuring the check runs before any side effects.",
+          "agentType": "BUG",
+          "priority": "HIGH"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    }
+  ],
+  "adapter": "GROK",
+  "finishedAt": "2026-10-17T18:23:37.775Z"
+}
