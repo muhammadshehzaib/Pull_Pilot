@@ -1,4 +1,4 @@
-import { AiProvider } from '@prisma/client';
+import type { AiProvider } from '@prisma/client';
 
 /**
  * Application-wide constants.
@@ -144,10 +144,10 @@ export const CANCEL_EVENTS = new Set(['subscription.revoked']);
 /* -------------------------------------------------------------------------- */
 
 export const VALID_PROVIDERS = new Set<AiProvider>([
-  AiProvider.GEMINI,
-  AiProvider.OPENAI,
-  AiProvider.CLAUDE,
-  AiProvider.GROK,
+  'GEMINI',
+  'OPENAI',
+  'CLAUDE',
+  'GROK',
 ]);
 
 export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
