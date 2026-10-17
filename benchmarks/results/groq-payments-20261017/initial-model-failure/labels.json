@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "runId": "b1be8ac4-0e72-4d26-b733-3ab92203c2ee",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "reviewer": "Codex-assisted source/contract adjudication",
+  "method": "Source and contract inspection against frozen fixtures; not independent human review.",
+  "labels": []
+}

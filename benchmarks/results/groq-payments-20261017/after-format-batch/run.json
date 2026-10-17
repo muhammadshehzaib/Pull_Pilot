@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "id": "3c5e7ac8-ce91-4c5b-a059-b0d88f4a2ac9",
+  "mode": "live",
+  "startedAt": "2026-10-17T17:45:09.215Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "dead814b937229511f5cb80ad25d33c8c63f132c",
+  "implementationSha256": "91267b9a308965fc69f0e40830a081385a11f592fce4e13a875aaf48115d12f1",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROQ",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "maxFailures": 1,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+    "asOf": "2026-10-17",
+    "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+    "models": {
+      "GROQ:openai/gpt-oss-120b": {
+        "inputPerMillion": 0.15,
+        "cachedInputPerMillion": 0.075,
+        "outputPerMillion": 0.6
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-retry-idempotency-clean",
+    "seed-payments-out-of-order-webhook-clean",
+    "seed-payments-declined-as-paid-clean",
+    "seed-payments-zero-decimal-currency-clean",
+    "seed-payments-webhook-replay-clean",
+    "seed-payments-client-amount-clean",
+    "seed-payments-partial-refund-limit-clean",
+    "seed-payments-client-amount-bug",
+    "seed-payments-zero-decimal-currency-bug",
+    "seed-payments-currency-mismatch-bug",
+    "seed-payments-retry-idempotency-bug",
+    "seed-payments-currency-mismatch-clean",
+    "seed-payments-negative-refund-clean",
+    "seed-payments-partial-refund-limit-bug",
+    "seed-payments-signature-bypass-bug",
+    "seed-payments-out-of-order-webhook-bug",
+    "seed-payments-signature-bypass-clean",
+    "seed-payments-webhook-replay-bug",
+    "seed-payments-negative-refund-bug",
+    "seed-payments-declined-as-paid-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "repetition": 1,
+      "inputSha256": "bfa0be5f63183c13dfd665a4cc52607ba74ac5487974e1c573cf733ddc78700f",
+      "status": "ok",
+      "durationMs": 2981.8935,
+      "aiDurationMs": 2837.85,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2116,
+          "outputTokens": 877,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "If order.id is undefined, null, or an empty string, the gateway receives an invalid idempotencyKey. The gateway may reject the request or treat the key as missing, causing duplicate charges on retries, violating the contract that retries must be deduplicated.",
+          "suggestion": "Add validation to ensure order.id is a non‑empty string before using it as the idempotencyKey. If it is missing, fall back to a generated key (e.g., randomId()) or throw a clear error. Example:\n```js\nconst key = typeof order.id === 'string' && order.id.length > 0 ? order.id : randomId();\nreturn gateway.charge({ amountCents: order.totalCents, idempotencyKey: key });\n```",
+          "agentType": "BUG",
+          "priority": "MEDIUM",
+          "verifiedAnchor": "a1_3a98472e2b3c8903bee3e1f66261fdae"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-out-of-order-webhook-clean",
+      "repetition": 1,
+      "inputSha256": "6573a9beca679b3dcc702bb4eaddf2d483229dff2ab1933b86723823bc477d73",
+      "status": "ok",
+      "durationMs": 1324.3708999999994,
+      "aiDurationMs": 1169.9829999999997,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2075,
+          "outputTokens": 296,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-declined-as-paid-clean",
+      "repetition": 1,
+      "inputSha256": "fb47e07c7a3c806349bca16d10aac90ce991c01c97cece8e2b847f8d59251797",
+      "status": "ok",
+      "durationMs": 1375.9972000000007,
+      "aiDurationMs": 1193.2595000000001,
+      "usage": [
+        {
+          "provider": "GROQ",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2110,
+          "outputTokens": 286,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 0,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-clean",
+      "repetition": 1,
+      "inputSha256": "ecdce365330308cfadc3906c1d40327d36889ed513c6cb0741af6897258f4918",
+      "status": "error",
+      "durationMs": 372.3861999999999,
+      "aiDurationMs": 195.89949999999953,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-rate-limited"
+    }
+  ],
+  "adapter": "GROK",
+  "stoppedEarly": true,
+  "stopReason": "failure-limit",
+  "finishedAt": "2026-10-17T17:45:15.719Z"
+}

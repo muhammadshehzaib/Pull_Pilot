@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "runId": "b0ba8d32-1096-48a6-bdf2-366fef620d6e",
+  "mode": "live",
+  "reviewer": "Codex-assisted source/contract adjudication",
+  "overall": {
+    "cases": 1,
+    "successfulCases": 1,
+    "failures": 0,
+    "knownBugs": 1,
+    "detectedBugs": 1,
+    "missedBugs": 0,
+    "adjudicationComplete": true,
+    "pendingComments": 0,
+    "confirmedTrueComments": 1,
+    "additionalTrueComments": 0,
+    "falseComments": 0,
+    "duplicateComments": 0,
+    "nonBugComments": 0,
+    "recall": 1,
+    "successfulCaseRecall": 1,
+    "precision": 1,
+    "precisionCountingDuplicatesAsNoise": 1,
+    "cleanCases": 0,
+    "cleanWithFalseComments": 0,
+    "cleanCaseFalseCommentRate": null,
+    "durationMs": {
+      "median": 2392.5832,
+      "p95": 2392.5832
+    },
+    "costUsd": null,
+    "knownCostSubtotalUsd": 0,
+    "casesWithUnknownCost": 1,
+    "distinctKnownBugs": 1,
+    "distinctCases": 1
+  },
+  "byFamily": {
+    "domain": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 1,
+      "detectedBugs": 1,
+      "missedBugs": 0,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 1,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 1,
+      "successfulCaseRecall": 1,
+      "precision": 1,
+      "precisionCountingDuplicatesAsNoise": 1,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 2392.5832,
+        "p95": 2392.5832
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byCategory": {
+    "payments": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 1,
+      "detectedBugs": 1,
+      "missedBugs": 0,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 1,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 1,
+      "successfulCaseRecall": 1,
+      "precision": 1,
+      "precisionCountingDuplicatesAsNoise": 1,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 2392.5832,
+        "p95": 2392.5832
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byDomain": {
+    "payments": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 1,
+      "detectedBugs": 1,
+      "missedBugs": 0,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 1,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 1,
+      "successfulCaseRecall": 1,
+      "precision": 1,
+      "precisionCountingDuplicatesAsNoise": 1,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 2392.5832,
+        "p95": 2392.5832
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byRepetition": {
+    "1": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 1,
+      "detectedBugs": 1,
+      "missedBugs": 0,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 1,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 1,
+      "successfulCaseRecall": 1,
+      "precision": 1,
+      "precisionCountingDuplicatesAsNoise": 1,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 2392.5832,
+        "p95": 2392.5832
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  }
+}

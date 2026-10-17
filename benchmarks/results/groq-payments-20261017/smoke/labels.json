@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "runId": "b0ba8d32-1096-48a6-bdf2-366fef620d6e",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "reviewer": "Codex-assisted source/contract adjudication",
+  "method": "Source and contract inspection against frozen fixtures; not independent human review.",
+  "labels": [
+    {
+      "findingId": "8157a753eccd850cfaecc9d6",
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "verdict": "tp",
+      "bugId": "payments-declined-as-paid",
+      "rationale": "Correctly identifies the removed succeeded-status guard: a resolved declined gateway result reaches markPaid. This is the authored target failure, covered by the unchanged executable proof.",
+      "candidates": [
+        "payments-declined-as-paid"
+      ]
+    }
+  ]
+}

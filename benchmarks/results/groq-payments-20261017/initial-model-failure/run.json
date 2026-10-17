@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "b1be8ac4-0e72-4d26-b733-3ab92203c2ee",
+  "mode": "live",
+  "startedAt": "2026-10-17T17:39:45.877Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "4bce473e5275891d260cc63b6ae555133cea168b",
+  "implementationSha256": "a3f06b1fe221bf91951f40055ef0a19709e5fa31ffba24d882871da8da1b9cf6",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROK",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://docs.x.ai/developers/models/grok-4.3",
+    "asOf": "2026-10-17",
+    "basis": "Published standard global-endpoint short-context rates below 200k prompt tokens. Not an account invoice or a claim about discounts.",
+    "models": {
+      "GROK:grok-4.3": {
+        "inputPerMillion": 1.25,
+        "cachedInputPerMillion": 0.2,
+        "outputPerMillion": 2.5
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-declined-as-paid-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "repetition": 1,
+      "inputSha256": "f1ea6a7f66765b0606206e5ded8bb5375436c4122d799f496f8861c03683f12f",
+      "status": "error",
+      "durationMs": 1192.1109999999999,
+      "aiDurationMs": 846.4996000000001,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-invalid-request"
+    }
+  ],
+  "finishedAt": "2026-10-17T17:39:50.546Z"
+}

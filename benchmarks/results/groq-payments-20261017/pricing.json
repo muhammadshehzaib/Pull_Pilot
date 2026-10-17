@@ -1,0 +1,12 @@
+{
+  "source": "https://console.groq.com/docs/model/openai/gpt-oss-120b",
+  "asOf": "2026-10-17",
+  "basis": "Published standard Groq text token rates, not an account invoice; missing usage metadata remains unknown.",
+  "models": {
+    "GROQ:openai/gpt-oss-120b": {
+      "inputPerMillion": 0.15,
+      "cachedInputPerMillion": 0.075,
+      "outputPerMillion": 0.6
+    }
+  }
+}

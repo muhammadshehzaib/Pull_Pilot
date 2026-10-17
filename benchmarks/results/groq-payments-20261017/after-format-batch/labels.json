@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runId": "3c5e7ac8-ce91-4c5b-a059-b0d88f4a2ac9",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "reviewer": "Codex-assisted source/contract adjudication",
+  "method": "Source and contract inspection against frozen fixtures; not independent human review.",
+  "labels": [
+    {
+      "findingId": "c07074c870d1300f108e805e",
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "A missing/null/empty order identifier is hypothetical invalid order data without an evidenced path in the supplied input. The normal stable-ID retry contract is satisfied. The suggested randomId fallback also creates different keys on retries in the very scenario it proposes to address.",
+      "candidates": []
+    }
+  ]
+}

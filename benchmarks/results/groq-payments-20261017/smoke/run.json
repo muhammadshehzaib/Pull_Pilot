@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "id": "b0ba8d32-1096-48a6-bdf2-366fef620d6e",
+  "mode": "live",
+  "startedAt": "2026-10-17T17:42:10.487Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "4bce473e5275891d260cc63b6ae555133cea168b",
+  "implementationSha256": "a3f06b1fe221bf91951f40055ef0a19709e5fa31ffba24d882871da8da1b9cf6",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GROK",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": null,
+  "plannedCases": [
+    "seed-payments-declined-as-paid-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "repetition": 1,
+      "inputSha256": "f1ea6a7f66765b0606206e5ded8bb5375436c4122d799f496f8861c03683f12f",
+      "status": "ok",
+      "durationMs": 2392.5832,
+      "aiDurationMs": 2252.5139999999997,
+      "usage": [
+        {
+          "provider": "GROK",
+          "model": "openai/gpt-oss-120b",
+          "inputTokens": 2090,
+          "outputTokens": 704,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/confirmation.js",
+          "lineNumber": 3,
+          "issue": "The function no longer checks payment.status before marking the order paid. For declined or other non‑succeeded statuses, it still calls markPaid and returns true, violating the documented contract that only status=\"succeeded\" may mark an order paid.",
+          "suggestion": "Re‑introduce the status check before marking the order as paid, e.g.: if (payment.status !== \"succeeded\") return false; await markPaid(order.id); return true;",
+          "agentType": "BUG",
+          "priority": "HIGH"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    }
+  ],
+  "finishedAt": "2026-10-17T17:42:13.184Z"
+}

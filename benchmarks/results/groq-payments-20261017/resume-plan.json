@@ -1,0 +1,500 @@
+{
+  "service": "GROQ",
+  "model": "openai/gpt-oss-120b",
+  "policyCommit": "dead814b937229511f5cb80ad25d33c8c63f132c",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "scope": "100 authored domain cases only; original seeded and historical cases are outside this resume plan.",
+  "sourceRun": "3c5e7ac8-ce91-4c5b-a059-b0d88f4a2ac9",
+  "completed": [
+    "seed-payments-retry-idempotency-clean",
+    "seed-payments-declined-as-paid-clean",
+    "seed-payments-out-of-order-webhook-clean"
+  ],
+  "remaining": [
+    {
+      "caseId": "seed-database-tenant-update-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-tenant-update-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-rollback-boundary-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-rollback-boundary-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-foreign-key-enforcement-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-foreign-key-enforcement-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-lost-update-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-lost-update-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-null-predicate-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-null-predicate-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-unscoped-delete-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-unscoped-delete-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-cursor-tie-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-cursor-tie-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-case-insensitive-uniqueness-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-case-insensitive-uniqueness-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-sql-parameter-binding-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-sql-parameter-binding-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-cascade-delete-bug",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-database-cascade-delete-clean",
+      "domain": "database",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-negative-quantity-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-negative-quantity-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-cancel-owner-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-cancel-owner-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-ship-cancelled-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-ship-cancelled-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-double-restock-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-double-restock-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-price-snapshot-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-price-snapshot-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-discount-floor-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-discount-floor-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-digital-shipping-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-digital-shipping-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-create-retry-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-create-retry-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-shipping-per-line-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-shipping-per-line-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-partial-fulfillment-bug",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-orders-partial-fulfillment-clean",
+      "domain": "orders",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-client-amount-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-client-amount-clean",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-retry-idempotency-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-signature-bypass-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-signature-bypass-clean",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-partial-refund-limit-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-partial-refund-limit-clean",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-currency-mismatch-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-currency-mismatch-clean",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-out-of-order-webhook-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-clean",
+      "domain": "payments",
+      "priorStatus": "error"
+    },
+    {
+      "caseId": "seed-payments-webhook-replay-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-webhook-replay-clean",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-negative-refund-bug",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-payments-negative-refund-clean",
+      "domain": "payments",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-variant-stock-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-variant-stock-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-variant-price-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-variant-price-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-zero-price-update-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-zero-price-update-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-stale-cache-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-stale-cache-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-soft-delete-filter-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-soft-delete-filter-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-draft-publication-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-draft-publication-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-literal-search-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-literal-search-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-free-price-filter-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-free-price-filter-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-empty-stock-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-empty-stock-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-tenant-sku-bug",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-products-tenant-sku-clean",
+      "domain": "products",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-unawaited-payment-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-unawaited-payment-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-unawaited-rejection-assertion-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-unawaited-rejection-assertion-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-swallowed-assertion-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-swallowed-assertion-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-truthiness-money-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-truthiness-money-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-tautological-expectation-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-tautological-expectation-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-mock-system-under-test-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-mock-system-under-test-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-missing-assertion-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-missing-assertion-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-boundary-coverage-removed-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-boundary-coverage-removed-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-skipped-regression-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-skipped-regression-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-shared-state-bug",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    },
+    {
+      "caseId": "seed-test-cases-shared-state-clean",
+      "domain": "test-cases",
+      "priorStatus": "unattempted"
+    }
+  ]
+}
