@@ -7,7 +7,7 @@ const { sha, corpusHash, findingId, estimateCost, labelTemplate, score, markdown
 const root = path.resolve(__dirname, '..');
 const defaultCorpusPath = path.join(__dirname, 'corpus.json');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
-const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
+const write = require('./artifact-store.cjs').writeJson;
 function args(argv) {
   const result = {};
   for (let i = 0; i < argv.length; i += 2) {

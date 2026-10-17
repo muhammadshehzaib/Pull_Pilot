@@ -79,6 +79,8 @@ npm run benchmark -- --mode live --provider GEMINI --repetitions 3 --out .benchm
 `--case <id>`, `--limit N`, `--seed <text>` and
 `--timeout-ms N` select scope/order. Default timeout: 90 seconds per model call.
 The runner checkpoints every attempt and refuses to overwrite an existing run.
+Checkpoints use atomic replacement with bounded retries for transient Windows
+file locks, preserving the previous completed checkpoint if saving fails.
 Failed cases remain in recall's denominator, are counted separately, and are
 never called successful clean reviews. A failed/unavailable scanner is disclosed.
 An API failure may still have been billed; unknown cost is not zero.
