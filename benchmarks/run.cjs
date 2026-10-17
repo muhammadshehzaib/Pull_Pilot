@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process');
 const { performance } = require('node:perf_hooks');
 const { sha, findingId, estimateCost, labelTemplate, score, markdown } = require('./lib.cjs');
 const root = path.resolve(__dirname, '..');
-const corpusPath = path.join(__dirname, 'corpus.json');
+const defaultCorpusPath = path.join(__dirname, 'corpus.json');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 const write = (file, value) => fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');
 function args(argv) {
@@ -14,7 +14,7 @@ function args(argv) {
     if (!/^--[a-z-]+$/.test(argv[i]) || !argv[i + 1] || argv[i + 1].startsWith('--') || result[argv[i].slice(2)] !== undefined) throw new Error('Expected unique --option value pairs');
     result[argv[i].slice(2)] = argv[i + 1];
   }
-  const allowed = new Set(['mode', 'out', 'provider', 'limit', 'repetitions', 'timeout-ms', 'family', 'case', 'rates', 'run', 'labels', 'input', 'seed', 'left', 'right']);
+  const allowed = new Set(['mode', 'out', 'provider', 'limit', 'repetitions', 'timeout-ms', 'family', 'domain', 'corpus', 'case', 'rates', 'run', 'labels', 'input', 'seed', 'left', 'right']);
   for (const key of Object.keys(result)) if (!allowed.has(key)) throw new Error(`Unknown option: ${key}`);
   return result;
 }
@@ -62,6 +62,7 @@ function ensureBuilt() {
 }
 async function main() {
   const opts = args(process.argv.slice(2));
+  const corpusPath = path.resolve(opts.corpus || defaultCorpusPath);
   const mode = opts.mode || 'scanners';
   if (!['scanners', 'live', 'score', 'import', 'export', 'compare'].includes(mode)) throw new Error('Invalid mode');
   const corpus = read(corpusPath);
@@ -87,7 +88,7 @@ async function main() {
     console.log(JSON.stringify(report.overall));
     return;
   }
-  let selected = corpus.cases.filter(c => (!opts.family || c.family === opts.family) && (!opts.case || c.id === opts.case));
+  let selected = corpus.cases.filter(c => (!opts.family || c.family === opts.family) && (!opts.domain || c.domain === opts.domain) && (!opts.case || c.id === opts.case));
   if (!selected.length) throw new Error('No matching cases');
   // Stable blind ordering; no conversational state is shared across cases.
   const seed = opts.seed || 'pullpilot-v1';

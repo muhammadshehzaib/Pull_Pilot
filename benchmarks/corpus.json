@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "version": "domain-v2",
   "description": "Paired authored mutations and selected source changes from pinned historical bug-fix PRs. Ground truth is never passed to the reviewer.",
   "cases": [
     {

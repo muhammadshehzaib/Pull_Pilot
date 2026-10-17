@@ -6,11 +6,16 @@ competitor. The checked-in baseline runs **offline scanners only**, not an AI mo
 
 ## Dataset
 
-`corpus.json` contains **92 distinct changes**:
+`corpus.json` (domain-v2) contains **192 distinct changes / 96 labelled bugs**:
 
 - 40 authored bug introductions and 40 paired fixes. All 40 mutations have an
   executable reproduction in `reproduction.test.cjs`; the safe and buggy versions
   are checked against the same trigger with in-memory stubs.
+- 50 domain-specific bug introductions and 50 paired fixes: **10 each for
+  payments, orders, products, database operations, and faulty test cases**.
+  Every domain bug has an executable proof in `domains/`. Database proofs run
+  real SQL against disposable in-memory SQLite databases; other groups use
+  explicit local gateway/service test doubles. See [domain scenarios](domains/README.md).
 - 6 public merged bug-fix PRs from Axios/body-parser, each converted into a source
   fix control and a reverse-fix regression. These are **selected source-file
   reconstructions, not original bug-introducing PRs**. Original regression tests,
@@ -66,16 +71,30 @@ or database vaults. Every case has a fresh request and no shared chat history.
 # Smoke run first: at most four paid requests, no automatic retries.
 npm run benchmark -- --mode live --provider GEMINI --limit 4 --out .benchmark-runs/gemini-smoke
 
-# Full corpus, repeated three times: 276 paid requests.
+# Full corpus, repeated three times: 576 paid requests.
 npm run benchmark -- --mode live --provider GEMINI --repetitions 3 --out .benchmark-runs/gemini-full
 ```
 
-`--family seeded|historical-pr`, `--case <id>`, `--limit N`, `--seed <text>` and
+`--family seeded|domain|historical-pr`, `--domain payments|orders|products|database|test-cases`,
+`--case <id>`, `--limit N`, `--seed <text>` and
 `--timeout-ms N` select scope/order. Default timeout: 90 seconds per model call.
 The runner checkpoints every attempt and refuses to overwrite an existing run.
 Failed cases remain in recall's denominator, are counted separately, and are
 never called successful clean reviews. A failed/unavailable scanner is disclosed.
 An API failure may still have been billed; unknown cost is not zero.
+
+Select one domain to review its ten bugs and ten fixed controls independently:
+
+```powershell
+npm run benchmark -- --mode scanners --domain payments --out .benchmark-runs/payments
+npm run benchmark:test:domains
+```
+
+Reports include separate per-domain and per-category metrics. All 90 authored
+targets (40 original plus 50 domain targets) have executable failure/fix proofs.
+SQLite proofs require Node 22.13+ or a newer supported runtime with `node:sqlite`.
+The domain proof suite is distinct from running the reviewer: a passing proof
+establishes the fixture's regression, not that PullPilot detected it.
 
 ## Cost
 
@@ -212,3 +231,13 @@ evidence of a competitive advantage.
 GitHub endpoints; normal runs require no GitHub credentials or network. Refreshes
 are never automatic. Review changed pins, labels and licenses, then version the
 corpus. Old labels/results are rejected against a different corpus hash.
+
+The original 92-case dataset is frozen in `corpora/v1.json`. The earlier
+`results/scanner-baseline-v1` remains unchanged and can be rescored explicitly:
+
+```powershell
+npm run benchmark -- --mode score --corpus benchmarks/corpora/v1.json --run benchmarks/results/scanner-baseline-v1/run.json --labels benchmarks/results/scanner-baseline-v1/labels.json
+```
+
+Do not compare the old 46-bug recall directly with the expanded 96-bug recall;
+they use different inputs and denominators. The comparator rejects such runs.

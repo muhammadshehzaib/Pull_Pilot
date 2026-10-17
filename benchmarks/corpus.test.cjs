@@ -57,3 +57,17 @@ test('every patch applies exactly to its frozen before tree', () => {
 test('historical sources match their stored hashes', () => {
   for (const snapshot of require('./real-pr-snapshots.json')) assert.equal(sha(JSON.stringify(snapshot.files)), snapshot.provenance.sourceSha256);
 });
+test('five domain groups each contain ten targets with matching proof definitions', () => {
+  const authored = require('./domains/support.cjs').loadDomains();
+  assert.equal(authored.length, 50);
+  for (const domain of ['payments', 'orders', 'products', 'database', 'test-cases']) {
+    assert.equal(authored.filter(item => item.domain === domain).length, 10);
+    assert.equal(corpus.cases.filter(item => item.domain === domain).length, 20);
+  }
+});
+test('the original baseline remains reproducible with its frozen v1 corpus', () => {
+  const frozen = require('./corpora/v1.json');
+  const run = require('./results/scanner-baseline-v1/run.json');
+  const labels = require('./results/scanner-baseline-v1/labels.json');
+  assert.equal(require('./lib.cjs').score(run, frozen, labels).overall.recall, 5 / 46);
+});

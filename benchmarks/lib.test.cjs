@@ -77,3 +77,13 @@ test('comparison rejects mismatched inputs and discloses incompatible timing sco
   other.results[0].inputSha256 = 'changed';
   assert.throws(() => compare(run, other, report, report), /identical/);
 });
+test('domain aggregation keeps domain and category separate', () => {
+  const { run, corpus } = fixture();
+  corpus.cases[0].domain = 'payments';
+  corpus.cases[1].domain = 'payments';
+  run.corpusSha256 = sha(JSON.stringify(corpus, null, 2) + '\n');
+  const report = score(run, corpus, labelTemplate(run, corpus));
+  assert.equal(report.byDomain.payments.cases, 2);
+  assert.equal(report.byDomain.payments.knownBugs, 1);
+  assert.equal(report.byCategory.logic.cases, 2);
+});

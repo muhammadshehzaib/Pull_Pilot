@@ -57,7 +57,7 @@ function buildCorpus() {
       }
     }
   }
-  const corpus = { schemaVersion: 1, description: 'Paired authored mutations and selected source changes from pinned historical bug-fix PRs. Ground truth is never passed to the reviewer.', cases: records };
+  const corpus = { schemaVersion: 1, version: 'domain-v2', description: 'Paired authored mutations and selected source changes from pinned historical bug-fix PRs. Ground truth is never passed to the reviewer.', cases: records };
   const output = JSON.stringify(corpus, null, 2) + '\n';
   fs.writeFileSync(path.join(__dirname, 'corpus.json'), output);
   console.log(JSON.stringify({ cases: records.length, knownBugs: records.reduce((n, c) => n + c.expectedBugs.length, 0), sha256: sha(output) }));
