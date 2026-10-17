@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "8626b06a-fe9d-47f6-9161-b53c0892abd4",
+  "mode": "live",
+  "startedAt": "2026-10-17T12:01:47.687Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "5ec23eab32ebb7b723e7e7057719f55dd93bc43c",
+  "implementationSha256": "7ec2a90bab2c177f95cd8064351d486a77d3eca5448a5765b917278676369dc6",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GEMINI",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash",
+    "asOf": "2026-10-17",
+    "basis": "Published standard paid-tier text rates; account billing tier and free quota are not inferred.",
+    "models": {
+      "GEMINI:gemini-2.5-flash": {
+        "inputPerMillion": 0.3,
+        "outputPerMillion": 2.5,
+        "cachedInputPerMillion": 0.03
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-webhook-replay-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-webhook-replay-bug",
+      "repetition": 1,
+      "inputSha256": "11bcedd70c6090e5c5179df7f896525bc1dca55e2305b12cf4f704655da781a6",
+      "status": "error",
+      "durationMs": 1294.3734,
+      "aiDurationMs": 1212.3968,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-rate-limited"
+    }
+  ],
+  "finishedAt": "2026-10-17T12:01:49.151Z"
+}

@@ -8,6 +8,10 @@ The [expanded domain baseline](results/scanner-baseline-v2/findings.md) records
 576 completed scanner attempts and the separate domain commits. The original
 92-case baseline remains available under `results/scanner-baseline-v1`.
 
+The [first live Gemini payment run](results/payments-gemini-20261017/findings.md)
+completed 18 of 20 reviews, detected all eight known bugs in completed buggy
+cases, and preserved provider errors and unsupported warnings for inspection.
+
 ## Dataset
 
 `corpus.json` (domain-v2) contains **192 distinct changes / 96 labelled bugs**:

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "runId": "200d3f77-8fa6-4ea2-9c10-d6a4bf87b1e6",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "reviewer": null,
+  "method": "manual; keyword candidates are hints only",
+  "labels": [
+    {
+      "findingId": "e24c360c5e84a7903ec61543",
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "verdict": "pending",
+      "bugId": null,
+      "rationale": "",
+      "candidates": []
+    }
+  ]
+}

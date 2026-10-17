@@ -1,0 +1,1164 @@
+{
+  "schemaVersion": 1,
+  "id": "af16bf7a-06e9-4739-ab20-48ae387db96f",
+  "mode": "live",
+  "startedAt": "2026-10-17T11:55:33.449Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "5ec23eab32ebb7b723e7e7057719f55dd93bc43c",
+  "implementationSha256": "7ec2a90bab2c177f95cd8064351d486a77d3eca5448a5765b917278676369dc6",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GEMINI",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": {
+    "source": "https://ai.google.dev/gemini-api/docs/pricing#gemini-2.5-flash",
+    "asOf": "2026-10-17",
+    "basis": "Published standard paid-tier text rates; account billing tier and free quota are not inferred.",
+    "models": {
+      "GEMINI:gemini-2.5-flash": {
+        "inputPerMillion": 0.3,
+        "outputPerMillion": 2.5,
+        "cachedInputPerMillion": 0.03
+      }
+    }
+  },
+  "plannedCases": [
+    "seed-payments-retry-idempotency-clean",
+    "seed-payments-out-of-order-webhook-clean",
+    "seed-payments-declined-as-paid-clean",
+    "seed-payments-zero-decimal-currency-clean",
+    "seed-payments-webhook-replay-clean",
+    "seed-payments-client-amount-clean",
+    "seed-payments-partial-refund-limit-clean",
+    "seed-payments-client-amount-bug",
+    "seed-payments-zero-decimal-currency-bug",
+    "seed-payments-currency-mismatch-bug",
+    "seed-payments-retry-idempotency-bug",
+    "seed-payments-currency-mismatch-clean",
+    "seed-payments-negative-refund-clean",
+    "seed-payments-partial-refund-limit-bug",
+    "seed-payments-signature-bypass-bug",
+    "seed-payments-out-of-order-webhook-bug",
+    "seed-payments-signature-bypass-clean",
+    "seed-payments-webhook-replay-bug",
+    "seed-payments-negative-refund-bug",
+    "seed-payments-declined-as-paid-bug"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "repetition": 1,
+      "inputSha256": "bfa0be5f63183c13dfd665a4cc52607ba74ac5487974e1c573cf733ddc78700f",
+      "status": "ok",
+      "durationMs": 29856.399699999998,
+      "aiDurationMs": 29779.233099999998,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1586,
+          "outputTokens": 6212,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "Using 'order.id' directly as the idempotencyKey for the payment gateway might lead to unintended deduplication across different orders if 'order.id' is not globally unique within the gateway's scope. This could cause legitimate payments to fail.",
+          "suggestion": "Verify that 'order.id' is guaranteed to be a globally unique identifier (e.g., a UUID) across all payment operations handled by the gateway. If not, consider a mechanism to derive a globally unique idempotency key from 'order.id' that remains stable for retries of the same order.",
+          "agentType": "CORRECTNESS",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_3a98472e2b3c8903bee3e1f66261fdae"
+        },
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "If 'order.id' can be null or undefined, the idempotencyKey will be an invalid value. This could cause the gateway.charge call to fail or behave unexpectedly, leading to payment processing errors.",
+          "suggestion": "Add validation or a fallback to ensure 'order.id' is a valid, non-empty string before use. For instance, throw an error if missing, or use a default mechanism to ensure a valid key is always provided. Example: 'idempotencyKey: order.id || generateFallbackIdempotencyKey()'.",
+          "agentType": "BUG",
+          "priority": "MEDIUM",
+          "verifiedAnchor": "a1_3a98472e2b3c8903bee3e1f66261fdae"
+        },
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "The change to use 'order.id' directly for the idempotency key makes the 'randomId' parameter in the 'pay' function signature (line 1) unused.",
+          "suggestion": "Remove the 'randomId' parameter from the 'pay' function signature as it is no longer utilized after this modification. This improves code clarity and avoids confusion for future maintainers.",
+          "agentType": "MAINTAINABILITY",
+          "priority": "LOW",
+          "verifiedAnchor": "a1_3a98472e2b3c8903bee3e1f66261fdae"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 3,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-out-of-order-webhook-clean",
+      "repetition": 1,
+      "inputSha256": "6573a9beca679b3dcc702bb4eaddf2d483229dff2ab1933b86723823bc477d73",
+      "status": "ok",
+      "durationMs": 21680.812599999997,
+      "aiDurationMs": 21598.574600000004,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1549,
+          "outputTokens": 4151,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/status.js",
+          "lineNumber": 2,
+          "issue": "Payment status relies on magic string literals, increasing the risk of typos and inconsistent state handling across the codebase. A misspelled status string will silently fail to enforce critical business rules.",
+          "suggestion": "Introduce an enum or a set of predefined constants for payment statuses. This centralizes valid states, enables compile-time checking for typos (if using TypeScript), and improves the robustness and readability of status comparisons. For example, define `PaymentStatus.SUCCEEDED` and use it consistently.",
+          "agentType": "MAINTAINABILITY",
+          "priority": "MEDIUM",
+          "verifiedAnchor": "a1_917afa3fe2ce799ce482e4a1dc6e3ac4"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-declined-as-paid-clean",
+      "repetition": 1,
+      "inputSha256": "fb47e07c7a3c806349bca16d10aac90ce991c01c97cece8e2b847f8d59251797",
+      "status": "ok",
+      "durationMs": 27100.3808,
+      "aiDurationMs": 27024.141499999998,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1586,
+          "outputTokens": 5318,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/confirmation.js",
+          "lineNumber": 3,
+          "issue": "The `confirm` function now returns a generic `false` for all non-succeeded payment statuses. This design choice prevents callers from distinguishing between different failure reasons, such as 'declined' or 'pending', which may require distinct follow-up actions per `docs/review-contract.md`.",
+          "suggestion": "Consider modifying `confirm` to return a more granular result object that includes the `payment.status` string for non-succeeded outcomes. This allows the calling code to implement specific logic for various failure types, improving system robustness and user experience, e.g., `return { success: false, status: payment.status, orderId: order.id };`.",
+          "agentType": "ARCHITECTURE",
+          "priority": "MEDIUM",
+          "verifiedAnchor": "a1_add4ce36867255402afcf86bda4baea1"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-clean",
+      "repetition": 1,
+      "inputSha256": "ecdce365330308cfadc3906c1d40327d36889ed513c6cb0741af6897258f4918",
+      "status": "ok",
+      "durationMs": 12054.642999999996,
+      "aiDurationMs": 11973.041200000007,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1611,
+          "outputTokens": 2479,
+          "cachedInputTokens": 970,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.006418900000000001,
+      "findings": [
+        {
+          "filePath": "src/payments/currency.js",
+          "lineNumber": 2,
+          "issue": "Hardcoded currency factor assumes two decimal places for all non-JPY currencies, leading to incorrect minor unit conversions for currencies with different decimal precisions (e.g., KWD, VND, KRW) as stated in docs/review-contract.md.",
+          "suggestion": "Use a comprehensive and up-to-date currency data source (e.g., ISO 4217 standard data) to determine the correct decimal places for each currency. This ensures accurate conversion to minor units for all supported currencies, preventing financial discrepancies. For example, use a map: `const decimalPlaces = currencyDecimalMap[currency] || defaultDecimalPlaces; const factor = Math.pow(10, decimalPlaces);`",
+          "agentType": "BUG",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_f6b498d588b2a5540c9f13e753d2bfd6"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-webhook-replay-clean",
+      "repetition": 1,
+      "inputSha256": "ea7c2dfbd1435c4d809083964ae30b446525a6ee028726ed42c97c0363ef9e4d",
+      "status": "ok",
+      "durationMs": 29644.728399999993,
+      "aiDurationMs": 29568.661900000006,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1569,
+          "outputTokens": 6316,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/fulfillment.js",
+          "lineNumber": 2,
+          "issue": "Race condition allows multiple fulfillments for the same event ID. When `processEvent` is called concurrently, both calls may pass `seen.has()` before any ID is added, causing `fulfill(event.orderId)` to execute multiple times, violating the 'fulfill once' contract (docs/review-contract.md).",
+          "suggestion": "The `if (seen.has(event.id)) return;` check is susceptible to race conditions. If `processEvent` is called concurrently with the same `event.id`, both calls might pass the `has` check before either adds to `seen`, leading to duplicate `fulfill` calls. To guarantee exactly-once processing, implement an atomic check-and-add. For single-process environments, consider using a temporary `processingEvents` Set to track in-flight IDs: add to `processingEvents` before calling `fulfill`, then add to `seen` on success, and remove from `processingEvents` in a `finally` block. For distributed systems, a persistent store with atomic operations (e.g., Redis `SETNX` or a database with unique constraints) is necessary to ensure global uniqueness.",
+          "agentType": "BUG",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_0b8bb68ea14f988b2b5f8ca2243d0f9b"
+        },
+        {
+          "filePath": "src/payments/fulfillment.js",
+          "lineNumber": 2,
+          "issue": "The `seen` Set may grow indefinitely, leading to memory exhaustion in long-running processes that handle a large volume of unique `event.id` values, as there is no mechanism to evict old entries.",
+          "suggestion": "Implement a strategy to bound the size of the `seen` collection. This could involve using a time-to-live (TTL) cache (e.g., an LRU cache or a custom implementation that expires entries after a certain period) or persisting `event.id` values to a database with a suitable retention policy. Ensure the eviction policy aligns with business requirements for idempotency over time.",
+          "agentType": "PERFORMANCE",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_0b8bb68ea14f988b2b5f8ca2243d0f9b"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 2,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-client-amount-clean",
+      "repetition": 1,
+      "inputSha256": "260e17526f6dab35bb68803972515bd9feae79654c3e595a30f2fd1fe3de3cee",
+      "status": "ok",
+      "durationMs": 16741.83160000002,
+      "aiDurationMs": 16660.2482,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1570,
+          "outputTokens": 3554,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/checkout.js",
+          "lineNumber": 2,
+          "issue": "The `body` parameter to the `charge` function is now unused after this change.",
+          "suggestion": "Since the `amountCents` is now correctly derived from `order.totalCents` and no other properties of the `body` parameter are accessed within this function (based on the visible code), consider removing `body` from the function signature (`export async function charge(order, gateway)`). This improves API clarity and reduces potential for accidental misuse, reinforcing the security improvement made by this diff.",
+          "agentType": "MAINTAINABILITY",
+          "priority": "LOW",
+          "verifiedAnchor": "a1_3fc191ae2e3d81afd9854f1e434877b0"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-partial-refund-limit-clean",
+      "repetition": 1,
+      "inputSha256": "c6039a30f4a1173b83199419a64766381d195075b95f7348068b31b98139dc33",
+      "status": "ok",
+      "durationMs": 13430.0331,
+      "aiDurationMs": 13357.931299999997,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1627,
+          "outputTokens": 2890,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/refunds.js",
+          "lineNumber": 2,
+          "issue": "A race condition allows concurrent refund requests to bypass the `refundedCents` check, leading to cumulative refunds exceeding the `capturedCents`. This can result in financial discrepancies and over-refunding.",
+          "suggestion": "To prevent over-refunding, the check for available balance and the subsequent update to `payment.refundedCents` must be atomic. Implement pessimistic or optimistic locking on the `payment` record within a database transaction. The transaction should re-read `payment.refundedCents`, perform the check, call `gateway.refund`, update the `refundedCents`, and save the record. This ensures that concurrent operations do not proceed with stale data. For example: `await db.transaction(async tx => { const lockedPayment = await tx.findPaymentById(payment.id, { lock: true }); if (amountCents > lockedPayment.capturedCents - lockedPayment.refundedCents) throw new Error(\"Refund exceeds remaining\"); await gateway.refund(amountCents); lockedPayment.refundedCents += amountCents; await tx.savePayment(lockedPayment); });`",
+          "agentType": "SECURITY",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_efec0704322fd596f96158d895e1fefe"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-client-amount-bug",
+      "repetition": 1,
+      "inputSha256": "57d13cdb9b06618cb3b9384edd4fa322989f6731ea1d8b1df36dac99019bcd84",
+      "status": "ok",
+      "durationMs": 6070.937000000005,
+      "aiDurationMs": 5992.343599999993,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1571,
+          "outputTokens": 1127,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/checkout.js",
+          "lineNumber": 2,
+          "issue": "The payment amount (`amountCents`) is now sourced from the untrusted request `body` instead of the server-owned `order.totalCents`, violating `docs/review-contract.md` and allowing arbitrary price manipulation.",
+          "suggestion": "An attacker can send a lower `body.amountCents` to pay less than the actual order total, causing direct financial loss. Revert to `order.totalCents` for the charge amount. Sensitive financial data must always be controlled and sourced from the server, never directly from untrusted client input.",
+          "agentType": "SECURITY",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_a856536257d2789b10c1edd4836e291c"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-zero-decimal-currency-bug",
+      "repetition": 1,
+      "inputSha256": "4c1b6b17f7fced658faaec4e4c0f5db417872e13dffc473d62f9509b486f22c7",
+      "status": "ok",
+      "durationMs": 8796.90479999999,
+      "aiDurationMs": 8722.026099999988,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1579,
+          "outputTokens": 1688,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/currency.js",
+          "lineNumber": 2,
+          "issue": "The hardcoded currency conversion factor of 100 disregards the `docs/review-contract.md` specification for JPY, which requires zero decimal places (a factor of 1). This will lead to JPY amounts being incorrectly multiplied by 100.",
+          "suggestion": "Revert the change to reinstate currency-specific logic, ensuring JPY amounts use a factor of 1 for minor unit conversion, while currencies like USD correctly use 100. Failure to do so will result in 100x financial miscalculations for all JPY transactions.",
+          "agentType": "BUG",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_a9aef0cf17e55ae7feff61e70e834c63"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-currency-mismatch-bug",
+      "repetition": 1,
+      "inputSha256": "c73f1037e2817511988b79a97efa1d375e1052ae05b8fdaff6362866da50952d",
+      "status": "ok",
+      "durationMs": 5404.369399999996,
+      "aiDurationMs": 5328.669300000009,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1554,
+          "outputTokens": 1084,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/reconciliation.js",
+          "lineNumber": 2,
+          "issue": "The payment reconciliation logic no longer checks for currency matching, violating the explicit contract that 'A settled payment must match both the order currency and its integer minor-unit amount' (docs/review-contract.md).",
+          "suggestion": "Reinstate the currency check to ensure payments are only matched if both amount and currency align with the order. This is a critical financial correctness and security control. Failing to check currency can lead to incorrect payment processing, financial discrepancies, and and potential fraud. The line should be restored to: `return payment.amount === order.amount && payment.currency === order.currency;`",
+          "agentType": "SECURITY",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_07b10dd5a54f6d8792712044d59ff3b5"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-retry-idempotency-bug",
+      "repetition": 1,
+      "inputSha256": "fa204f905636fe02f98f019e74681991c0b63b2a2e9f5c696b585e50d4837438",
+      "status": "ok",
+      "durationMs": 10553.263999999996,
+      "aiDurationMs": 10479.999299999996,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1587,
+          "outputTokens": 2222,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "The change to use `randomId()` for `idempotencyKey` will cause multiple charges for the same order on retries, directly violating the contract in `docs/review-contract.md`.",
+          "suggestion": "The `docs/review-contract.md` states: 'Retries of the same order must create one charge. The gateway deduplicates by idempotencyKey; randomId returns a new ID each call.' Using `randomId()` will generate a new key for each attempt, preventing idempotency and leading to duplicate charges for retaged orders. Revert to a stable identifier like `order.id` to ensure retries are correctly deduplicated, e.g., `idempotencyKey: order.id`.",
+          "agentType": "BUG",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_2f1115b4f8d9e14b900404cd03ad9732"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-currency-mismatch-clean",
+      "repetition": 1,
+      "inputSha256": "f77a9d3a0f024fff09e6917b4c546d9880118084579dd51738ca3c7867abd66e",
+      "status": "ok",
+      "durationMs": 26156.970499999996,
+      "aiDurationMs": 26079.533800000005,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1552,
+          "outputTokens": 5182,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/reconciliation.js",
+          "lineNumber": 2,
+          "issue": "The amount comparison `payment.amount === order.amount` lacks explicit type and scale validation, risking incorrect payment reconciliation. The contract (docs/review-contract.md) specifies 'integer minor-unit amount', implying the need for robust handling against potential type mismatches (e.g., string vs. number) or scale differences (e.g., float dollars vs. integer cents from external systems).",
+          "suggestion": "Implement explicit type and scale conversion/validation for both `payment.amount` and `order.amount` to ensure they are consistently treated as integer minor units before comparison. This prevents errors from string inputs (e.g., `'10000'`) or float values representing major units (e.g., `100.00`). Consider using `BigInt` for arbitrary precision arithmetic or a dedicated money/currency library for robust financial comparisons.",
+          "agentType": "BUG",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_1bb5770964ee1a6f4f2f7add452fef85"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-negative-refund-clean",
+      "repetition": 1,
+      "inputSha256": "c28fe284cf0e6da7ae93f2fff51af2633d0922fdb941a8bfc188870095f38f5e",
+      "status": "ok",
+      "durationMs": 7830.252699999983,
+      "aiDurationMs": 7756.923899999994,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1602,
+          "outputTokens": 1569,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/refund-validation.js",
+          "lineNumber": 2,
+          "issue": "The error message \"invalid amount\" is too generic. When `amountCents` is not a positive safe integer (e.g., negative, zero, float, or unsafe integer), the generic message doesn't help in debugging or understanding the exact validation failure.",
+          "suggestion": "Improve the error message to be more specific about the validation failure. For instance, `throw new Error(\"Refund amount must be a positive safe integer.\");` This provides clear feedback on the expected format and value range, as documented in `docs/review-contract.md`.",
+          "agentType": "MAINTAINABILITY",
+          "priority": "LOW",
+          "verifiedAnchor": "a1_d6f18608ccb4aa04bb3715a939d3e346"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-partial-refund-limit-bug",
+      "repetition": 1,
+      "inputSha256": "4f25e4ff6c371b87eb636e5786be2767e223259cdf3d0fc45428f82d2a8923fe",
+      "status": "ok",
+      "durationMs": 8321.392099999997,
+      "aiDurationMs": 8249.09639999998,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1629,
+          "outputTokens": 1692,
+          "cachedInputTokens": 971,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.004456529999999999,
+      "findings": [
+        {
+          "filePath": "src/payments/refunds.js",
+          "lineNumber": 2,
+          "issue": "The new refund validation logic allows refunding more than the remaining refundable amount, violating the contract that total refunds must not exceed captured funds (docs/review-contract.md). This can lead to financial loss or incorrect accounting.",
+          "suggestion": "The condition `amountCents > payment.capturedCents` is incorrect for partial refunds, as `payment.capturedCents` represents the total captured, not the remaining refundable balance. It should compare `amountCents` against `payment.capturedCents - payment.refundedCents` to prevent over-refunding. Revert to the previous logic: `if (amountCents > payment.capturedCents - payment.refundedCents) throw new Error(\"refund exceeds remaining\");`",
+          "agentType": "BUG",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_857044f292bd0bb16bd62b20e2926cfd"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-signature-bypass-bug",
+      "repetition": 1,
+      "inputSha256": "7bc868fd1b9e9a28c6a2bc7bca0ff985475f677175f1d92d400a20eb044595d8",
+      "status": "ok",
+      "durationMs": 9793.137899999972,
+      "aiDurationMs": 9712.879000000015,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1554,
+          "outputTokens": 2091,
+          "cachedInputTokens": 969,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.00543207,
+      "findings": [
+        {
+          "filePath": "src/payments/webhooks.js",
+          "lineNumber": 3,
+          "issue": "Critical: The webhook signature verification check has been removed, allowing unauthenticated requests to mark arbitrary orders as paid.",
+          "suggestion": "Reintroduce the signature verification using the `verify` function at the beginning of the `webhook` function, as specified in `docs/review-contract.md`. Without this, an attacker can forge webhook requests and trigger `markPaid` for any `orderId`. Ensure `verify(rawBody, signature)` is called and an error is thrown if it fails, before parsing the body or marking paid. For example:\n```javascript\nexport async function webhook(rawBody, signature, verify, markPaid) {\n  if (!verify(rawBody, signature)) {\n    throw new Error(\"Invalid signature\");\n  }\n  const event = JSON.parse(rawBody);\n  return markPaid(event.orderId);\n}\n```",
+          "agentType": "SECURITY",
+          "priority": "CRITICAL"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-out-of-order-webhook-bug",
+      "repetition": 1,
+      "inputSha256": "dc569f4e0f5c363ee2bdddee4eee05afc7785f6e9320cd7eee9037c88679074e",
+      "status": "ok",
+      "durationMs": 10508.228399999993,
+      "aiDurationMs": 10434.185899999982,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1523,
+          "outputTokens": 2137,
+          "cachedInputTokens": 968,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": 0.00553804,
+      "findings": [
+        {
+          "filePath": "src/payments/status.js",
+          "lineNumber": 0,
+          "issue": "The removal of the status check allows 'succeeded' payments to be downgraded, violating the contract in docs/review-contract.md which explicitly states that a succeeded status is terminal. This can lead to incorrect financial states or reconciliation errors.",
+          "suggestion": "Reintroduce the guard condition to prevent a 'succeeded' payment from being modified to any other status. For example, add back `if (payment.status === \"succeeded\" && event.status !== \"succeeded\") return;` at the beginning of the `applyEvent` function to maintain data integrity and adhere to the documented business rule.",
+          "agentType": "BUG",
+          "priority": "CRITICAL"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-signature-bypass-clean",
+      "repetition": 1,
+      "inputSha256": "12afedbf92779d8ab01bd7ee50bc3e38ebd6e17a5cc9737eff3759d84926fc2f",
+      "status": "ok",
+      "durationMs": 18243.050900000002,
+      "aiDurationMs": 18166.368199999968,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1585,
+          "outputTokens": 3821,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/webhooks.js",
+          "lineNumber": 2,
+          "issue": "Failed webhook signature verification attempts are not logged, hindering security monitoring and detection of potential attack attempts (e.g., brute-force or probing).",
+          "suggestion": "Add a log entry with relevant details (e.g., source IP, webhook ID, partial signature) at a warning or error level when signature verification fails. This ensures auditability and visibility for security teams. For example: `console.warn('Webhook signature verification failed', { rawBodyLength: rawBody.length /* add other non-sensitive context */ });` before throwing the error. Avoid logging the full signature directly.",
+          "agentType": "SECURITY",
+          "priority": "HIGH",
+          "verifiedAnchor": "a1_009c2898d4383d3a4c2cf3c551a11c7b"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-webhook-replay-bug",
+      "repetition": 1,
+      "inputSha256": "11bcedd70c6090e5c5179df7f896525bc1dca55e2305b12cf4f704655da781a6",
+      "status": "error",
+      "durationMs": 12565.826300000015,
+      "aiDurationMs": 12497.149199999985,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-provider-unavailable"
+    },
+    {
+      "caseId": "seed-payments-negative-refund-bug",
+      "repetition": 1,
+      "inputSha256": "eb88074f338a4b911bda13ad3afa787f73c87e6560e85ab9ed5903c4facefa21",
+      "status": "ok",
+      "durationMs": 16313.05369999999,
+      "aiDurationMs": 16243.308499999985,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1598,
+          "outputTokens": 1753,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/refund-validation.js",
+          "lineNumber": 2,
+          "issue": "The removal of the `amountCents <= 0` check allows non-positive refund amounts, violating the `docs/review-contract.md` requirement for a \"positive safe integer number of cents\". A negative amount could lead to users being charged or financial discrepancies.",
+          "suggestion": "Reintroduce the check to ensure `amountCents` is strictly positive, as required by the contract. This prevents processing of zero or negative refund amounts, which could lead to financial inconsistencies or unexpected charges if a payment gateway interprets a negative refund as a debit. Example: `if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error(\"invalid amount\");`",
+          "agentType": "SECURITY",
+          "priority": "CRITICAL",
+          "verifiedAnchor": "a1_7ceab48434eeae5736def3dc1461dd52"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    },
+    {
+      "caseId": "seed-payments-declined-as-paid-bug",
+      "repetition": 1,
+      "inputSha256": "f1ea6a7f66765b0606206e5ded8bb5375436c4122d799f496f8861c03683f12f",
+      "status": "error",
+      "durationMs": 445.2829999999958,
+      "aiDurationMs": 374.1334999999963,
+      "usage": [],
+      "costUsd": null,
+      "findings": [],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "error": "ai-rate-limited"
+    }
+  ],
+  "finishedAt": "2026-10-17T12:00:25.227Z"
+}

@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "id": "200d3f77-8fa6-4ea2-9c10-d6a4bf87b1e6",
+  "mode": "live",
+  "startedAt": "2026-10-17T11:54:18.148Z",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "gitCommit": "5ec23eab32ebb7b723e7e7057719f55dd93bc43c",
+  "implementationSha256": "7ec2a90bab2c177f95cd8064351d486a77d3eca5448a5765b917278676369dc6",
+  "lockfileSha256": "a99bcb278f1b0f4ab42be2ea01dadf11f554af7685044f73722a78432a56aba8",
+  "runtime": "v22.20.0",
+  "seed": "pullpilot-v1",
+  "repetitions": 1,
+  "timingScope": "review-core",
+  "provider": "GEMINI",
+  "scope": "Diff filtering, frozen supplied context, provider analyzeCode (live only), built-in offline scanners, anchoring, severity filtering, deduplication, risk. Excludes context discovery, repository rules, test-gap calls, queue/API/GitHub delivery.",
+  "config": {
+    "timeoutMs": 90000,
+    "osv": false,
+    "semgrep": false,
+    "minSeverity": "low"
+  },
+  "pricing": null,
+  "plannedCases": [
+    "seed-payments-retry-idempotency-clean"
+  ],
+  "results": [
+    {
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "repetition": 1,
+      "inputSha256": "bfa0be5f63183c13dfd665a4cc52607ba74ac5487974e1c573cf733ddc78700f",
+      "status": "ok",
+      "durationMs": 32616.128200000003,
+      "aiDurationMs": 32500.2065,
+      "usage": [
+        {
+          "provider": "GEMINI",
+          "model": "gemini-2.5-flash",
+          "inputTokens": 1586,
+          "outputTokens": 6352,
+          "cachedInputTokens": null,
+          "cacheWriteTokens": 0
+        }
+      ],
+      "costUsd": null,
+      "findings": [
+        {
+          "filePath": "src/payments/charge.js",
+          "lineNumber": 2,
+          "issue": "The change on this line to use `order.id` for idempotency renders the `randomId` parameter in the `pay` function signature (line 1) unused. This introduces dead code.",
+          "suggestion": "Remove the `randomId` parameter from the `export async function pay(order, gateway, randomId)` function signature. This clarifies the function's contract and improves maintainability by eliminating an unnecessary dependency.",
+          "agentType": "MAINTAINABILITY",
+          "priority": "LOW",
+          "verifiedAnchor": "a1_3a98472e2b3c8903bee3e1f66261fdae"
+        }
+      ],
+      "checks": [
+        {
+          "probe": "SAST",
+          "ruleKey": "sast",
+          "ruleName": "Static code security scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "SECRETS",
+          "ruleKey": "secrets",
+          "ruleName": "Hardcoded credentials scan",
+          "status": "PASS",
+          "findingCount": 0
+        },
+        {
+          "probe": "DEPENDENCIES",
+          "ruleKey": "dependencies",
+          "ruleName": "Vulnerable dependency scan",
+          "status": "SKIPPED",
+          "findingCount": 0,
+          "detail": "No supported manifests or lockfiles were changed in this diff."
+        }
+      ],
+      "modelFindingCount": 1,
+      "scannerFindingCount": 0
+    }
+  ],
+  "finishedAt": "2026-10-17T11:54:51.128Z"
+}

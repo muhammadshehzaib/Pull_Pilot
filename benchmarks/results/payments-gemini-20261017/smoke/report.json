@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "runId": "200d3f77-8fa6-4ea2-9c10-d6a4bf87b1e6",
+  "mode": "live",
+  "reviewer": null,
+  "overall": {
+    "cases": 1,
+    "successfulCases": 1,
+    "failures": 0,
+    "knownBugs": 0,
+    "detectedBugs": 0,
+    "missedBugs": null,
+    "adjudicationComplete": false,
+    "pendingComments": 1,
+    "confirmedTrueComments": 0,
+    "additionalTrueComments": 0,
+    "falseComments": 0,
+    "duplicateComments": 0,
+    "nonBugComments": 0,
+    "recall": null,
+    "successfulCaseRecall": null,
+    "precision": null,
+    "precisionCountingDuplicatesAsNoise": null,
+    "cleanCases": 1,
+    "cleanWithFalseComments": 0,
+    "cleanCaseFalseCommentRate": null,
+    "durationMs": {
+      "median": 32616.128200000003,
+      "p95": 32616.128200000003
+    },
+    "costUsd": null,
+    "knownCostSubtotalUsd": 0,
+    "casesWithUnknownCost": 1,
+    "distinctKnownBugs": 0,
+    "distinctCases": 1
+  },
+  "byFamily": {
+    "domain": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 0,
+      "detectedBugs": 0,
+      "missedBugs": null,
+      "adjudicationComplete": false,
+      "pendingComments": 1,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": null,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 1,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 32616.128200000003,
+        "p95": 32616.128200000003
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byCategory": {
+    "payments": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 0,
+      "detectedBugs": 0,
+      "missedBugs": null,
+      "adjudicationComplete": false,
+      "pendingComments": 1,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": null,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 1,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 32616.128200000003,
+        "p95": 32616.128200000003
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byDomain": {
+    "payments": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 0,
+      "detectedBugs": 0,
+      "missedBugs": null,
+      "adjudicationComplete": false,
+      "pendingComments": 1,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": null,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 1,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 32616.128200000003,
+        "p95": 32616.128200000003
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byRepetition": {
+    "1": {
+      "cases": 1,
+      "successfulCases": 1,
+      "failures": 0,
+      "knownBugs": 0,
+      "detectedBugs": 0,
+      "missedBugs": null,
+      "adjudicationComplete": false,
+      "pendingComments": 1,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": null,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 1,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": 32616.128200000003,
+        "p95": 32616.128200000003
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  }
+}

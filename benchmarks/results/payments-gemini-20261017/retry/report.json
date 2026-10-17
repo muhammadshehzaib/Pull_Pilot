@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "runId": "8626b06a-fe9d-47f6-9161-b53c0892abd4",
+  "mode": "live",
+  "reviewer": null,
+  "overall": {
+    "cases": 1,
+    "successfulCases": 0,
+    "failures": 1,
+    "knownBugs": 1,
+    "detectedBugs": 0,
+    "missedBugs": 1,
+    "adjudicationComplete": true,
+    "pendingComments": 0,
+    "confirmedTrueComments": 0,
+    "additionalTrueComments": 0,
+    "falseComments": 0,
+    "duplicateComments": 0,
+    "nonBugComments": 0,
+    "recall": 0,
+    "successfulCaseRecall": null,
+    "precision": null,
+    "precisionCountingDuplicatesAsNoise": null,
+    "cleanCases": 0,
+    "cleanWithFalseComments": 0,
+    "cleanCaseFalseCommentRate": null,
+    "durationMs": {
+      "median": null,
+      "p95": null
+    },
+    "costUsd": null,
+    "knownCostSubtotalUsd": 0,
+    "casesWithUnknownCost": 1,
+    "distinctKnownBugs": 1,
+    "distinctCases": 1
+  },
+  "byFamily": {
+    "domain": {
+      "cases": 1,
+      "successfulCases": 0,
+      "failures": 1,
+      "knownBugs": 1,
+      "detectedBugs": 0,
+      "missedBugs": 1,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 0,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": null,
+        "p95": null
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byCategory": {
+    "payments": {
+      "cases": 1,
+      "successfulCases": 0,
+      "failures": 1,
+      "knownBugs": 1,
+      "detectedBugs": 0,
+      "missedBugs": 1,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 0,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": null,
+        "p95": null
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byDomain": {
+    "payments": {
+      "cases": 1,
+      "successfulCases": 0,
+      "failures": 1,
+      "knownBugs": 1,
+      "detectedBugs": 0,
+      "missedBugs": 1,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 0,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": null,
+        "p95": null
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  },
+  "byRepetition": {
+    "1": {
+      "cases": 1,
+      "successfulCases": 0,
+      "failures": 1,
+      "knownBugs": 1,
+      "detectedBugs": 0,
+      "missedBugs": 1,
+      "adjudicationComplete": true,
+      "pendingComments": 0,
+      "confirmedTrueComments": 0,
+      "additionalTrueComments": 0,
+      "falseComments": 0,
+      "duplicateComments": 0,
+      "nonBugComments": 0,
+      "recall": 0,
+      "successfulCaseRecall": null,
+      "precision": null,
+      "precisionCountingDuplicatesAsNoise": null,
+      "cleanCases": 0,
+      "cleanWithFalseComments": 0,
+      "cleanCaseFalseCommentRate": null,
+      "durationMs": {
+        "median": null,
+        "p95": null
+      },
+      "costUsd": null,
+      "knownCostSubtotalUsd": 0,
+      "casesWithUnknownCost": 1
+    }
+  }
+}

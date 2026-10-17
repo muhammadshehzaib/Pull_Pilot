@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "runId": "af16bf7a-06e9-4739-ab20-48ae387db96f",
+  "corpusSha256": "857fc05536484fd69670c812257b1d874cb397099354e800bf2dec1448520348",
+  "reviewer": "Codex-assisted source/contract inspection plus executable target proofs; not independent human adjudication",
+  "method": "manual; keyword candidates are hints only",
+  "labels": [
+    {
+      "findingId": "f048129de34bb9f9bbc6114b",
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "The finding assumes non-unique order identifiers across an unspecified gateway namespace. No such inputs or namespace collision are evidenced by this change or its contract.",
+      "candidates": []
+    },
+    {
+      "findingId": "6fc1a46a1a2cb97f636d9254",
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "The missing/null order ID is hypothetical invalid order data, not a demonstrated failure on the documented inputs. The prompt requires an evidenced trigger rather than speculation.",
+      "candidates": []
+    },
+    {
+      "findingId": "cda28eadab44feb8492e6306",
+      "caseId": "seed-payments-retry-idempotency-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "The parameter is now unused, so removal is valid optional cleanup. It does not establish a functional defect in the stable retry key.",
+      "candidates": []
+    },
+    {
+      "findingId": "574aa515487032a26054410d",
+      "caseId": "seed-payments-out-of-order-webhook-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "Status constants are an optional maintainability improvement. The documented terminal-state behavior is correct and there is no misspelled status in the shown code.",
+      "candidates": []
+    },
+    {
+      "findingId": "9f1c29508b63a71c0f949887",
+      "caseId": "seed-payments-declined-as-paid-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "The supplied contract requires only succeeded payments to mark an order paid. It does not require distinct return values for pending versus declined; the finding invents a requirement attributed to the contract.",
+      "candidates": []
+    },
+    {
+      "findingId": "18c087e2a260832ebf729ff9",
+      "caseId": "seed-payments-zero-decimal-currency-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "The KWD calculation is a real broader-input limitation, independently reproduced using runtime currency digits. It exists in both before/after versions and is outside the JPY/USD target regression. Recorded as optional currency-coverage work, not an introduced target defect.",
+      "candidates": []
+    },
+    {
+      "findingId": "6c4f80afe215a9a1530c47e1",
+      "caseId": "seed-payments-webhook-replay-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "A concurrent-call risk is real but predates this change, while the explicit contract guarantees sequential deliveries only. This is optional concurrency hardening, not the replay regression under test.",
+      "candidates": []
+    },
+    {
+      "findingId": "a5dd3606a8001e7cf56b48ca",
+      "caseId": "seed-payments-webhook-replay-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "The Set belongs to the caller and no lifetime or eviction policy is shown. An indefinite lifetime and memory exhaustion are assumed, and seen.add was already present before the change.",
+      "candidates": []
+    },
+    {
+      "findingId": "4eca2827d13f09c1a4571c02",
+      "caseId": "seed-payments-client-amount-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "The body parameter becomes unused after moving the amount to server-owned data. Removing it is optional API cleanup rather than a payment failure.",
+      "candidates": []
+    },
+    {
+      "findingId": "42a4c662d1d6af5c8ad5badf",
+      "caseId": "seed-payments-partial-refund-limit-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "The concurrent-refund issue exists before and after the change. The supplied contract explicitly covers sequential partial refunds, which the fix enforces. Treat as broader concurrency hardening.",
+      "candidates": []
+    },
+    {
+      "findingId": "9e7d16ea827692aeaab3b6d2",
+      "caseId": "seed-payments-client-amount-bug",
+      "verdict": "tp",
+      "bugId": "payments-client-amount",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-client-amount"
+      ]
+    },
+    {
+      "findingId": "3eab118f5e32155ae510e387",
+      "caseId": "seed-payments-zero-decimal-currency-bug",
+      "verdict": "tp",
+      "bugId": "payments-zero-decimal-currency",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-zero-decimal-currency"
+      ]
+    },
+    {
+      "findingId": "ec0d93794faaa73b3b116fe2",
+      "caseId": "seed-payments-currency-mismatch-bug",
+      "verdict": "tp",
+      "bugId": "payments-currency-mismatch",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-currency-mismatch"
+      ]
+    },
+    {
+      "findingId": "0477ec9ace06643717252577",
+      "caseId": "seed-payments-retry-idempotency-bug",
+      "verdict": "tp",
+      "bugId": "payments-retry-idempotency",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-retry-idempotency"
+      ]
+    },
+    {
+      "findingId": "b90f32338db805f7e20a2371",
+      "caseId": "seed-payments-currency-mismatch-clean",
+      "verdict": "fp",
+      "bugId": null,
+      "rationale": "The contract already specifies integer minor-unit amounts. The finding assumes undocumented string/major-unit inputs and criticizes an amount comparison that was unchanged by the currency fix.",
+      "candidates": []
+    },
+    {
+      "findingId": "9d09889c89efbd2a099f1cc4",
+      "caseId": "seed-payments-negative-refund-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "A more descriptive error message is valid optional usability advice. The code correctly rejects nonpositive/noninteger amounts before the gateway call.",
+      "candidates": []
+    },
+    {
+      "findingId": "cee9283d602047b38c97df4a",
+      "caseId": "seed-payments-partial-refund-limit-bug",
+      "verdict": "tp",
+      "bugId": "payments-partial-refund-limit",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-partial-refund-limit"
+      ]
+    },
+    {
+      "findingId": "24314d59ff0345ad6cdc2554",
+      "caseId": "seed-payments-signature-bypass-bug",
+      "verdict": "tp",
+      "bugId": "payments-signature-bypass",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-signature-bypass"
+      ]
+    },
+    {
+      "findingId": "2461c4755953392e57613448",
+      "caseId": "seed-payments-out-of-order-webhook-bug",
+      "verdict": "tp",
+      "bugId": "payments-out-of-order-webhook",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-out-of-order-webhook"
+      ]
+    },
+    {
+      "findingId": "23928f03fb1c3c15104df197",
+      "caseId": "seed-payments-signature-bypass-clean",
+      "verdict": "non-bug",
+      "bugId": null,
+      "rationale": "Failure logging is optional observability work and may live in the calling HTTP layer. The shown signature guard enforces the required authentication contract.",
+      "candidates": []
+    },
+    {
+      "findingId": "969a41c5ece68d7fafd295e0",
+      "caseId": "seed-payments-negative-refund-bug",
+      "verdict": "tp",
+      "bugId": "payments-negative-refund",
+      "rationale": "The finding identifies the documented target failure and proposes restoring the corresponding guard/behavior. The authored executable reproduction passes for this exact target.",
+      "candidates": [
+        "payments-negative-refund"
+      ]
+    }
+  ]
+}
