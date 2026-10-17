@@ -4,6 +4,10 @@ This benchmark measures the **review core** using frozen public/authored inputs.
 It does not measure deployed queue capacity or prove that PullPilot outperforms a
 competitor. The checked-in baseline runs **offline scanners only**, not an AI model.
 
+The [expanded domain baseline](results/scanner-baseline-v2/findings.md) records
+576 completed scanner attempts and the separate domain commits. The original
+92-case baseline remains available under `results/scanner-baseline-v1`.
+
 ## Dataset
 
 `corpus.json` (domain-v2) contains **192 distinct changes / 96 labelled bugs**:
